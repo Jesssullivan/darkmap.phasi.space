@@ -42,7 +42,7 @@
 		"@playwright/test": "^1.59.1",
 		"@skeletonlabs/skeleton": "4.15.2",
 		"@skeletonlabs/skeleton-svelte": "4.15.2",
-		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/adapter-node": "^5.5.4",
 		"@sveltejs/kit": "^2.59.1",
 		"@sveltejs/vite-plugin-svelte": "^7.1.1",
 		"@tailwindcss/vite": "^4.2.4",
