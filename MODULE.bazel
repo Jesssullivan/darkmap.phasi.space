@@ -71,9 +71,13 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-# TypeScript 5.9.3 (rules_ts cannot parse caret ranges — exact required)
+# TypeScript: track the npm `typescript@next` nightly to ride the next
+# major as it lands. The pnpm-driven build is authoritative; this
+# rules_ts pin is best-effort metadata for any future ts_project
+# targets. Bump in lockstep with the resolved version in pnpm-lock.yaml.
+# Churn risk: nightly may break daily — gate upgrades on `just check`.
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
-rules_ts_ext.deps(ts_version = "5.9.3")
+rules_ts_ext.deps(ts_version = "6.0.0-dev.20260416")
 use_repo(rules_ts_ext, "npm_typescript")
 
 # SWC for any future ts_project targets
