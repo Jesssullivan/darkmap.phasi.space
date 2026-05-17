@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { LatLon } from './EphemerisClient';
 import {
 	angularElevationDeg,
+	chainElevationLookups,
+	ElevationLookup,
+	HorizonError,
 	HorizonProvider,
 	HorizonProviderLive,
 	horizonAtAzimuth,
@@ -193,5 +196,107 @@ describe('horizonAtAzimuth', () => {
 
 	it('returns 0 for an empty polygon', () => {
 		expect(horizonAtAzimuth([], 42)).toBe(0);
+	});
+});
+
+describe('HorizonProvider — polygon cache', () => {
+	const opts = { rays: 4, distancesMeters: [500, 1000] };
+
+	/**
+	 * Run two `polygonAt` calls inside a single Effect program so the
+	 * cache (which lives in the Layer's construction closure) survives
+	 * between them. Two `Effect.runSync` calls would each rebuild the
+	 * runtime and lose the cache.
+	 */
+	const runPair = (
+		layer: Layer.Layer<HorizonProvider>,
+		a: { loc: LatLon; opts: typeof opts },
+		b: { loc: LatLon; opts: typeof opts },
+	) =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				const h = yield* HorizonProvider;
+				yield* h.polygonAt(a.loc, a.opts);
+				return yield* h.polygonAt(b.loc, b.opts);
+			}).pipe(Effect.provide(layer)),
+		);
+
+	it('skips elevation calls on a cache hit (same loc + opts)', () => {
+		let calls = 0;
+		const layer = horizonWith(() => {
+			calls += 1;
+			return 0;
+		});
+		// First call populates the cache; second should be a hit.
+		runPair(layer, { loc: { lat: 10, lon: 20 }, opts }, { loc: { lat: 10, lon: 20 }, opts });
+		// rays=4 + 2 distances + 1 ground-elev call = 9 lookups for one pass.
+		expect(calls).toBe(9);
+	});
+
+	it('treats sub-0.001° location changes as cache hits', () => {
+		let calls = 0;
+		const layer = horizonWith(() => {
+			calls += 1;
+			return 0;
+		});
+		runPair(layer, { loc: { lat: 42.12345, lon: -76.5 }, opts }, { loc: { lat: 42.12349, lon: -76.5004 }, opts });
+		expect(calls).toBe(9);
+	});
+
+	it('treats different opts (rays count) as cache misses', () => {
+		let calls = 0;
+		const layer = horizonWith(() => {
+			calls += 1;
+			return 0;
+		});
+		runPair(
+			layer,
+			{ loc: { lat: 10, lon: 20 }, opts: { rays: 4, distancesMeters: [500] } },
+			{ loc: { lat: 10, lon: 20 }, opts: { rays: 8, distancesMeters: [500] } },
+		);
+		// 5 (rays=4, 1 distance + ground) + 9 (rays=8, 1 distance + ground) = 14 lookups
+		expect(calls).toBe(14);
+	});
+});
+
+describe('chainElevationLookups', () => {
+	const getMeters = (layer: Layer.Layer<ElevationLookup>) =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				const e = yield* ElevationLookup;
+				return yield* e.metersAt({ lat: 0, lon: 0 });
+			}).pipe(Effect.provide(layer)),
+		);
+
+	const failingLayer = (reason: string): Layer.Layer<ElevationLookup> =>
+		Layer.succeed(ElevationLookup, {
+			metersAt: () => Effect.fail(new HorizonError({ reason })),
+		});
+
+	it('returns the primary value when it succeeds', () => {
+		const chained = chainElevationLookups(
+			makeElevationLookupStub(() => 100),
+			makeElevationLookupStub(() => 999),
+		);
+		expect(getMeters(chained)).toBe(100);
+	});
+
+	it('falls through to the secondary when the primary errors', () => {
+		const chained = chainElevationLookups(
+			failingLayer('simulated outage'),
+			makeElevationLookupStub(() => 7),
+		);
+		expect(getMeters(chained)).toBe(7);
+	});
+
+	it('propagates the secondary error when both fail', () => {
+		const chained = chainElevationLookups(failingLayer('primary down'), failingLayer('secondary down'));
+		const exit = Effect.runSyncExit(
+			Effect.gen(function* () {
+				const e = yield* ElevationLookup;
+				return yield* e.metersAt({ lat: 0, lon: 0 });
+			}).pipe(Effect.provide(chained)),
+		);
+		expect(exit._tag).toBe('Failure');
 	});
 });
