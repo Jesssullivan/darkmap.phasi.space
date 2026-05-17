@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { RasterLayerDef } from '$lib/layers';
+	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
 
 	export interface LayerState {
 		on: boolean;
@@ -16,6 +16,44 @@
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
+
+	const nonViirs = $derived(layers.filter((l) => l.group !== 'viirs_annual'));
+
+	// Active VIIRS year (single-select within the group). Falls back to the
+	// newest year if nothing's on, or the first .on entry otherwise.
+	const activeViirsId = $derived.by(() => {
+		const onEntry = VIIRS_YEARS.find((l) => states[l.id]?.on);
+		return onEntry?.id ?? VIIRS_YEARS[0]?.id;
+	});
+	const viirsOn = $derived(VIIRS_YEARS.some((l) => states[l.id]?.on));
+	const viirsOpacity = $derived(states[activeViirsId ?? '']?.opacity ?? VIIRS_YEARS[0]?.opacity ?? 0.85);
+
+	/** Switch which VIIRS year is rendered: turn off all others, turn on the picked one. */
+	function pickViirsYear(id: string): void {
+		for (const l of VIIRS_YEARS) {
+			if (l.id !== id && states[l.id]?.on) onchange(l.id, { on: false });
+		}
+		onchange(id, { on: true, opacity: viirsOpacity });
+	}
+
+	function toggleViirs(on: boolean): void {
+		if (on) {
+			onchange(activeViirsId ?? VIIRS_YEARS[0].id, { on: true, opacity: viirsOpacity });
+		} else {
+			for (const l of VIIRS_YEARS) {
+				if (states[l.id]?.on) onchange(l.id, { on: false });
+			}
+		}
+	}
+
+	function setViirsOpacity(opacity: number): void {
+		// Push the opacity to every VIIRS year that's currently on (in practice
+		// just one) so toggling years preserves the slider position.
+		for (const l of VIIRS_YEARS) {
+			if (states[l.id]?.on) onchange(l.id, { opacity });
+			else onchange(l.id, { opacity });
+		}
+	}
 </script>
 
 <button
@@ -37,8 +75,50 @@
 		<h2>Layers</h2>
 		<p>VIIRS · World Atlas · SQM</p>
 	</header>
+
 	<ul>
-		{#each layers as layer (layer.id)}
+		<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
+		<li>
+			<label class="layer-toggle">
+				<input
+					type="checkbox"
+					checked={viirsOn}
+					onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
+				/>
+				<span class="label">VIIRS Annual</span>
+			</label>
+			<div class="year-row" role="radiogroup" aria-label="VIIRS year">
+				{#each VIIRS_YEARS as l (l.id)}
+					<button
+						type="button"
+						class="year-chip"
+						class:active={activeViirsId === l.id}
+						aria-pressed={activeViirsId === l.id}
+						disabled={!viirsOn}
+						onclick={() => pickViirsYear(l.id)}
+					>
+						{l.year}
+					</button>
+				{/each}
+			</div>
+			<div class="opacity-row">
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.05"
+					value={viirsOpacity}
+					disabled={!viirsOn}
+					aria-label="VIIRS opacity"
+					oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
+				/>
+				<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
+			</div>
+			<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019.</p>
+		</li>
+
+		<!-- Non-VIIRS layers: one toggle + opacity slider each. -->
+		{#each nonViirs as layer (layer.id)}
 			{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
 			<li>
 				<label class="layer-toggle">
@@ -107,7 +187,7 @@
 		position: fixed;
 		top: 7rem;
 		left: 1rem;
-		max-width: 18rem;
+		max-width: 19rem;
 		max-height: calc(100vh - 9rem);
 		overflow-y: auto;
 		padding: 1rem 1.25rem;
@@ -162,12 +242,50 @@
 	.label {
 		font-weight: 500;
 	}
+
+	.year-row {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.25rem;
+		margin: 0.4rem 0 0 1.5rem;
+	}
+	.year-chip {
+		font-family: inherit;
+		font-size: 0.7rem;
+		padding: 0.25rem 0;
+		background: rgba(255, 255, 255, 0.05);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 4px;
+		cursor: pointer;
+		transition:
+			background 0.12s,
+			border-color 0.12s;
+	}
+	.year-chip:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.1);
+	}
+	.year-chip.active {
+		background: #ffd166;
+		color: #0a0e16;
+		border-color: #ffd166;
+		font-weight: 600;
+	}
+	.year-chip:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+	.year-chip:focus-visible {
+		outline: 2px solid #ffd166;
+		outline-offset: 1px;
+	}
+
 	.opacity-row {
 		display: grid;
 		grid-template-columns: 1fr auto;
 		gap: 0.5rem;
 		align-items: center;
-		margin-top: 0.25rem;
+		margin-top: 0.4rem;
 		padding-left: 1.5rem;
 	}
 	.opacity-row input[type='range'] {
