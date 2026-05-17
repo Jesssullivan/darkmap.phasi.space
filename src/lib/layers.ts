@@ -4,68 +4,66 @@
  * fetches `/api/raster?layer=<id>&z=...&x=...&y=...`; the server-side
  * RasterClient does the upstream-layer lookup before calling GetMap.
  *
- * Live GeoServer discovery 2026-05-17 (see TIN-1289). `viirs_2020` and
- * `viirs_2021` annual composites do **not** exist upstream — the latest
- * annual is 2019. Monthly composites live under `lighttrends:` if we
- * want a "trend" overlay later.
+ * Live GeoServer discovery 2026-05-17 (TIN-1289). Annual VIIRS coverage
+ * is 2012-2019 (8 years). Falchi World Atlas comes in two flavours:
+ * `WA_2015` (styled) and `WA_2015_raw` (unstyled radiance values).
+ *
+ * Layers carry a `group` discriminator so the UI can render a year
+ * picker for the VIIRS Annual family instead of 8 separate checkboxes.
+ * Single-layer groups (Falchi, etc.) render as a plain toggle.
  */
 
-export type LayerKind = 'viirs_year' | 'world_atlas';
+export type LayerGroup = 'viirs_annual' | 'world_atlas' | 'world_atlas_raw';
 
 export interface RasterLayerDef {
 	readonly id: string;
 	readonly upstreamLayer: string;
 	readonly label: string;
 	readonly description: string;
-	readonly kind: LayerKind;
+	/** UI grouping: multi-layer groups (e.g. VIIRS annual) render as a single picker. */
+	readonly group: LayerGroup;
+	/** For multi-year groups, the year. Unused for single-layer groups. */
+	readonly year?: number;
 	readonly defaultEnabled: boolean;
 	/** 0..1 opacity in the MapLibre raster source. */
 	readonly opacity: number;
 }
 
+const viirs = (year: number, defaultEnabled = false): RasterLayerDef => ({
+	id: `viirs_${year}`,
+	upstreamLayer: `PostGIS:VIIRS_${year}`,
+	label: `VIIRS ${year}`,
+	description: `NOAA VIIRS DNB annual composite, ${year}.`,
+	group: 'viirs_annual',
+	year,
+	defaultEnabled,
+	opacity: 0.85,
+});
+
 export const LAYERS: ReadonlyArray<RasterLayerDef> = [
-	{
-		id: 'viirs_2019',
-		upstreamLayer: 'PostGIS:VIIRS_2019',
-		label: 'VIIRS 2019',
-		description: 'NOAA VIIRS DNB annual composite, 2019 (latest annual available).',
-		kind: 'viirs_year',
-		defaultEnabled: true,
-		opacity: 0.85,
-	},
-	{
-		id: 'viirs_2018',
-		upstreamLayer: 'PostGIS:VIIRS_2018',
-		label: 'VIIRS 2018',
-		description: 'NOAA VIIRS DNB annual composite, 2018.',
-		kind: 'viirs_year',
-		defaultEnabled: false,
-		opacity: 0.85,
-	},
-	{
-		id: 'viirs_2017',
-		upstreamLayer: 'PostGIS:VIIRS_2017',
-		label: 'VIIRS 2017',
-		description: 'NOAA VIIRS DNB annual composite, 2017.',
-		kind: 'viirs_year',
-		defaultEnabled: false,
-		opacity: 0.85,
-	},
-	{
-		id: 'viirs_2014',
-		upstreamLayer: 'PostGIS:VIIRS_2014',
-		label: 'VIIRS 2014',
-		description: 'NOAA VIIRS DNB annual composite, 2014 (early baseline).',
-		kind: 'viirs_year',
-		defaultEnabled: false,
-		opacity: 0.85,
-	},
+	viirs(2019, true),
+	viirs(2018),
+	viirs(2017),
+	viirs(2016),
+	viirs(2015),
+	viirs(2014),
+	viirs(2013),
+	viirs(2012),
 	{
 		id: 'world_atlas_2015',
 		upstreamLayer: 'PostGIS:WA_2015',
 		label: 'World Atlas 2015',
-		description: 'Falchi et al. 2016 World Atlas of Artificial Night Sky Brightness.',
-		kind: 'world_atlas',
+		description: 'Falchi et al. 2016 World Atlas of Artificial Night Sky Brightness (styled).',
+		group: 'world_atlas',
+		defaultEnabled: false,
+		opacity: 0.7,
+	},
+	{
+		id: 'world_atlas_2015_raw',
+		upstreamLayer: 'PostGIS:WA_2015_raw',
+		label: 'World Atlas 2015 (raw)',
+		description: 'Falchi 2016 World Atlas raw radiance (unstyled).',
+		group: 'world_atlas_raw',
 		defaultEnabled: false,
 		opacity: 0.7,
 	},
@@ -78,3 +76,8 @@ export const rasterUrlTemplate = (layerId: string): string =>
 /** Default map center — Ithaca, NY (the lab fallback when geolocation is unavailable). */
 export const FALLBACK_CENTER: readonly [number, number] = [-76.5019, 42.4434];
 export const FALLBACK_ZOOM = 9;
+
+/** All VIIRS annual layers, year-descending (most recent first). */
+export const VIIRS_YEARS: ReadonlyArray<RasterLayerDef> = LAYERS.filter((l) => l.group === 'viirs_annual').sort(
+	(a, b) => (b.year ?? 0) - (a.year ?? 0),
+);
