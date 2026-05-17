@@ -100,6 +100,35 @@ describe('EphemerisClient — structural invariants', () => {
 		expect(r.moon.phaseDeg).toBeLessThan(360);
 	});
 
+	it('positionAt returns finite sun + moon altitude/azimuth in valid ranges', () => {
+		const out = Effect.runSync(
+			Effect.gen(function* () {
+				const c = yield* EphemerisClient;
+				return yield* c.positionAt({ lat: 45.42, lon: -75.69 }, REFERENCE_T);
+			}).pipe(Effect.provide(EphemerisClientLive)),
+		);
+		expect(Number.isFinite(out.sun.altitudeDeg)).toBe(true);
+		expect(out.sun.altitudeDeg).toBeGreaterThan(-90);
+		expect(out.sun.altitudeDeg).toBeLessThan(90);
+		expect(out.sun.azimuthDeg).toBeGreaterThanOrEqual(0);
+		expect(out.sun.azimuthDeg).toBeLessThan(360);
+		expect(Number.isFinite(out.moon.altitudeDeg)).toBe(true);
+	});
+
+	it('positionAt matches at(...).sun/moon for the same instant', () => {
+		const inputs = { loc: { lat: 0, lon: 0 }, t: REFERENCE_T };
+		const [full, light] = Effect.runSync(
+			Effect.gen(function* () {
+				const c = yield* EphemerisClient;
+				return [yield* c.at(inputs.loc, inputs.t), yield* c.positionAt(inputs.loc, inputs.t)] as const;
+			}).pipe(Effect.provide(EphemerisClientLive)),
+		);
+		expect(light.sun.altitudeDeg).toBeCloseTo(full.sun.altitudeDeg, 6);
+		expect(light.sun.azimuthDeg).toBeCloseTo(full.sun.azimuthDeg, 6);
+		expect(light.moon.altitudeDeg).toBeCloseTo(full.moon.altitudeDeg, 6);
+		expect(light.moon.azimuthDeg).toBeCloseTo(full.moon.azimuthDeg, 6);
+	});
+
 	it('moon phase name matches the phase angle bucket', () => {
 		// 2024-12-30T22:27 UTC is the New Moon for this lunation cycle.
 		const r = ephemAt({ lat: 0, lon: 0 }, new Date('2024-12-30T22:27:00Z'));

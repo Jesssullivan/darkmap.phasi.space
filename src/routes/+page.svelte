@@ -5,6 +5,7 @@
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
+	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
 		FALLBACK_CENTER,
 		FALLBACK_ZOOM,
@@ -284,6 +285,7 @@
 />
 
 {#if ephemerisOpen}
+	<SkyCompass location={viewCenter} time={ephemerisTime} />
 	<EphemerisGantt
 		location={viewCenter}
 		time={ephemerisTime}

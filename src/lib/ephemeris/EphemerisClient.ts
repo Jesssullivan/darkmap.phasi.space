@@ -63,10 +63,20 @@ export class EphemerisError extends Data.TaggedError('EphemerisError')<{
 	readonly cause?: unknown;
 }> {}
 
+export interface SkyPositions {
+	readonly sun: BodyPosition;
+	readonly moon: BodyPosition;
+}
+
 export class EphemerisClient extends Context.Tag('@darkmap/EphemerisClient')<
 	EphemerisClient,
 	{
 		readonly at: (loc: LatLon, t: Date) => Effect.Effect<EphemerisReadout, EphemerisError>;
+		/**
+		 * Lightweight position-only query — used by the sky-compass trajectory
+		 * sampler (~50 calls per render). Skips event-time searches.
+		 */
+		readonly positionAt: (loc: LatLon, t: Date) => Effect.Effect<SkyPositions, EphemerisError>;
 	}
 >() {}
 
@@ -97,20 +107,33 @@ const searchAltitudeAt = (
 	return t ? t.date : null;
 };
 
+const computePositions = (loc: LatLon, t: Date): SkyPositions => {
+	const observer = new Observer(loc.lat, loc.lon, loc.elevationMeters ?? 0);
+	const sunEq = Equator(Body.Sun, t, observer, true, true);
+	const sunHor = Horizon(t, observer, sunEq.ra, sunEq.dec, 'normal');
+	const moonEq = Equator(Body.Moon, t, observer, true, true);
+	const moonHor = Horizon(t, observer, moonEq.ra, moonEq.dec, 'normal');
+	return {
+		sun: { altitudeDeg: sunHor.altitude, azimuthDeg: sunHor.azimuth },
+		moon: { altitudeDeg: moonHor.altitude, azimuthDeg: moonHor.azimuth },
+	};
+};
+
 export const EphemerisClientLive = Layer.succeed(
 	EphemerisClient,
 	EphemerisClient.of({
+		positionAt: (loc, t) =>
+			Effect.try({
+				try: () => computePositions(loc, t),
+				catch: (cause) => new EphemerisError({ reason: 'astronomy-engine threw during position query', cause }),
+			}),
 		at: (loc, t) =>
 			Effect.try({
 				try: () => {
 					const observer = new Observer(loc.lat, loc.lon, loc.elevationMeters ?? 0);
 					const dayStart = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 0, 0, 0, 0));
 
-					const sunEq = Equator(Body.Sun, t, observer, true, true);
-					const sunHor = Horizon(t, observer, sunEq.ra, sunEq.dec, 'normal');
-					const moonEq = Equator(Body.Moon, t, observer, true, true);
-					const moonHor = Horizon(t, observer, moonEq.ra, moonEq.dec, 'normal');
-
+					const positions = computePositions(loc, t);
 					const phaseDeg = MoonPhase(t);
 					const illum = Illumination(Body.Moon, t);
 
@@ -124,10 +147,9 @@ export const EphemerisClientLive = Layer.succeed(
 					return {
 						location: loc,
 						at: t,
-						sun: { altitudeDeg: sunHor.altitude, azimuthDeg: sunHor.azimuth },
+						sun: positions.sun,
 						moon: {
-							altitudeDeg: moonHor.altitude,
-							azimuthDeg: moonHor.azimuth,
+							...positions.moon,
 							phaseDeg,
 							illumination: illum.phase_fraction,
 							phaseName: phaseName(phaseDeg),
@@ -152,6 +174,7 @@ export const EphemerisClientLive = Layer.succeed(
 	}),
 );
 
-export const makeEphemerisClientStub = (
-	at: (loc: LatLon, t: Date) => Effect.Effect<EphemerisReadout, EphemerisError>,
-): Layer.Layer<EphemerisClient> => Layer.succeed(EphemerisClient, { at });
+export const makeEphemerisClientStub = (impl: {
+	at: (loc: LatLon, t: Date) => Effect.Effect<EphemerisReadout, EphemerisError>;
+	positionAt: (loc: LatLon, t: Date) => Effect.Effect<SkyPositions, EphemerisError>;
+}): Layer.Layer<EphemerisClient> => Layer.succeed(EphemerisClient, impl);
