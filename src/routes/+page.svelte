@@ -61,6 +61,7 @@
 		lat: FALLBACK_CENTER[1],
 		lon: FALLBACK_CENTER[0],
 	});
+	let viewBounds: { north: number; south: number; east: number; west: number } | undefined = $state();
 
 	// Point-query readout state.
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
@@ -242,6 +243,13 @@
 			if (!mapInstance) return;
 			const c = mapInstance.getCenter();
 			viewCenter = { lat: c.lat, lon: c.lng };
+			const b = mapInstance.getBounds();
+			viewBounds = {
+				north: b.getNorth(),
+				south: b.getSouth(),
+				east: b.getEast(),
+				west: b.getWest(),
+			};
 		};
 		syncCenter();
 		mapInstance.on('moveend', () => {
@@ -289,6 +297,7 @@
 	<EphemerisGantt
 		location={viewCenter}
 		time={ephemerisTime}
+		bounds={viewBounds}
 		onTimeChange={(t) => {
 			ephemerisTime = t;
 			scheduleHashWrite();
