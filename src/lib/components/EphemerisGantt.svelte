@@ -3,17 +3,42 @@
 	import { onDestroy } from 'svelte';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
 
+	export interface ViewportBounds {
+		readonly north: number;
+		readonly south: number;
+		readonly east: number;
+		readonly west: number;
+	}
+
 	interface Props {
 		location: LatLon;
 		time: Date;
+		bounds?: ViewportBounds;
 		onTimeChange?: (t: Date) => void;
 	}
 
-	let { location, time, onTimeChange }: Props = $props();
+	let { location, time, bounds, onTimeChange }: Props = $props();
 
 	let readout = $state<EphemerisReadout | null>(null);
 	let loading = $state(false);
 	let bar: HTMLDivElement | undefined = $state();
+
+	// Per-event min..max range across a 4x4 grid sampled inside `bounds`.
+	// Populated asynchronously after the center readout, so the gantt
+	// renders the cursor + bands immediately and the uncertainty stripes
+	// fade in once the corner samples settle.
+	type EventKey =
+		| 'astronomicalDawn'
+		| 'nauticalDawn'
+		| 'civilDawn'
+		| 'sunrise'
+		| 'solarNoon'
+		| 'sunset'
+		| 'civilDusk'
+		| 'nauticalDusk'
+		| 'astronomicalDusk';
+	type EventRange = { readonly min: Date; readonly max: Date };
+	let ranges = $state<Partial<Record<EventKey, EventRange>>>({});
 
 	// Lazy-load astronomy-engine + EphemerisClient. The ~116 KB chunk only
 	// ships once the overlay actually mounts.
@@ -63,6 +88,72 @@
 		// dayKey is the dependency; reading it inside $effect tracks it.
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		dayKey;
+	});
+
+	// Grid-sample (4x4) across the viewport bounds to compute per-event
+	// min..max ranges. Only fires when bounds is provided. Recomputes when
+	// the bounds rect or the calendar day changes.
+	const boundsKey = $derived(
+		bounds
+			? `${bounds.north.toFixed(3)},${bounds.south.toFixed(3)},${bounds.east.toFixed(3)},${bounds.west.toFixed(3)}`
+			: '',
+	);
+	$effect(() => {
+		if (!bounds) {
+			ranges = {};
+			return;
+		}
+		const myGen = ++cancelGen;
+		(async () => {
+			const c = await loadClient();
+			// 4x4 grid plus the center pin. Skip if the box is degenerate.
+			const dlat = bounds.north - bounds.south;
+			const dlon = bounds.east - bounds.west;
+			if (dlat <= 0 || dlon === 0) return;
+			const SAMPLES = 4;
+			const points: LatLon[] = [];
+			for (let i = 0; i < SAMPLES; i++) {
+				for (let j = 0; j < SAMPLES; j++) {
+					points.push({
+						lat: bounds.south + ((i + 0.5) / SAMPLES) * dlat,
+						lon: bounds.west + ((j + 0.5) / SAMPLES) * dlon,
+					});
+				}
+			}
+			const readouts = await Promise.all(points.map((p) => c(p, time)));
+			if (myGen !== cancelGen) return;
+			const KEYS: EventKey[] = [
+				'astronomicalDawn',
+				'nauticalDawn',
+				'civilDawn',
+				'sunrise',
+				'solarNoon',
+				'sunset',
+				'civilDusk',
+				'nauticalDusk',
+				'astronomicalDusk',
+			];
+			const next: Partial<Record<EventKey, EventRange>> = {};
+			for (const k of KEYS) {
+				let min = Infinity;
+				let max = -Infinity;
+				for (const r of readouts) {
+					const d = r.events[k];
+					if (!d) continue;
+					const t = d.getTime();
+					if (t < min) min = t;
+					if (t > max) max = t;
+				}
+				if (Number.isFinite(min) && Number.isFinite(max)) {
+					next[k] = { min: new Date(min), max: new Date(max) };
+				}
+			}
+			ranges = next;
+		})().catch((e) => {
+			if (myGen === cancelGen) console.warn('EphemerisGantt: viewport sampling failed', e);
+		});
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		boundsKey;
 	});
 
 	onDestroy(() => {
@@ -164,12 +255,81 @@
 
 	// Six tick labels every 4 UTC hours.
 	const TICKS = [0, 4, 8, 12, 16, 20, 24];
+
+	// Uncertainty stripes — pairs of (left%, width%) for each event whose
+	// viewport-range spans more than 1 minute.
+	type Stripe = { key: EventKey; left: number; width: number; deltaMin: number };
+	const stripes = $derived.by((): Stripe[] => {
+		const out: Stripe[] = [];
+		for (const [key, range] of Object.entries(ranges) as [EventKey, EventRange][]) {
+			const minF = fracOf(range.min);
+			const maxF = fracOf(range.max);
+			if (minF === null || maxF === null) continue;
+			const deltaMs = range.max.getTime() - range.min.getTime();
+			if (deltaMs < 60 * 1000) continue;
+			out.push({
+				key,
+				left: minF,
+				width: Math.max(0, maxF - minF),
+				deltaMin: deltaMs / 60_000,
+			});
+		}
+		return out;
+	});
+
+	// Range pill — pick the event closest to the cursor and surface its
+	// span as "civil dusk Δ 26 min" in the header.
+	const closestRange = $derived.by(() => {
+		const t = time.getTime();
+		let best: { key: EventKey; range: EventRange; distMs: number } | null = null;
+		for (const [key, range] of Object.entries(ranges) as [EventKey, EventRange][]) {
+			const mid = (range.min.getTime() + range.max.getTime()) / 2;
+			const dist = Math.abs(t - mid);
+			if (!best || dist < best.distMs) best = { key, range, distMs: dist };
+		}
+		return best;
+	});
+
+	const labelFor = (k: EventKey): string => {
+		switch (k) {
+			case 'astronomicalDawn':
+				return 'astro dawn';
+			case 'nauticalDawn':
+				return 'naut dawn';
+			case 'civilDawn':
+				return 'civil dawn';
+			case 'sunrise':
+				return 'sunrise';
+			case 'solarNoon':
+				return 'solar noon';
+			case 'sunset':
+				return 'sunset';
+			case 'civilDusk':
+				return 'civil dusk';
+			case 'nauticalDusk':
+				return 'naut dusk';
+			case 'astronomicalDusk':
+				return 'astro dusk';
+		}
+	};
+
+	const fmtDelta = (deltaMin: number): string =>
+		deltaMin < 60 ? `Δ ${Math.round(deltaMin)} min` : `Δ ${(deltaMin / 60).toFixed(1)} h`;
 </script>
 
 <div class="gantt" aria-label="Twilight strip for viewport center">
 	<div class="header">
 		<span class="date">{fmtDate(dayStart)} UTC</span>
 		<span class="cursor-label">cursor {fmtClock(time)}</span>
+		{#if closestRange}
+			<span class="pill" title="Spread across visible viewport (4x4 sample grid)">
+				{labelFor(closestRange.key)}
+				{fmtClock(closestRange.range.min)}–{fmtClock(closestRange.range.max)}
+				<span class="delta"
+					>{fmtDelta((closestRange.range.max.getTime() - closestRange.range.min.getTime()) / 60_000)}</span
+				>
+			</span>
+		{/if}
 		<span class="phase" title="Moon illumination">
 			{#if readout}
 				{readout.moon.phaseName} · {(readout.moon.illumination * 100).toFixed(0)}%
@@ -192,6 +352,13 @@
 		aria-valuetext={fmtClock(time) + ' UTC'}
 		style="background: {bandGradient};"
 	>
+		{#each stripes as s (s.key)}
+			<span
+				class="stripe"
+				style="left: {(s.left * 100).toFixed(2)}%; width: {(s.width * 100).toFixed(2)}%;"
+				title="{labelFor(s.key)} {fmtDelta(s.deltaMin)} across viewport"
+			></span>
+		{/each}
 		{#if sunriseFrac !== null}
 			<span
 				class="event sunrise"
@@ -280,6 +447,14 @@
 		transform: translateX(-50%);
 		box-shadow: 0 0 6px rgba(255, 209, 102, 0.7);
 	}
+	.stripe {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		background: rgba(255, 209, 102, 0.22);
+		mix-blend-mode: screen;
+		pointer-events: none;
+	}
 	.event {
 		position: absolute;
 		top: 0;
@@ -326,5 +501,21 @@
 	}
 	.phase {
 		opacity: 0.7;
+	}
+	.pill {
+		display: inline-flex;
+		gap: 0.35rem;
+		align-items: baseline;
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		background: rgba(255, 209, 102, 0.12);
+		border: 1px solid rgba(255, 209, 102, 0.3);
+		color: #ffd166;
+		font-variant-numeric: tabular-nums;
+		font-size: 0.62rem;
+	}
+	.pill .delta {
+		opacity: 0.7;
+		color: #e9ecf3;
 	}
 </style>
