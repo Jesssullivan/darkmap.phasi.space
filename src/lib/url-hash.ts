@@ -4,15 +4,17 @@
  * Hash format (mirrors common map-app conventions, ours is more
  * compact since we control both ends):
  *
- *   #m=<lat>,<lon>,<zoom>&l=<id>:<opacity>[,<id>:<opacity>...]
+ *   #m=<lat>,<lon>,<zoom>&l=<id>:<opacity>[,<id>:<opacity>...]&et=<iso>
  *
  * Examples:
  *   #m=42.4434,-76.5019,9&l=viirs_2019:0.85
  *   #m=40.7128,-74.0060,11&l=viirs_2015:0.5,world_atlas_2015:0.9
+ *   #m=42.4434,-76.5019,9&et=2024-12-21T17:00Z
  *
  * Only on-layers appear in `l=`. Opacity is encoded with 2 decimal
- * places. Missing fields are accepted; the caller falls back to its
- * defaults.
+ * places. `et=` encodes the ephemeris-overlay cursor as an ISO
+ * minute-precision UTC instant (`YYYY-MM-DDTHH:MMZ`). Missing fields
+ * are accepted; the caller falls back to its defaults.
  */
 
 export interface MapView {
@@ -27,7 +29,15 @@ export interface HashState {
 	readonly layers?: ReadonlyMap<string, number>;
 	/** Basemap id (`dark` | `osm` | `satellite`). */
 	readonly basemap?: string;
+	/** Ephemeris-overlay cursor instant (UTC, minute precision). */
+	readonly time?: Date;
 }
+
+const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
+
+const encodeIsoMinute = (d: Date): string =>
+	`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` +
+	`T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}Z`;
 
 const round = (n: number, places: number): number => {
 	const f = Math.pow(10, places);
@@ -49,13 +59,16 @@ export function encodeHash(state: HashState): string {
 	if (state.basemap) {
 		parts.push(`b=${encodeURIComponent(state.basemap)}`);
 	}
+	if (state.time) {
+		parts.push(`et=${encodeIsoMinute(state.time)}`);
+	}
 	return parts.length === 0 ? '' : `#${parts.join('&')}`;
 }
 
 export function decodeHash(hash: string): HashState {
 	const trimmed = hash.startsWith('#') ? hash.slice(1) : hash;
 	if (!trimmed) return {};
-	const out: { view?: MapView; layers?: Map<string, number>; basemap?: string } = {};
+	const out: { view?: MapView; layers?: Map<string, number>; basemap?: string; time?: Date } = {};
 	for (const segment of trimmed.split('&')) {
 		const eq = segment.indexOf('=');
 		if (eq < 0) continue;
@@ -88,6 +101,12 @@ export function decodeHash(hash: string): HashState {
 		} else if (key === 'b') {
 			const id = decodeURIComponent(value);
 			if (id) out.basemap = id;
+		} else if (key === 'et') {
+			// Accept either `YYYY-MM-DDTHH:MMZ` (the compact form we emit) or
+			// any other ISO-8601 instant — round-tripping a hand-edited URL
+			// with seconds/millis is fine.
+			const d = new Date(decodeURIComponent(value));
+			if (!Number.isNaN(d.getTime())) out.time = d;
 		}
 	}
 	return out;

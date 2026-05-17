@@ -2,6 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
+	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import {
@@ -42,6 +43,23 @@
 		return parsed.basemap && BASEMAPS.some((b) => b.id === parsed.basemap) ? parsed.basemap : DEFAULT_BASEMAP_ID;
 	};
 	let activeBasemap = $state(initialBasemap());
+
+	// Ephemeris overlay state. Off by default; toggled via the button in the
+	// bottom-right corner. `time` is the cursor instant for the gantt;
+	// `center` tracks the viewport so the gantt recomputes when you pan.
+	const initialTime = (): Date => {
+		if (browser) {
+			const parsed = decodeHash(window.location.hash);
+			if (parsed.time) return parsed.time;
+		}
+		return new Date();
+	};
+	let ephemerisOpen = $state(false);
+	let ephemerisTime: Date = $state(initialTime());
+	let viewCenter: { lat: number; lon: number } = $state({
+		lat: FALLBACK_CENTER[1],
+		lon: FALLBACK_CENTER[0],
+	});
 
 	// Point-query readout state.
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
@@ -86,6 +104,7 @@
 				view: { lat: c.lat, lon: c.lng, zoom: mapInstance.getZoom() },
 				layers: layersMap,
 				basemap: activeBasemap === DEFAULT_BASEMAP_ID ? undefined : activeBasemap,
+				time: ephemerisOpen ? ephemerisTime : undefined,
 			});
 			history.replaceState(null, '', hash || window.location.pathname);
 		}, 250);
@@ -216,8 +235,22 @@
 		});
 
 		// Persist view state in the hash on every pan/zoom (debounced).
-		mapInstance.on('moveend', scheduleHashWrite);
+		// Also keep `viewCenter` in sync so the ephemeris overlay can
+		// recompute against the on-screen center.
+		const syncCenter = () => {
+			if (!mapInstance) return;
+			const c = mapInstance.getCenter();
+			viewCenter = { lat: c.lat, lon: c.lng };
+		};
+		syncCenter();
+		mapInstance.on('moveend', () => {
+			syncCenter();
+			scheduleHashWrite();
+		});
 		mapInstance.on('zoomend', scheduleHashWrite);
+
+		// If the hash includes `&et=`, restore the overlay open on load.
+		if (decodeHash(window.location.hash).time) ephemerisOpen = true;
 
 		// Point readout: click anywhere on the map.
 		mapInstance.on('click', (ev) => {
@@ -249,6 +282,33 @@
 	basemap={activeBasemap}
 	onbasemapchange={onBasemapChange}
 />
+
+{#if ephemerisOpen}
+	<EphemerisGantt
+		location={viewCenter}
+		time={ephemerisTime}
+		onTimeChange={(t) => {
+			ephemerisTime = t;
+			scheduleHashWrite();
+		}}
+	/>
+{/if}
+
+<button
+	class="ephemeris-toggle"
+	type="button"
+	aria-pressed={ephemerisOpen}
+	onclick={() => {
+		ephemerisOpen = !ephemerisOpen;
+		if (ephemerisOpen && !decodeHash(window.location.hash).time) {
+			ephemerisTime = new Date();
+		}
+		scheduleHashWrite();
+	}}
+	title="Toggle twilight strip"
+>
+	☼/☾
+</button>
 
 {#if readout}
 	<PointReadout
@@ -294,5 +354,28 @@
 	}
 	.attribution a {
 		color: #ffd166;
+	}
+	.ephemeris-toggle {
+		position: fixed;
+		right: 0.75rem;
+		bottom: 0.75rem;
+		z-index: 7;
+		background: rgba(8, 10, 16, 0.85);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		border-radius: 999px;
+		padding: 0.4rem 0.75rem;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.75rem;
+		cursor: pointer;
+		backdrop-filter: blur(6px);
+	}
+	.ephemeris-toggle:hover {
+		border-color: rgba(255, 209, 102, 0.65);
+		color: #ffd166;
+	}
+	.ephemeris-toggle[aria-pressed='true'] {
+		color: #ffd166;
+		border-color: rgba(255, 209, 102, 0.65);
 	}
 </style>
