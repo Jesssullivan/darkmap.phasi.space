@@ -1,0 +1,157 @@
+/**
+ * HorizonProvider — computes the per-azimuth horizon altitude polygon
+ * for an observer at a given location, accounting for surrounding
+ * terrain.
+ *
+ * Phase 1 (sub 4): synchronous main-thread implementation using a
+ * pluggable ElevationLookup service. Sub 7 swaps in a Web Worker +
+ * tile cache for production use.
+ *
+ * Algorithm (heywhatsthat-style):
+ *  - For each of N azimuths (default 36, every 10°):
+ *      For each sample distance along the ray:
+ *          look up elevation, compute angular elevation from observer
+ *      Keep the max angular elevation across all samples.
+ *  - Returns a HorizonPolygon = (azimuth, altitude) pairs, sorted by azimuth.
+ */
+
+import { Context, Data, Effect, Layer } from 'effect';
+import type { LatLon } from './EphemerisClient';
+import { destinationPoint } from './terrarium';
+
+export interface HorizonSample {
+	readonly azimuthDeg: number;
+	readonly altitudeDeg: number;
+}
+
+export type HorizonPolygon = readonly HorizonSample[];
+
+export class HorizonError extends Data.TaggedError('HorizonError')<{
+	readonly reason: string;
+	readonly cause?: unknown;
+}> {}
+
+/**
+ * Pluggable elevation lookup. Sub 4 ships a Terrarium-backed Live
+ * implementation that fetches tiles via the SvelteKit `/api/elevation`
+ * proxy. Stub implementations let tests use synthetic terrain.
+ */
+export class ElevationLookup extends Context.Tag('@darkmap/ElevationLookup')<
+	ElevationLookup,
+	{
+		readonly metersAt: (loc: LatLon) => Effect.Effect<number, HorizonError>;
+	}
+>() {}
+
+export class HorizonProvider extends Context.Tag('@darkmap/HorizonProvider')<
+	HorizonProvider,
+	{
+		readonly polygonAt: (loc: LatLon, opts?: HorizonOptions) => Effect.Effect<HorizonPolygon, HorizonError>;
+	}
+>() {}
+
+export interface HorizonOptions {
+	/** Number of azimuth rays (default 36 = every 10°). */
+	readonly rays?: number;
+	/**
+	 * Distance samples (meters from observer). Defaults span 250 m to 25 km
+	 * with a roughly logarithmic spacing — most horizons are within ~10 km
+	 * for moderate-elevation observers, but distant peaks matter.
+	 */
+	readonly distancesMeters?: readonly number[];
+	/** Observer eye height above ground (default 1.7 m, ~human standing). */
+	readonly eyeHeightMeters?: number;
+}
+
+const DEFAULT_DISTANCES = [250, 500, 1_000, 2_000, 3_500, 5_500, 8_000, 12_000, 17_000, 25_000] as const;
+const DEFAULT_RAYS = 36;
+const DEFAULT_EYE_M = 1.7;
+
+/**
+ * Earth-curvature drop for a target at `distance` from the observer.
+ * Standard formula: drop = distance² / (2 R_earth_eff). Uses R_eff =
+ * 7 / 6 * R to fold in standard atmospheric refraction (k = 0.13).
+ */
+const curvatureDropMeters = (distanceMeters: number): number => {
+	const R_EFF = (7 / 6) * 6_371_000;
+	return (distanceMeters * distanceMeters) / (2 * R_EFF);
+};
+
+/**
+ * Compute angular elevation (degrees, +up) from an observer at
+ * (eyeElev) to a target at (targetElev) `distanceMeters` away,
+ * subtracting the earth-curvature drop for the target distance.
+ */
+export const angularElevationDeg = (
+	eyeElevMeters: number,
+	targetElevMeters: number,
+	distanceMeters: number,
+): number => {
+	const drop = curvatureDropMeters(distanceMeters);
+	const dh = targetElevMeters - drop - eyeElevMeters;
+	return (Math.atan2(dh, distanceMeters) * 180) / Math.PI;
+};
+
+export const HorizonProviderLive = Layer.effect(
+	HorizonProvider,
+	Effect.gen(function* () {
+		const elev = yield* ElevationLookup;
+		return HorizonProvider.of({
+			polygonAt: (loc, opts) =>
+				Effect.gen(function* () {
+					const rays = opts?.rays ?? DEFAULT_RAYS;
+					const distances = opts?.distancesMeters ?? DEFAULT_DISTANCES;
+					const eyeAddedM = opts?.eyeHeightMeters ?? DEFAULT_EYE_M;
+					const groundElev = yield* elev.metersAt(loc);
+					const eyeElev = groundElev + eyeAddedM;
+					const out: HorizonSample[] = [];
+					for (let i = 0; i < rays; i++) {
+						const azimuthDeg = (i * 360) / rays;
+						let maxAlt = -90;
+						for (const d of distances) {
+							const target = destinationPoint(loc.lat, loc.lon, azimuthDeg, d);
+							const targetElev = yield* elev.metersAt(target);
+							const alt = angularElevationDeg(eyeElev, targetElev, d);
+							if (alt > maxAlt) maxAlt = alt;
+						}
+						out.push({ azimuthDeg, altitudeDeg: maxAlt });
+					}
+					return out as HorizonPolygon;
+				}),
+		});
+	}),
+);
+
+/**
+ * Look up the horizon altitude at a specific azimuth via linear
+ * interpolation between the two nearest samples. Returns the
+ * interpolated altitude in degrees. The polygon is assumed to be
+ * sorted by azimuth ascending and to cover the full 0..360 range
+ * (matching what `polygonAt` returns).
+ */
+export const horizonAtAzimuth = (polygon: HorizonPolygon, azimuthDeg: number): number => {
+	if (polygon.length === 0) return 0;
+	const az = ((azimuthDeg % 360) + 360) % 360;
+	for (let i = 0; i < polygon.length; i++) {
+		const a = polygon[i];
+		const b = polygon[(i + 1) % polygon.length];
+		const aAz = a.azimuthDeg;
+		// Treat the last segment as wrapping past 360.
+		const bAz = b.azimuthDeg <= aAz ? b.azimuthDeg + 360 : b.azimuthDeg;
+		if (az >= aAz && az <= bAz) {
+			const t = (az - aAz) / Math.max(1e-9, bAz - aAz);
+			return a.altitudeDeg + t * (b.altitudeDeg - a.altitudeDeg);
+		}
+	}
+	return polygon[0].altitudeDeg;
+};
+
+/**
+ * Test/preview Layer. Supplies a synthetic ElevationLookup that the
+ * caller provides as a (lat, lon) → meters function — useful for
+ * testing the ray-cast math without the Terrarium fetch dependency.
+ */
+export const makeElevationLookupStub = (fn: (loc: LatLon) => number): Layer.Layer<ElevationLookup> =>
+	Layer.succeed(ElevationLookup, {
+		metersAt: (loc) => Effect.succeed(fn(loc)),
+	});
