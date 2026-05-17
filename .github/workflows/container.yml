@@ -92,7 +92,11 @@ jobs:
           sbom: true
 
       - name: Generate artifact attestation
-        if: github.event_name != 'pull_request'
+        # attest-build-provenance requires either a public repo or a
+        # GitHub Enterprise plan. User-owned private repos return
+        # "Feature not available" and fail the step. Skip it cleanly
+        # until the repo flips public.
+        if: github.event_name != 'pull_request' && !github.event.repository.private
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}

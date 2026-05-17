@@ -32,6 +32,37 @@ Prerequisites:
 - A real `QUERY_RASTER_KEY` in your shell.
 - The Container workflow has produced an SHA-tagged image at `ghcr.io/jesssullivan/darkmap.tinyland.dev:<sha>`.
 
+### 2a. One-time provisioning
+
+The first time the workload lands on `honey`, two pieces need to be in place.
+
+**`ghcr-registry` secret in the `darkmap` namespace** — `ghcr.io/jesssullivan/darkmap.tinyland.dev` is a private package and the kubelet needs a `dockerconfigjson` to pull. Same pattern as sibling sites (`elders`, `financebro`, `account-controller-system`). Easiest is to copy from a sibling that already has it:
+
+```bash
+kubectl --context honey get secret ghcr-registry -n elders -o json \
+  | jq 'del(.metadata.namespace, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.ownerReferences) | .metadata.namespace = "darkmap"' \
+  | kubectl --context honey apply -f -
+```
+
+Or mint a fresh PAT with `read:packages` and create the secret via [`kubectl create secret docker-registry`](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/). Read the PAT into an env var first (`read -rs GHCR_TOKEN; export GHCR_TOKEN`) so the token doesn't land in shell history, then pass it as the docker auth field for the new secret with `--namespace darkmap --docker-server=ghcr.io --docker-username=Jesssullivan`. `unset GHCR_TOKEN` when done.
+
+**Rustfs port-forward for `tofu init`.** The state backend lives at `http://attic-rustfs-hl.nix-cache.svc:9000` — a cluster-internal address with no tailnet hostname. Open a port-forward in a separate shell and override the endpoint for the Tofu session:
+
+```bash
+# shell A — leave running:
+kubectl --context honey -n nix-cache port-forward svc/attic-rustfs-hl 9000:9000
+
+# shell B — your apply session:
+export AWS_ENDPOINT_URL_S3=http://localhost:9000
+# also export the rustfs access key id + secret as the standard AWS S3
+# env vars (see `blahaj/secrets/opentofu-backend.enc.yaml` for the values
+# and the encrypted vault for the team passphrase)
+```
+
+The rustfs credentials live in `blahaj/secrets/opentofu-backend.enc.yaml` — decrypt with the team key, then export both the AWS access key id and secret as the standard S3 env vars in shell B.
+
+### 2b. Apply
+
 Steps:
 
 ```bash
