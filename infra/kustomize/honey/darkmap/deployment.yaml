@@ -52,11 +52,6 @@ spec:
               value: '0.0.0.0'
             - name: PORT
               value: '3000'
-            - name: QUERY_RASTER_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: darkmap-upstream
-                  key: QUERY_RASTER_KEY
           readinessProbe:
             httpGet:
               path: /

@@ -1,40 +1,40 @@
 import { Context, Effect, Layer, Option } from 'effect';
-import type { RasterQuery, RasterResponse } from './RasterClient';
+import type { RasterResponse, RasterTileRequest } from './RasterClient';
 
 export class RasterCache extends Context.Tag('@darkmap/RasterCache')<
 	RasterCache,
 	{
-		readonly get: (q: RasterQuery) => Effect.Effect<Option.Option<RasterResponse>>;
-		readonly set: (q: RasterQuery, v: RasterResponse) => Effect.Effect<void>;
+		readonly get: (req: RasterTileRequest) => Effect.Effect<Option.Option<RasterResponse>>;
+		readonly set: (req: RasterTileRequest, v: RasterResponse) => Effect.Effect<void>;
 	}
 >() {}
 
-const cacheKey = (q: RasterQuery): string => `${q.layer}::${q.qt}::${q.qd}`;
+const cacheKey = ({ upstreamLayer, tile }: RasterTileRequest): string =>
+	`${upstreamLayer}::${tile.z}/${tile.x}/${tile.y}`;
 
-const DEFAULT_MAX_ENTRIES = 256;
+const DEFAULT_MAX_ENTRIES = 1024;
 
 /**
- * In-process LRU. Keyed on `(layer, qt, qd)`. Phase 2 swap target:
- * replace with a Layer that talks to rustfs S3, same Tag, same shape —
- * no changes at the call site.
+ * In-process LRU. Keyed on `(upstream layer, z, x, y)`. Phase 2 swap
+ * target: replace with a Layer that talks to rustfs S3, same Tag, same
+ * shape — no changes at the call site.
  */
 export const RasterCacheLive = Layer.sync(RasterCache, () => {
 	const max = DEFAULT_MAX_ENTRIES;
 	const map = new Map<string, RasterResponse>();
 	return {
-		get: (q) =>
+		get: (req) =>
 			Effect.sync(() => {
-				const key = cacheKey(q);
+				const key = cacheKey(req);
 				const hit = map.get(key);
 				if (!hit) return Option.none();
-				// LRU touch: re-set so this key becomes most-recent.
 				map.delete(key);
 				map.set(key, hit);
 				return Option.some(hit);
 			}),
-		set: (q, v) =>
+		set: (req, v) =>
 			Effect.sync(() => {
-				const key = cacheKey(q);
+				const key = cacheKey(req);
 				if (map.has(key)) map.delete(key);
 				map.set(key, v);
 				while (map.size > max) {
