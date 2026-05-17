@@ -8,7 +8,7 @@ export default defineConfig({
 		tsconfig: false,
 	},
 	test: {
-		include: ['src/lib/server/raster/raster.test.ts'],
+		include: ['src/lib/server/raster/raster.test.ts', 'src/lib/ephemeris/EphemerisClient.test.ts'],
 		environment: 'node',
 		globals: true,
 		coverage: {
