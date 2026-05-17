@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace is created by Tofu (infra/tofu/main.tf). This block places
+# every resource emitted here into that namespace via server-side merge.
+namespace: darkmap
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/name: darkmap
+      app.kubernetes.io/instance: darkmap-honey
+      app.kubernetes.io/part-of: darkmap.tinyland.dev
+      app.kubernetes.io/managed-by: kustomize
+      tinyland.dev/site: darkmap.tinyland.dev
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - tailscale-svc.yaml
+  - ingress.yaml
+
+# CI substitutes the resolved SHA via `kustomize edit set image
+# darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${GITHUB_SHA}` before
+# applying. The `:main` floating tag is the default for ad-hoc operator
+# applies.
+images:
+  - name: darkmap
+    newName: ghcr.io/jesssullivan/darkmap.tinyland.dev
+    newTag: main
