@@ -1,0 +1,87 @@
+# =============================================================================
+# GitHub Actions: tofu apply on push to main when infra/tofu/** changed.
+#
+# Gated on the `production` GitHub Environment, which requires manual approval
+# (configure required reviewers in repo Settings → Environments → production).
+# Workflow_dispatch supported for ad-hoc applies after a state import.
+# =============================================================================
+
+name: Tofu apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tofu-apply.yml'
+      - 'infra/tofu/**'
+  workflow_dispatch:
+    inputs:
+      auto_approve:
+        description: 'Skip the apply preview step (apply directly to a fresh plan)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: tofu-apply
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: tofu apply (production)
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    environment: production
+    env:
+      CHECKOUT_PATH: repo-${{ github.job }}
+    steps:
+      - name: Reclaim stale runner workspace
+        run: find "$GITHUB_WORKSPACE" -maxdepth 1 -mindepth 1 -type d -name 'repo-*' ! -name "$CHECKOUT_PATH" -exec rm -rf {} +
+
+      - uses: actions/checkout@v6
+        with:
+          path: ${{ env.CHECKOUT_PATH }}
+
+      - name: Configure GloriousFlywheel cache hints
+        env:
+          GF_ACTION_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash "$CHECKOUT_PATH/scripts/setup-flywheel.sh"
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: '1.11.6'
+          tofu_wrapper: false
+
+      - name: tofu init (rustfs backend)
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+        run: tofu init -backend-config=backend.hcl
+
+      - name: tofu plan
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+          TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
+        run: tofu plan -out=darkmap.tfplan
+
+      - name: tofu apply
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+          TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
+        run: tofu apply -auto-approve darkmap.tfplan
+
+      - name: Upload applied plan + state-version reference
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-apply-${{ github.run_id }}
+          path: |
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/darkmap.tfplan
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/.terraform.lock.hcl
+          retention-days: 90
