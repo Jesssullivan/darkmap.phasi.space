@@ -54,3 +54,7 @@ bazel-site.scaffold/
 # Local dev artifacts
 .huskycat/
 .gstack/
+
+# Tofu local-override (operator-side rustfs port-forward, never commit)
+infra/tofu/backend.local.hcl
+infra/tofu/darkmap.tfplan

@@ -53,13 +53,39 @@ Or mint a fresh PAT with `read:packages` and create the secret via [`kubectl cre
 kubectl --context honey -n nix-cache port-forward svc/attic-rustfs-hl 9000:9000
 
 # shell B — your apply session:
+# Decrypt the rustfs creds from the blahaj SOPS vault and export them as
+# the standard S3 env-var pair the AWS SDK reads at startup. The keys
+# live under `default.rustfs_access_key` / `default.rustfs_secret_key`.
+sops -d /Users/jess/git/blahaj/secrets/opentofu-backend.enc.yaml
+# Then `export` the two S3 env vars manually (or pipe through yq/jq).
 export AWS_ENDPOINT_URL_S3=http://localhost:9000
-# also export the rustfs access key id + secret as the standard AWS S3
-# env vars (see `blahaj/secrets/opentofu-backend.enc.yaml` for the values
-# and the encrypted vault for the team passphrase)
 ```
 
-The rustfs credentials live in `blahaj/secrets/opentofu-backend.enc.yaml` — decrypt with the team key, then export both the AWS access key id and secret as the standard S3 env vars in shell B.
+Because `backend.hcl` hardcodes the in-cluster endpoint, you also need to override it for local invocations. Create a `backend.local.hcl` (gitignored) or pass `-backend-config="endpoint=http://localhost:9000"` to `tofu init`.
+
+### Known-working invocation (2026-05-17, verified)
+
+```bash
+cd infra/tofu
+# Create a transient local backend override (do NOT commit):
+cat > backend.local.hcl <<EOF
+bucket                      = "tofu-state"
+key                         = "darkmap-tinyland-dev/terraform.tfstate"
+region                      = "us-east-1"
+endpoint                    = "http://localhost:9000"
+use_path_style              = true
+skip_credentials_validation = true
+skip_region_validation      = true
+skip_metadata_api_check     = true
+skip_requesting_account_id  = true
+skip_s3_checksum            = true
+EOF
+nix develop ../.. -c tofu init -backend-config=backend.local.hcl
+nix develop ../.. -c tofu plan
+rm backend.local.hcl  # never commit this file
+```
+
+The state file lands at `s3://tofu-state/darkmap-tinyland-dev/terraform.tfstate`.
 
 ### 2b. Apply
 
