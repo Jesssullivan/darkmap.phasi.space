@@ -40,7 +40,16 @@ spec:
       containers:
         - name: app
           image: darkmap
-          imagePullPolicy: IfNotPresent
+          # The kustomize image transformer floats `:main` as the default
+          # tag. With IfNotPresent the kubelet keeps the previously-pulled
+          # layer even after a `kubectl rollout restart`, so SHA-bumps to
+          # the same tag don't reach the pod. `Always` re-checks the
+          # digest on each pod start. CI overrides the tag to the SHA at
+          # apply time, which would also fix this on the staging-deploy
+          # path — but rollouts initiated outside that path (e.g. when an
+          # operator runs `just kustomize-apply` after a manual
+          # `kubectl rollout restart`) need this safety net.
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 3000
