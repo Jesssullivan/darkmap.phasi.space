@@ -92,13 +92,33 @@ export const angularElevationDeg = (
 	return (Math.atan2(dh, distanceMeters) * 180) / Math.PI;
 };
 
+/**
+ * Round-and-stringify a polygon cache key. Locations within ~0.001°
+ * (≈110 m at the equator) share a cached polygon, which is fine since
+ * Terrarium z=12 tiles already cover ~9.5 km — the difference is
+ * imperceptible.
+ */
+const polygonCacheKey = (loc: LatLon, opts: HorizonOptions | undefined): string => {
+	const r = (n: number) => n.toFixed(3);
+	const rays = opts?.rays ?? DEFAULT_RAYS;
+	const eye = opts?.eyeHeightMeters ?? DEFAULT_EYE_M;
+	const dKey = opts?.distancesMeters ? opts.distancesMeters.join(',') : 'default';
+	return `${r(loc.lat)},${r(loc.lon)}|r=${rays}|e=${eye}|d=${dKey}`;
+};
+
 export const HorizonProviderLive = Layer.effect(
 	HorizonProvider,
 	Effect.gen(function* () {
 		const elev = yield* ElevationLookup;
+		// Module-private cache. One Map per Layer instantiation, which is
+		// per browser tab in practice — revisiting a location is instant.
+		const cache = new Map<string, HorizonPolygon>();
 		return HorizonProvider.of({
 			polygonAt: (loc, opts) =>
 				Effect.gen(function* () {
+					const key = polygonCacheKey(loc, opts);
+					const hit = cache.get(key);
+					if (hit) return hit;
 					const rays = opts?.rays ?? DEFAULT_RAYS;
 					const distances = opts?.distancesMeters ?? DEFAULT_DISTANCES;
 					const eyeAddedM = opts?.eyeHeightMeters ?? DEFAULT_EYE_M;
@@ -116,11 +136,38 @@ export const HorizonProviderLive = Layer.effect(
 						}
 						out.push({ azimuthDeg, altitudeDeg: maxAlt });
 					}
-					return out as HorizonPolygon;
+					const polygon = out as HorizonPolygon;
+					cache.set(key, polygon);
+					return polygon;
 				}),
 		});
 	}),
 );
+
+/**
+ * Chain multiple ElevationLookup implementations so the second is tried
+ * only when the first returns a HorizonError. Use this to add a
+ * Mapterhorn fallback behind TerrariumElevationLookupLive: if AWS S3
+ * has a regional outage, the chain transparently switches to the
+ * secondary source on a per-call basis.
+ *
+ * Failures from the *last* provider in the chain are propagated to
+ * the caller (the chain is exhausted at that point).
+ */
+export const chainElevationLookups = (
+	primary: Layer.Layer<ElevationLookup>,
+	fallback: Layer.Layer<ElevationLookup>,
+): Layer.Layer<ElevationLookup> =>
+	Layer.effect(
+		ElevationLookup,
+		Effect.gen(function* () {
+			const p = yield* Effect.provide(ElevationLookup, primary);
+			const f = yield* Effect.provide(ElevationLookup, fallback);
+			return {
+				metersAt: (loc) => p.metersAt(loc).pipe(Effect.catchAll(() => f.metersAt(loc))),
+			};
+		}),
+	);
 
 /**
  * Look up the horizon altitude at a specific azimuth via linear
