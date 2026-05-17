@@ -1,11 +1,22 @@
 """
 Root BUILD.bazel for darkmap.tinyland.dev.
 
-Minimal: just create the @npm//... node_modules tree. The SvelteKit
-static site is built by `pnpm run build` (vite build) — Bazel does not
-produce build/.
+Two things live here:
+  1. The @npm//... node_modules tree (consumed by every js_test target).
+  2. A bazel-driven vitest target wrapping the existing pnpm test surface.
+
+The SvelteKit static site is still built by `pnpm run build` (vite
+build) — Bazel does not produce build/. The bazel side is purely for
+cache-backed test execution per the MassageIthaca RBE pattern.
+
+Per the cache-attachment contract:
+  `bazel test //...` runs locally in compatibility mode.
+  `scripts/bazel-cache-backed.sh test //...` validates env vars and
+  attaches BAZEL_REMOTE_CACHE / BAZEL_REMOTE_EXECUTOR before invoking
+  bazel.
 """
 
+load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
@@ -15,6 +26,47 @@ exports_files(
         "package.json",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
+        "vitest.bazel.config.ts",
+        "vitest.config.ts",
     ],
     visibility = ["//visibility:public"],
+)
+
+# Sources fed to the test action. Glob is deliberately narrow so the
+# action input set stays stable + cache-keyable.
+filegroup(
+    name = "test_srcs",
+    srcs = glob(
+        [
+            "src/lib/**/*.ts",
+            "src/lib/**/*.test.ts",
+            "src/lib/projection/**",
+        ],
+        exclude = [
+            "src/lib/**/*.d.ts",
+        ],
+    ),
+)
+
+# Vitest run via the bazel entry point. Pattern mirrored from
+# MassageIthaca/BUILD.bazel:js_test "booking_operation_unit_tests".
+#
+#   copy_data_to_bin = False — keep paths stable so vitest's oxc
+#   tsconfig disable can resolve workspace-relative test paths.
+#   patch_node_fs = False — SvelteKit + bazel sandbox known issue
+#   (per MassageIthaca AGENTS.md): patched node fs breaks oxc's
+#   tsconfig auto-discovery on Linux CI.
+js_test(
+    name = "vitest",
+    entry_point = "scripts/run-vitest-bazel.mjs",
+    data = [
+        ":node_modules",
+        ":test_srcs",
+        "vitest.bazel.config.ts",
+        "package.json",
+    ],
+    copy_data_to_bin = False,
+    patch_node_fs = False,
+    tags = ["vitest"],
+    timeout = "moderate",
 )

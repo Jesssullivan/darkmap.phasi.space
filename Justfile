@@ -141,6 +141,21 @@ analyze:
 bazel-graph:
     cd {{ root }} && bazelisk mod graph
 
+# Bazel-driven vitest — local sandbox, no cache attachment.
+# CI uses `just bazel-test-cached` which validates the
+# BAZEL_REMOTE_CACHE env via scripts/cache-attachment-contract.sh.
+bazel-test:
+    cd {{ root }} && bazelisk test //...
+
+# Bazel-driven vitest through the cache-attachment wrapper.
+# Requires BAZEL_REMOTE_CACHE (+ optionally BAZEL_REMOTE_EXECUTOR) in env.
+bazel-test-cached:
+    cd {{ root }} && bash scripts/bazel-cache-backed.sh test //...
+
+# Cache-attachment contract probe — what mode would bazel run in?
+bazel-cache-contract:
+    cd {{ root }} && bash scripts/cache-attachment-contract.sh
+
 # ─────────────────────────────────────────────
 # Infra — OpenTofu (rustfs S3 state backend)
 # ─────────────────────────────────────────────

@@ -15,11 +15,33 @@ build --disk_cache=~/.cache/bazel-darkmap
 build --keep_going
 build --show_timestamps
 
-# Private GloriousFlywheel cache profile.
-# Opt in only from runners that can reach the in-cluster cache service.
-common:flywheel --remote_cache=grpc://bazel-cache.nix-cache.svc.cluster.local:9092
-common:flywheel --remote_upload_local_results=true
-common:flywheel --remote_local_fallback
+# Cache-attachment contract (mirrors MassageIthaca/scripts/cache-attachment-contract.sh).
+#
+# We do NOT hardcode a remote-cache endpoint here — endpoints are
+# operator-attached via BAZEL_REMOTE_CACHE / BAZEL_REMOTE_EXECUTOR env
+# vars, validated by scripts/cache-attachment-contract.sh, and passed
+# on the command line by scripts/bazel-cache-backed.sh.
+#
+#   compatibility-local-only:  no env vars → bazel runs in local sandbox
+#   shared-cache-backed:       BAZEL_REMOTE_CACHE only
+#   executor-backed:           BAZEL_REMOTE_CACHE + BAZEL_REMOTE_EXECUTOR
+common:ci-cached --remote_cache_async
+common:ci-cached --remote_upload_local_results=true
+common:ci-cached --remote_local_fallback
+common:ci-cached --remote_timeout=120
+common:ci-cached --remote_retries=3
+common:ci-cached --experimental_remote_cache_compression
+
+common:executor-backed --remote_cache_async
+common:executor-backed --remote_upload_local_results=true
+common:executor-backed --remote_local_fallback
+common:executor-backed --remote_timeout=300
+common:executor-backed --remote_retries=3
+common:executor-backed --experimental_remote_cache_compression
+
+# Local override knob — `--config=no-remote-cache` blanks the
+# wrapper-supplied endpoint for debugging.
+build:no-remote-cache --remote_cache=
 
 # rules_ts: skip lib check is required for SvelteKit-style declaration files.
 build --@aspect_rules_ts//ts:skipLibCheck=always
