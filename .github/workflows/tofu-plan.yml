@@ -86,7 +86,11 @@ jobs:
           PLAN_EXIT: ${{ steps.plan.outputs.plan_exit }}
           RUNNER_ENV: ${{ runner.environment }}
         run: |
-          PLAN_BODY=$(head -c 60000 /tmp/tofu-plan.txt)
+          if [ -s /tmp/tofu-plan.txt ]; then
+            PLAN_BODY=$(head -c 60000 /tmp/tofu-plan.txt)
+          else
+            PLAN_BODY="(no plan output — the init or plan step bailed before producing a diff; see workflow log)"
+          fi
           cat > /tmp/plan-comment.md <<COMMENT
           ### tofu plan for infra/tofu/
 
@@ -94,7 +98,7 @@ jobs:
           ${PLAN_BODY}
           \`\`\`
 
-          Exit: ${PLAN_EXIT} · Runner: ${RUNNER_ENV} · Backend: rustfs S3
+          Exit: ${PLAN_EXIT:-?} · Runner: ${RUNNER_ENV:-?} · Backend: rustfs S3
           <sub>Plan output truncated at 60k; full output in the workflow log.</sub>
           COMMENT
 
