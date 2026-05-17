@@ -2,7 +2,14 @@ import { Effect, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { sanitizeHeaders } from './AdStripper';
 import { RasterCache, RasterCacheLive } from './Cache';
-import { RasterClient, RasterError, makeRasterClientStub, type RasterQuery, type RasterResponse } from './RasterClient';
+import {
+	RasterClient,
+	RasterError,
+	makeRasterClientStub,
+	type RasterResponse,
+	type RasterTileRequest,
+} from './RasterClient';
+import { bboxParam, parseTileCoord, tileBBox3857 } from './TileMath';
 
 describe('sanitizeHeaders', () => {
 	it('strips Set-Cookie and ad headers', () => {
@@ -34,19 +41,55 @@ describe('sanitizeHeaders', () => {
 	});
 });
 
+describe('TileMath', () => {
+	it('z=0/x=0/y=0 is the whole world', () => {
+		const bb = tileBBox3857({ z: 0, x: 0, y: 0 });
+		expect(bb.minX).toBeCloseTo(-20037508.342789244, 5);
+		expect(bb.maxX).toBeCloseTo(20037508.342789244, 5);
+		expect(bb.minY).toBeCloseTo(-20037508.342789244, 5);
+		expect(bb.maxY).toBeCloseTo(20037508.342789244, 5);
+	});
+
+	it('z=1/x=0/y=0 is the NW quadrant', () => {
+		const bb = tileBBox3857({ z: 1, x: 0, y: 0 });
+		expect(bb.minX).toBeCloseTo(-20037508.342789244, 5);
+		expect(bb.maxX).toBeCloseTo(0, 5);
+		expect(bb.minY).toBeCloseTo(0, 5);
+		expect(bb.maxY).toBeCloseTo(20037508.342789244, 5);
+	});
+
+	it('bboxParam serializes minX,minY,maxX,maxY', () => {
+		expect(bboxParam({ minX: -1, minY: -2, maxX: 3, maxY: 4 })).toBe('-1,-2,3,4');
+	});
+
+	it('parseTileCoord rejects out-of-range', () => {
+		expect(() => parseTileCoord('1', '2', '0')).toThrow();
+		expect(() => parseTileCoord('foo', '0', '0')).toThrow();
+		expect(() => parseTileCoord('99', '0', '0')).toThrow();
+	});
+
+	it('parseTileCoord accepts valid coords', () => {
+		const t = parseTileCoord('8', '74', '96');
+		expect(t).toEqual({ z: 8, x: 74, y: 96 });
+	});
+});
+
 describe('RasterCache', () => {
 	const sample: RasterResponse = {
 		contentType: 'image/png',
 		body: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
 	};
-	const q: RasterQuery = { layer: 'viirs_2021', qt: 'tile', qd: '1,2,3' };
+	const req: RasterTileRequest = {
+		upstreamLayer: 'PostGIS:VIIRS_2019',
+		tile: { z: 8, x: 74, y: 96 },
+	};
 
 	it('returns None before set and Some after', async () => {
 		const program = Effect.gen(function* () {
 			const cache = yield* RasterCache;
-			const before = yield* cache.get(q);
-			yield* cache.set(q, sample);
-			const after = yield* cache.get(q);
+			const before = yield* cache.get(req);
+			yield* cache.set(req, sample);
+			const after = yield* cache.get(req);
 			return { before, after };
 		}).pipe(Effect.provide(RasterCacheLive));
 		const { before, after } = await Effect.runPromise(program);
@@ -55,13 +98,13 @@ describe('RasterCache', () => {
 		if (Option.isSome(after)) expect(after.value.contentType).toBe('image/png');
 	});
 
-	it('keys distinctly by (layer, qt, qd)', async () => {
-		const q2: RasterQuery = { ...q, qd: '9,9,9' };
+	it('keys distinctly by upstreamLayer and tile', async () => {
+		const other: RasterTileRequest = { ...req, tile: { z: 8, x: 75, y: 96 } };
 		const program = Effect.gen(function* () {
 			const cache = yield* RasterCache;
-			yield* cache.set(q, sample);
-			const a = yield* cache.get(q);
-			const b = yield* cache.get(q2);
+			yield* cache.set(req, sample);
+			const a = yield* cache.get(req);
+			const b = yield* cache.get(other);
 			return { a, b };
 		}).pipe(Effect.provide(RasterCacheLive));
 		const { a, b } = await Effect.runPromise(program);
@@ -71,7 +114,12 @@ describe('RasterCache', () => {
 });
 
 describe('RasterClient stub layer', () => {
-	it('delegates query to caller-supplied function', async () => {
+	const req: RasterTileRequest = {
+		upstreamLayer: 'PostGIS:VIIRS_2019',
+		tile: { z: 8, x: 74, y: 96 },
+	};
+
+	it('delegates getTile to caller-supplied function', async () => {
 		const sample: RasterResponse = {
 			contentType: 'image/png',
 			body: new Uint8Array([1, 2, 3]),
@@ -79,7 +127,7 @@ describe('RasterClient stub layer', () => {
 		const layer = makeRasterClientStub(() => Effect.succeed(sample));
 		const program = Effect.gen(function* () {
 			const client = yield* RasterClient;
-			return yield* client.query({ layer: 'viirs_2017', qt: 'tile', qd: '0,0,0' });
+			return yield* client.getTile(req);
 		}).pipe(Effect.provide(layer));
 		const result = await Effect.runPromise(program);
 		expect(result.contentType).toBe('image/png');
@@ -92,7 +140,7 @@ describe('RasterClient stub layer', () => {
 		);
 		const program = Effect.gen(function* () {
 			const client = yield* RasterClient;
-			return yield* client.query({ layer: 'viirs_2017', qt: 'tile', qd: '0,0,0' });
+			return yield* client.getTile(req);
 		}).pipe(Effect.provide(layer));
 		const exit = await Effect.runPromiseExit(program);
 		expect(exit._tag).toBe('Failure');
