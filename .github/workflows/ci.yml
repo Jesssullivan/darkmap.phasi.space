@@ -34,39 +34,39 @@ jobs:
 
   build-and-test:
     name: build-and-test
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 30
+    env:
+      GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
     steps:
       - uses: actions/checkout@v6
 
-      - uses: cachix/install-nix-action@v31
+      - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
         with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Install workspace dependencies
-        run: nix develop --command just setup
-
-      - name: Lint, typecheck, and unit tests
-        run: nix develop --command just check
-
-      - name: Build static site
-        run: nix develop --command just build
+          attic-public-key: ${{ vars.ATTIC_PUBLIC_KEY || '' }}
+          command: |
+            nix develop --command just setup
+            nix develop --command just check
+            nix develop --command just build
+          push-cache: 'false'
 
   bazel-graph:
     name: bazel-graph
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 30
+    env:
+      GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
     steps:
       - uses: actions/checkout@v6
 
-      - uses: cachix/install-nix-action@v31
+      - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
         with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Resolve Bazel module graph
-        run: nix develop --command bazelisk mod graph
-
-      - name: Build npm link tree
-        run: nix develop --command bazelisk build //:node_modules
+          attic-public-key: ${{ vars.ATTIC_PUBLIC_KEY || '' }}
+          command: |
+            nix develop --command bazelisk mod graph
+            if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then
+              nix develop --command bazelisk build --config=flywheel //:node_modules
+            else
+              nix develop --command bazelisk build //:node_modules
+            fi
+          push-cache: 'false'

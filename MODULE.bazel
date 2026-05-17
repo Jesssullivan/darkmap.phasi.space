@@ -77,7 +77,10 @@ use_repo(npm, "npm")
 # targets. Bump in lockstep with the resolved version in pnpm-lock.yaml.
 # Churn risk: nightly may break daily — gate upgrades on `just check`.
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
-rules_ts_ext.deps(ts_version = "6.0.0-dev.20260416")
+rules_ts_ext.deps(
+    ts_integrity = "sha512-64CCow5rQc6+oBAPqLtvZ8f3iz4WVCLwMVkg6/kOfMQlGshVOMkBhCXn+MMP4SX4Xtnz48VpD98FkptirMEuEQ==",
+    ts_version = "6.0.0-dev.20260416",
+)
 use_repo(rules_ts_ext, "npm_typescript")
 
 # SWC for any future ts_project targets

@@ -31,10 +31,11 @@ permissions:
 jobs:
   apply:
     name: tofu apply (production)
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.TOFU_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     environment: production
     env:
       CHECKOUT_PATH: repo-${{ github.job }}
+      TF_DATA_DIR: /tmp/darkmap-tofu-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Reclaim stale runner workspace
         run: find "$GITHUB_WORKSPACE" -maxdepth 1 -mindepth 1 -type d -name 'repo-*' ! -name "$CHECKOUT_PATH" -exec rm -rf {} +
@@ -52,6 +53,23 @@ jobs:
         with:
           tofu_version: '1.11.6'
           tofu_wrapper: false
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
+        run: |
+          if [ -z "$KUBE_CONFIG_HONEY" ]; then
+            echo "::error::KUBE_CONFIG_HONEY secret is required for tofu apply"
+            exit 1
+          fi
+
+          kube_dir="$RUNNER_TEMP/darkmap-kube"
+          kubeconfig="$kube_dir/config"
+          mkdir -p "$kube_dir"
+          echo "$KUBE_CONFIG_HONEY" | base64 -d > "$kubeconfig"
+          chmod 600 "$kubeconfig"
+          echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
+          echo "TF_VAR_kubeconfig=$kubeconfig" >> "$GITHUB_ENV"
 
       - name: tofu init (rustfs backend)
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu

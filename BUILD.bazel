@@ -6,15 +6,37 @@ static site is built by `pnpm run build` (vite build) — Bazel does not
 produce build/.
 """
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
+
+js_library(
+    name = "package_json",
+    srcs = ["package.json"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "vitest_config",
+    srcs = ["vitest.config.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "vitest_bazel_config",
+    srcs = ["vitest.bazel.config.ts"],
+    visibility = ["//visibility:public"],
+)
 
 exports_files(
     [
         "package.json",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
+        "tsconfig.json",
+        "vitest.bazel.config.ts",
+        "vitest.config.ts",
     ],
     visibility = ["//visibility:public"],
 )
