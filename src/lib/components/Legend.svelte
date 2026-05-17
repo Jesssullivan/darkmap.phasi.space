@@ -61,28 +61,33 @@
 </div>
 
 <style>
+	/* Indent matches the layer-card body (.year-row, .opacity-row, .desc all
+	   sit at 1.5rem from the layer toggle's checkbox edge). Same left rail
+	   leaves ~1rem on the right of the rail for the gradient to breathe. */
 	.legend {
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.7rem;
-		padding-top: 0.5rem;
-		margin-left: 1.5rem;
+		margin: 0.6rem 0 0 1.5rem;
+		padding-right: 0.5rem;
 	}
 	.title {
-		margin: 0 0 0.35rem 0;
-		font-size: 0.7rem;
-		opacity: 0.55;
+		margin: 0 0 0.4rem 0;
+		font-size: 0.62rem;
+		opacity: 0.5;
 		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		letter-spacing: 0.08em;
 	}
 	.bar {
 		height: 0.55rem;
 		border-radius: 2px;
 		border: 1px solid rgba(255, 255, 255, 0.12);
 	}
+	/* The tick row gets a half-tick-width of inset on each side so the
+	   first/last labels don't clip against the rail wall. */
 	.ticks {
 		position: relative;
 		height: 1.1rem;
-		margin-top: 0.25rem;
+		margin-top: 0.3rem;
 	}
 	.tick {
 		position: absolute;
@@ -90,7 +95,7 @@
 		opacity: 0.7;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
-		font-size: 0.65rem;
+		font-size: 0.62rem;
 	}
 	.tick:first-child {
 		transform: translateX(0);

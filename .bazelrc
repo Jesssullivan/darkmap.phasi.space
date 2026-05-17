@@ -21,6 +21,35 @@ common:flywheel --remote_cache=grpc://bazel-cache.nix-cache.svc.cluster.local:90
 common:flywheel --remote_upload_local_results=true
 common:flywheel --remote_local_fallback
 
+# Cache-attachment-contract profiles (mirrors MassageIthaca pattern).
+#
+# These configs carry NO endpoint — `scripts/bazel-cache-backed.sh`
+# validates the BAZEL_REMOTE_CACHE / BAZEL_REMOTE_EXECUTOR env vars
+# via scripts/cache-attachment-contract.sh and appends
+# --remote_cache=$ENDPOINT on the command line.
+#
+# Use `--config=flywheel` (above) when the endpoint is the well-known
+# in-cluster grpc service AND the runner can reach it. Use
+# `--config=ci-cached` / `--config=executor-backed` (below) when the
+# endpoint is provided dynamically by the runner pool (e.g. a flywheel
+# scale-set that hands out a different cache URL per environment).
+common:ci-cached --remote_cache_async
+common:ci-cached --remote_upload_local_results=true
+common:ci-cached --remote_local_fallback
+common:ci-cached --remote_timeout=120
+common:ci-cached --remote_retries=3
+common:ci-cached --experimental_remote_cache_compression
+
+common:executor-backed --remote_cache_async
+common:executor-backed --remote_upload_local_results=true
+common:executor-backed --remote_local_fallback
+common:executor-backed --remote_timeout=300
+common:executor-backed --remote_retries=3
+common:executor-backed --experimental_remote_cache_compression
+
+# Debug knob — blank a wrapper-supplied endpoint.
+build:no-remote-cache --remote_cache=
+
 # rules_ts: skip lib check is required for SvelteKit-style declaration files.
 build --@aspect_rules_ts//ts:skipLibCheck=always
 build --spawn_strategy=sandboxed,worker,local
