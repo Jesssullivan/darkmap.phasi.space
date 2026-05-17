@@ -1,0 +1,114 @@
+# =============================================================================
+# GitHub Actions: tofu plan on PRs touching infra/tofu/**.
+#
+# Pattern mirrored from elders.tinyland.dev/.github/workflows/validate-tofu.yml
+# with two additions: (1) backend-init against rustfs via GH secrets, and
+# (2) sticky PR comment with the plan diff.
+#
+# Runner: GloriousFlywheel self-hosted (tailnet-joined) by default; the
+# `PRIMARY_LINUX_RUNNER_LABELS_JSON` org-level var lets the SRE swap pools
+# without touching this file.
+# =============================================================================
+
+name: Tofu plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/tofu-plan.yml'
+      - 'infra/tofu/**'
+      - 'Justfile'
+      - 'flake.nix'
+      - '.envrc'
+  workflow_dispatch:
+
+concurrency:
+  group: tofu-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan:
+    name: tofu plan
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    env:
+      CHECKOUT_PATH: repo-${{ github.job }}
+    steps:
+      - name: Reclaim stale runner workspace
+        run: find "$GITHUB_WORKSPACE" -maxdepth 1 -mindepth 1 -type d -name 'repo-*' ! -name "$CHECKOUT_PATH" -exec rm -rf {} +
+
+      - uses: actions/checkout@v6
+        with:
+          path: ${{ env.CHECKOUT_PATH }}
+
+      - name: Configure GloriousFlywheel cache hints
+        env:
+          GF_ACTION_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash "$CHECKOUT_PATH/scripts/setup-flywheel.sh"
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: '1.11.6'
+          tofu_wrapper: false
+
+      - name: tofu fmt check
+        working-directory: ${{ env.CHECKOUT_PATH }}
+        run: tofu fmt -check -recursive infra/tofu
+
+      - name: tofu init (rustfs backend)
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+        run: tofu init -backend-config=backend.hcl -lockfile=readonly
+
+      - name: tofu plan
+        id: plan
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+          TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
+        run: |
+          set +e
+          tofu plan -no-color -out=darkmap.tfplan 2>&1 | tee /tmp/tofu-plan.txt
+          plan_exit=${PIPESTATUS[0]}
+          echo "plan_exit=$plan_exit" >> "$GITHUB_OUTPUT"
+          exit "$plan_exit"
+
+      - name: Compose PR comment body
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PLAN_EXIT: ${{ steps.plan.outputs.plan_exit }}
+          RUNNER_ENV: ${{ runner.environment }}
+        run: |
+          PLAN_BODY=$(head -c 60000 /tmp/tofu-plan.txt)
+          cat > /tmp/plan-comment.md <<COMMENT
+          ### tofu plan for infra/tofu/
+
+          \`\`\`diff
+          ${PLAN_BODY}
+          \`\`\`
+
+          Exit: ${PLAN_EXIT} · Runner: ${RUNNER_ENV} · Backend: rustfs S3
+          <sub>Plan output truncated at 60k; full output in the workflow log.</sub>
+          COMMENT
+
+      - name: Post plan as sticky PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: tofu-plan
+          path: /tmp/plan-comment.md
+
+      - name: Upload plan artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-plan
+          path: ${{ env.CHECKOUT_PATH }}/infra/tofu/darkmap.tfplan
+          retention-days: 14
