@@ -143,4 +143,49 @@ describe('decodeHash', () => {
 	it('ignores malformed et segments', () => {
 		expect(decodeHash('#et=nonsense').time).toBeUndefined();
 	});
+
+	it('encodes &t=YYYY-MM for the active VIIRS monthly composite', () => {
+		expect(encodeHash({ monthlyMonth: { year: 2024, month: 7 } })).toBe('#t=2024-07');
+	});
+
+	it('zero-pads single-digit months in t=', () => {
+		expect(encodeHash({ monthlyMonth: { year: 2012, month: 4 } })).toBe('#t=2012-04');
+	});
+
+	it('decodes &t=YYYY-MM back into MonthlyMonth', () => {
+		expect(decodeHash('#t=2020-07').monthlyMonth).toEqual({ year: 2020, month: 7 });
+		expect(decodeHash('#t=2012-04').monthlyMonth).toEqual({ year: 2012, month: 4 });
+	});
+
+	it('rejects malformed t= values (out-of-range month, no dash, etc.)', () => {
+		expect(decodeHash('#t=2024-13').monthlyMonth).toBeUndefined();
+		expect(decodeHash('#t=2024-00').monthlyMonth).toBeUndefined();
+		expect(decodeHash('#t=2024').monthlyMonth).toBeUndefined();
+		expect(decodeHash('#t=garbage').monthlyMonth).toBeUndefined();
+	});
+
+	it('encodes &p=1 only when autoplay is true', () => {
+		expect(encodeHash({ monthlyAutoplay: true })).toBe('#p=1');
+		expect(encodeHash({ monthlyAutoplay: false })).toBe('');
+		expect(encodeHash({})).toBe('');
+	});
+
+	it('decodes &p=1 only when value is exactly 1', () => {
+		expect(decodeHash('#p=1').monthlyAutoplay).toBe(true);
+		expect(decodeHash('#p=0').monthlyAutoplay).toBeUndefined();
+		expect(decodeHash('#p=true').monthlyAutoplay).toBeUndefined();
+		expect(decodeHash('').monthlyAutoplay).toBeUndefined();
+	});
+
+	it('round-trips a full hash with view + month + autoplay', () => {
+		const original = {
+			view: { lat: 42.4434, lon: -76.5019, zoom: 9 },
+			monthlyMonth: { year: 2020, month: 7 },
+			monthlyAutoplay: true,
+		};
+		const back = decodeHash(encodeHash(original));
+		expect(back.view).toEqual(original.view);
+		expect(back.monthlyMonth).toEqual(original.monthlyMonth);
+		expect(back.monthlyAutoplay).toBe(true);
+	});
 });
