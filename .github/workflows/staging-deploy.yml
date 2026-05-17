@@ -35,7 +35,7 @@ concurrency:
 jobs:
   deploy:
     name: kubectl apply -k
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     if: github.event_name == 'workflow_dispatch' || vars.STAGING_DEPLOY_ENABLED == 'true'
     permissions:
