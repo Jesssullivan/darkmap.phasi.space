@@ -66,6 +66,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
           TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: tofu plan -out=darkmap.tfplan
 
       - name: tofu apply
@@ -74,6 +75,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
           TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: tofu apply -auto-approve darkmap.tfplan
 
       - name: Upload applied plan + state-version reference
