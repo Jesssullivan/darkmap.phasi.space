@@ -1,0 +1,8 @@
+title = "darkmap.tinyland.dev"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "No repository-specific allowlist entries yet."
+paths = ["^$"]

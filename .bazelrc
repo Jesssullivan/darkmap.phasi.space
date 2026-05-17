@@ -1,0 +1,42 @@
+# darkmap.tinyland.dev Bazel Configuration
+#
+# Bazel 8 + Bzlmod. Mirrors elders.tinyland.dev's two-registry chain:
+# tinyland-inc/bazel-registry first, then BCR. Site build remains
+# `pnpm run build`; Bazel exists for module-graph integrity proofs.
+
+common --enable_bzlmod
+common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main/
+common --registry=https://bcr.bazel.build
+
+# Build performance
+build --jobs=auto
+build --worker_sandboxing
+build --disk_cache=~/.cache/bazel-darkmap
+build --keep_going
+build --show_timestamps
+
+# Private GloriousFlywheel cache profile.
+# Opt in only from runners that can reach the in-cluster cache service.
+common:flywheel --remote_cache=grpc://bazel-cache.nix-cache.svc.cluster.local:9092
+common:flywheel --remote_upload_local_results=true
+common:flywheel --remote_local_fallback
+
+# rules_ts: skip lib check is required for SvelteKit-style declaration files.
+build --@aspect_rules_ts//ts:skipLibCheck=always
+build --spawn_strategy=sandboxed,worker,local
+
+# CI: hosted runners, no remote cache.
+build:ci --remote_retries=3
+build:ci --jobs=auto
+build:ci --color=no
+build:ci --curses=no
+build:ci --show_progress_rate_limit=30
+build:ci --noshow_loading_progress
+
+# Test output
+test --test_output=errors
+test --test_summary=detailed
+test --test_verbose_timeout_warnings
+test --test_timeout=120,600,1800,3600
+
+try-import %workspace%/user.bazelrc

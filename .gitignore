@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.svelte-kit/
+build/
+dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Test artifacts
+test-results/
+playwright-report/
+coverage/
+.lighthouseci/
+bundle-report.json
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# direnv + Nix
+.direnv/
+result
+result-*
+
+# Bazel
+bazel-*
+bazel-bin/
+bazel-out/
+bazel-testlogs/
+bazel-site.scaffold/
+.cache/bazel-*
+
+# AI/LLM tooling (CLAUDE.md and AGENTS.md are tracked house contracts)
+.claude/
+.serena/
+.aider*
+# Local dev artifacts
+.huskycat/
