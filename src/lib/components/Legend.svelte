@@ -1,0 +1,101 @@
+<script lang="ts">
+	import type { ColorRamp } from '$lib/color-ramps';
+
+	interface Props {
+		ramp: ColorRamp;
+		title: string;
+	}
+
+	let { ramp, title }: Props = $props();
+
+	// Map each stop to a 0..1 position along the gradient axis. For log
+	// scales (WA_2015), use log10. The first stop maps to 0; the last to 1.
+	const positions = $derived.by(() => {
+		const xs = ramp.stops.map((s) => s.value);
+		if (ramp.logScale) {
+			// Substitute 0 with the next-smallest positive value's tenth so log10 stays finite.
+			const min = Math.min(...xs.filter((v) => v > 0));
+			const safe = xs.map((v) => (v <= 0 ? min / 10 : v));
+			const lo = Math.log10(safe[0]);
+			const hi = Math.log10(safe[safe.length - 1]);
+			return safe.map((v) => (Math.log10(v) - lo) / (hi - lo));
+		}
+		const lo = xs[0];
+		const hi = xs[xs.length - 1];
+		return xs.map((v) => (v - lo) / (hi - lo));
+	});
+
+	const gradient = $derived(
+		'linear-gradient(to right, ' +
+			ramp.stops.map((s, i) => `${s.color} ${(positions[i] * 100).toFixed(2)}%`).join(', ') +
+			')',
+	);
+
+	// Show ~5 tick labels (first, last, and 3 evenly-spaced in between).
+	const ticks = $derived.by(() => {
+		const n = ramp.stops.length;
+		if (n <= 5) return ramp.stops.map((s, i) => ({ ...s, pos: positions[i] }));
+		const indices = [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor((3 * n) / 4), n - 1];
+		return indices.map((i) => ({ ...ramp.stops[i], pos: positions[i] }));
+	});
+
+	const fmt = (v: number): string => {
+		if (v === 0) return '0';
+		if (Math.abs(v) >= 100) return v.toFixed(0);
+		if (Math.abs(v) >= 10) return v.toFixed(1);
+		if (Math.abs(v) >= 1) return v.toFixed(2);
+		return v.toFixed(3);
+	};
+</script>
+
+<div class="legend" role="img" aria-label="{title} color ramp">
+	<p class="title">{title}</p>
+	<div class="bar" style="background: {gradient};"></div>
+	<div class="ticks">
+		{#each ticks as t (t.value)}
+			<span class="tick" style="left: {(t.pos * 100).toFixed(2)}%;">
+				{fmt(t.value)}{ramp.unit}
+			</span>
+		{/each}
+	</div>
+</div>
+
+<style>
+	.legend {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.7rem;
+		padding-top: 0.5rem;
+		margin-left: 1.5rem;
+	}
+	.title {
+		margin: 0 0 0.35rem 0;
+		font-size: 0.7rem;
+		opacity: 0.55;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	.bar {
+		height: 0.55rem;
+		border-radius: 2px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+	}
+	.ticks {
+		position: relative;
+		height: 1.1rem;
+		margin-top: 0.25rem;
+	}
+	.tick {
+		position: absolute;
+		transform: translateX(-50%);
+		opacity: 0.7;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+		font-size: 0.65rem;
+	}
+	.tick:first-child {
+		transform: translateX(0);
+	}
+	.tick:last-child {
+		transform: translateX(-100%);
+	}
+</style>

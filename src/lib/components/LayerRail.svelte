@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
+	import Legend from './Legend.svelte';
 
 	export interface LayerState {
 		on: boolean;
@@ -115,6 +117,9 @@
 				<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
 			</div>
 			<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019.</p>
+			{#if viirsOn}
+				<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
+			{/if}
 		</li>
 
 		<!-- Non-VIIRS layers: one toggle + opacity slider each. -->
@@ -143,6 +148,15 @@
 					<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
 				</div>
 				<p class="desc">{layer.description}</p>
+				{#if ls.on}
+					{@const ramp = rampFor(layer.upstreamLayer)}
+					{#if ramp}
+						<Legend
+							{ramp}
+							title={layer.label === 'World Atlas 2015 (raw)' ? 'Falchi radiance' : layer.label + ' scale'}
+						/>
+					{/if}
+				{/if}
 			</li>
 		{/each}
 	</ul>
