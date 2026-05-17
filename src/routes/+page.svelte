@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import LayerRail from '$lib/components/LayerRail.svelte';
+	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import { FALLBACK_CENTER, FALLBACK_ZOOM, LAYERS, rasterUrlTemplate, type RasterLayerDef } from '$lib/layers';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
-	const enabled: Record<string, boolean> = $state(Object.fromEntries(LAYERS.map((l) => [l.id, l.defaultEnabled])));
+	const layerState: Record<string, LayerState> = $state(
+		Object.fromEntries(LAYERS.map((l) => [l.id, { on: l.defaultEnabled, opacity: l.opacity }])),
+	);
 
 	const sourceIdFor = (l: RasterLayerDef) => `darkmap-${l.id}-src`;
 	const layerIdFor = (l: RasterLayerDef) => `darkmap-${l.id}-lyr`;
@@ -22,7 +24,7 @@
 			id: layerIdFor(l),
 			type: 'raster',
 			source: sourceIdFor(l),
-			paint: { 'raster-opacity': l.opacity },
+			paint: { 'raster-opacity': layerState[l.id]?.opacity ?? l.opacity },
 		});
 	}
 
@@ -31,12 +33,24 @@
 		if (map.getSource(sourceIdFor(l))) map.removeSource(sourceIdFor(l));
 	}
 
-	function onToggle(id: string, on: boolean): void {
-		enabled[id] = on;
+	function onChange(id: string, partial: Partial<LayerState>): void {
 		const layer = LAYERS.find((l) => l.id === id);
-		if (!layer || !mapInstance) return;
-		if (on) addLayerToMap(mapInstance, layer);
-		else removeLayerFromMap(mapInstance, layer);
+		if (!layer) return;
+		const prev = layerState[id] ?? { on: false, opacity: layer.opacity };
+		const next = { ...prev, ...partial };
+		layerState[id] = next;
+		if (!mapInstance) return;
+		// Toggle changes: add or remove the source+layer.
+		if (partial.on !== undefined && partial.on !== prev.on) {
+			if (next.on) addLayerToMap(mapInstance, layer);
+			else removeLayerFromMap(mapInstance, layer);
+		}
+		// Opacity changes: push directly to MapLibre without re-fetching tiles.
+		if (partial.opacity !== undefined && partial.opacity !== prev.opacity && next.on) {
+			if (mapInstance.getLayer(layerIdFor(layer))) {
+				mapInstance.setPaintProperty(layerIdFor(layer), 'raster-opacity', next.opacity);
+			}
+		}
 	}
 
 	function getInitialCenter(): Promise<[number, number]> {
@@ -83,7 +97,7 @@
 		mapInstance.on('load', () => {
 			if (!mapInstance) return;
 			for (const layer of LAYERS) {
-				if (enabled[layer.id]) addLayerToMap(mapInstance, layer);
+				if (layerState[layer.id]?.on) addLayerToMap(mapInstance, layer);
 			}
 		});
 	});
@@ -104,7 +118,7 @@
 </svelte:head>
 
 <div bind:this={mapEl} class="map" aria-label="Light pollution map"></div>
-<LayerRail layers={LAYERS} {enabled} ontoggle={onToggle} />
+<LayerRail layers={LAYERS} states={layerState} onchange={onChange} />
 
 <footer class="attribution">
 	Data © Jurij Stare,
