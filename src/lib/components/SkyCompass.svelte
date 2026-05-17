@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Effect } from 'effect';
+	import { Effect, Layer } from 'effect';
 	import { onDestroy } from 'svelte';
 	import type { BodyPosition, EphemerisReadout, LatLon, SkyPositions } from '$lib/ephemeris/EphemerisClient';
+	import type { HorizonPolygon } from '$lib/ephemeris/HorizonProvider';
 
 	interface Props {
 		location: LatLon;
@@ -12,28 +13,43 @@
 
 	let readout = $state<EphemerisReadout | null>(null);
 	let trajectory = $state<{ frac: number; sun: BodyPosition }[]>([]);
+	let horizon = $state<HorizonPolygon | null>(null);
+	let horizonError = $state(false);
 
 	type PositionFn = (loc: LatLon, t: Date) => Promise<SkyPositions>;
 	type AtFn = (loc: LatLon, t: Date) => Promise<EphemerisReadout>;
-	let clientPromise: Promise<{ positionAt: PositionFn; at: AtFn }> | null = null;
-	const loadClient = (): Promise<{ positionAt: PositionFn; at: AtFn }> => {
+	type HorizonFn = (loc: LatLon) => Promise<HorizonPolygon>;
+	let clientPromise: Promise<{ positionAt: PositionFn; at: AtFn; horizonAt: HorizonFn }> | null = null;
+	const loadClient = () => {
 		if (!clientPromise) {
 			clientPromise = (async () => {
-				const mod = await import('$lib/ephemeris/EphemerisClient');
+				const [ephem, hp, tel] = await Promise.all([
+					import('$lib/ephemeris/EphemerisClient'),
+					import('$lib/ephemeris/HorizonProvider'),
+					import('$lib/ephemeris/TerrariumElevationLookup'),
+				]);
+				const horizonLayer = hp.HorizonProviderLive.pipe(Layer.provide(tel.TerrariumElevationLookupLive));
 				return {
 					positionAt: (loc, t) =>
 						Effect.runPromise(
 							Effect.gen(function* () {
-								const c = yield* mod.EphemerisClient;
+								const c = yield* ephem.EphemerisClient;
 								return yield* c.positionAt(loc, t);
-							}).pipe(Effect.provide(mod.EphemerisClientLive)),
+							}).pipe(Effect.provide(ephem.EphemerisClientLive)),
 						),
 					at: (loc, t) =>
 						Effect.runPromise(
 							Effect.gen(function* () {
-								const c = yield* mod.EphemerisClient;
+								const c = yield* ephem.EphemerisClient;
 								return yield* c.at(loc, t);
-							}).pipe(Effect.provide(mod.EphemerisClientLive)),
+							}).pipe(Effect.provide(ephem.EphemerisClientLive)),
+						),
+					horizonAt: (loc) =>
+						Effect.runPromise(
+							Effect.gen(function* () {
+								const h = yield* hp.HorizonProvider;
+								return yield* h.polygonAt(loc);
+							}).pipe(Effect.provide(horizonLayer)),
 						),
 				};
 			})();
@@ -72,6 +88,22 @@
 				samples.push({ frac: (ts - start.getTime()) / span, sun: p.sun });
 			}
 			trajectory = samples;
+
+			// Kick off the horizon polygon fetch in parallel with the trajectory
+			// finish — Terrarium tiles are slow on first visit so we don't block
+			// the dot rendering on them. On error, fall back to a flat horizon.
+			c.horizonAt(location)
+				.then((poly) => {
+					if (myGen !== cancelGen) return;
+					horizon = poly;
+					horizonError = false;
+				})
+				.catch((e) => {
+					if (myGen !== cancelGen) return;
+					horizon = null;
+					horizonError = true;
+					console.warn('SkyCompass: horizon polygon failed, falling back to flat', e);
+				});
 		})().catch((e) => {
 			if (myGen === cancelGen) console.warn('SkyCompass: failed to load', e);
 		});
@@ -128,6 +160,46 @@
 	const sunPos = $derived(cursor ? polarXY(cursor.sun.azimuthDeg, cursor.sun.altitudeDeg) : null);
 	const moonPos = $derived(cursor ? polarXY(cursor.moon.azimuthDeg, cursor.moon.altitudeDeg) : null);
 
+	// Horizon polygon as a closed SVG path. Each sample's (az, alt) maps
+	// into the dome via polarXY; we close back to the first point so the
+	// stroke draws a clean loop.
+	const horizonPath = $derived.by(() => {
+		if (!horizon || horizon.length < 3) return '';
+		const pts = horizon.map((s) => polarXY(s.azimuthDeg, Math.max(s.altitudeDeg, -2)));
+		return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + ' Z';
+	});
+
+	// Per-body horizon-relative altitude readout. When the body sits below
+	// the local terrain horizon at its azimuth, mark it explicitly.
+	const horizonAtAz = (azimuth: number): number | null => {
+		if (!horizon || horizon.length === 0) return null;
+		// Inline the wrap-and-interpolate from HorizonProvider.horizonAtAzimuth
+		// to keep this component self-contained on the dynamic-import boundary.
+		const az = ((azimuth % 360) + 360) % 360;
+		for (let i = 0; i < horizon.length; i++) {
+			const a = horizon[i];
+			const b = horizon[(i + 1) % horizon.length];
+			const aAz = a.azimuthDeg;
+			const bAz = b.azimuthDeg <= aAz ? b.azimuthDeg + 360 : b.azimuthDeg;
+			if (az >= aAz && az <= bAz) {
+				const t = (az - aAz) / Math.max(1e-9, bAz - aAz);
+				return a.altitudeDeg + t * (b.altitudeDeg - a.altitudeDeg);
+			}
+		}
+		return horizon[0].altitudeDeg;
+	};
+
+	const sunHorizonDelta = $derived.by(() => {
+		if (!cursor) return null;
+		const h = horizonAtAz(cursor.sun.azimuthDeg);
+		return h === null ? null : { horizonAlt: h, blocked: cursor.sun.altitudeDeg < h };
+	});
+	const moonHorizonDelta = $derived.by(() => {
+		if (!cursor) return null;
+		const h = horizonAtAz(cursor.moon.azimuthDeg);
+		return h === null ? null : { horizonAlt: h, blocked: cursor.moon.altitudeDeg < h };
+	});
+
 	// Cardinal tick positions on the rim (clockwise from N at top).
 	const TICKS = [
 		{ label: 'N', az: 0 },
@@ -161,6 +233,10 @@
 			{@const y = CY + (R + 8) * Math.sin(((t.az - 90) * Math.PI) / 180)}
 			<text {x} {y} text-anchor="middle" dominant-baseline="central" class="cardinal">{t.label}</text>
 		{/each}
+
+		{#if horizonPath}
+			<path d={horizonPath} fill="rgba(110, 78, 48, 0.35)" stroke="rgba(180, 130, 80, 0.75)" stroke-width="0.9" />
+		{/if}
 
 		{#if trajectoryPath}
 			<path
@@ -196,15 +272,28 @@
 			<span class="badge sun">☼</span>
 			<span>alt {fmtAlt(cursor?.sun.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.sun.azimuthDeg)}</span>
+			{#if sunHorizonDelta?.blocked}
+				<span class="blocked">behind terrain {fmtAlt(sunHorizonDelta.horizonAlt)}</span>
+			{:else if sunHorizonDelta}
+				<span class="horizon">h {fmtAlt(sunHorizonDelta.horizonAlt)}</span>
+			{/if}
 		</div>
 		<div class="row">
 			<span class="badge moon">☾</span>
 			<span>alt {fmtAlt(cursor?.moon.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.moon.azimuthDeg)}</span>
+			{#if moonHorizonDelta?.blocked}
+				<span class="blocked">behind terrain {fmtAlt(moonHorizonDelta.horizonAlt)}</span>
+			{:else if moonHorizonDelta}
+				<span class="horizon">h {fmtAlt(moonHorizonDelta.horizonAlt)}</span>
+			{/if}
 			{#if readout}
 				<span class="phase">{readout.moon.phaseName}</span>
 			{/if}
 		</div>
+		{#if horizonError}
+			<div class="row note">terrain horizon unavailable — flat horizon assumed</div>
+		{/if}
 	</div>
 </div>
 
@@ -262,5 +351,15 @@
 	.phase {
 		margin-left: auto;
 		opacity: 0.6;
+	}
+	.horizon {
+		opacity: 0.55;
+	}
+	.blocked {
+		color: rgba(255, 120, 120, 0.85);
+	}
+	.note {
+		opacity: 0.55;
+		font-style: italic;
 	}
 </style>
