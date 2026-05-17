@@ -107,7 +107,7 @@ jobs:
         run: nix develop --command just check
 
       - name: Open projection refresh PR
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: automation/tinyland-pulse-ingest
           delete-branch: true
