@@ -2,13 +2,85 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
-	import { FALLBACK_CENTER, FALLBACK_ZOOM, LAYERS, rasterUrlTemplate, type RasterLayerDef } from '$lib/layers';
+	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
+	import {
+		FALLBACK_CENTER,
+		FALLBACK_ZOOM,
+		LAYERS,
+		rasterUrlTemplate,
+		VIIRS_YEARS,
+		type RasterLayerDef,
+	} from '$lib/layers';
+	import { decodeHash, encodeHash } from '$lib/url-hash';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
-	const layerState: Record<string, LayerState> = $state(
-		Object.fromEntries(LAYERS.map((l) => [l.id, { on: l.defaultEnabled, opacity: l.opacity }])),
-	);
+
+	// Initial state honors the URL hash if present, otherwise the manifest
+	// defaults. `decodeHash` runs at module load so SSR sees the default
+	// state; the browser refines it inside onMount.
+	const initialState = (): Record<string, LayerState> => {
+		const defaults: Record<string, LayerState> = Object.fromEntries(
+			LAYERS.map((l) => [l.id, { on: l.defaultEnabled, opacity: l.opacity }]),
+		);
+		if (!browser) return defaults;
+		const parsed = decodeHash(window.location.hash);
+		if (!parsed.layers) return defaults;
+		// Hash overrides: any layer listed in the hash is on; others are off.
+		for (const l of LAYERS) {
+			const op = parsed.layers.get(l.id);
+			defaults[l.id] = op === undefined ? { on: false, opacity: l.opacity } : { on: true, opacity: op };
+		}
+		return defaults;
+	};
+	const layerState: Record<string, LayerState> = $state(initialState());
+
+	// Point-query readout state.
+	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
+	let readout: Readout | undefined = $state();
+
+	async function queryAt(lat: number, lon: number): Promise<void> {
+		// Use the currently-active VIIRS year if any, else the newest.
+		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
+		readout = { lat, lon, loading: true };
+		try {
+			const params = new URLSearchParams({
+				layer: activeViirs,
+				lat: String(lat),
+				lon: String(lon),
+			});
+			const res = await fetch(`/api/featureinfo?${params}`);
+			if (!res.ok) {
+				readout = { lat, lon, loading: false, error: `${res.status} ${res.statusText}` };
+				return;
+			}
+			const data = (await res.json()) as ReadoutData;
+			readout = { lat, lon, loading: false, data };
+		} catch (e) {
+			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };
+		}
+	}
+
+	let hashWriteTimer: ReturnType<typeof setTimeout> | undefined;
+	function scheduleHashWrite(): void {
+		if (!browser || !mapInstance) return;
+		clearTimeout(hashWriteTimer);
+		hashWriteTimer = setTimeout(() => {
+			if (!mapInstance) return;
+			const c = mapInstance.getCenter();
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local, not stored in state
+			const layersMap = new Map<string, number>();
+			for (const l of LAYERS) {
+				const s = layerState[l.id];
+				if (s?.on) layersMap.set(l.id, s.opacity);
+			}
+			const hash = encodeHash({
+				view: { lat: c.lat, lon: c.lng, zoom: mapInstance.getZoom() },
+				layers: layersMap,
+			});
+			history.replaceState(null, '', hash || window.location.pathname);
+		}, 250);
+	}
 
 	const sourceIdFor = (l: RasterLayerDef) => `darkmap-${l.id}-src`;
 	const layerIdFor = (l: RasterLayerDef) => `darkmap-${l.id}-lyr`;
@@ -51,16 +123,25 @@
 				mapInstance.setPaintProperty(layerIdFor(layer), 'raster-opacity', next.opacity);
 			}
 		}
+		scheduleHashWrite();
 	}
 
-	function getInitialCenter(): Promise<[number, number]> {
-		if (!browser || !('geolocation' in navigator)) {
-			return Promise.resolve([...FALLBACK_CENTER] as [number, number]);
+	function getInitialView(): Promise<{ center: [number, number]; zoom: number }> {
+		const fallback = { center: [...FALLBACK_CENTER] as [number, number], zoom: FALLBACK_ZOOM };
+		if (!browser) return Promise.resolve(fallback);
+		// Hash wins over geolocation when present — shareable view URLs are explicit.
+		const parsed = decodeHash(window.location.hash);
+		if (parsed.view) {
+			return Promise.resolve({
+				center: [parsed.view.lon, parsed.view.lat],
+				zoom: parsed.view.zoom,
+			});
 		}
+		if (!('geolocation' in navigator)) return Promise.resolve(fallback);
 		return new Promise((resolve) => {
 			navigator.geolocation.getCurrentPosition(
-				(pos) => resolve([pos.coords.longitude, pos.coords.latitude]),
-				() => resolve([...FALLBACK_CENTER] as [number, number]),
+				(pos) => resolve({ center: [pos.coords.longitude, pos.coords.latitude], zoom: FALLBACK_ZOOM }),
+				() => resolve(fallback),
 				{ timeout: 4000, maximumAge: 60_000 },
 			);
 		});
@@ -69,7 +150,7 @@
 	onMount(async () => {
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
-		const center = await getInitialCenter();
+		const { center, zoom } = await getInitialView();
 		mapInstance = new maplibre.Map({
 			container: mapEl,
 			style: {
@@ -89,7 +170,7 @@
 				layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
 			},
 			center,
-			zoom: FALLBACK_ZOOM,
+			zoom,
 			attributionControl: false,
 		});
 		mapInstance.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
@@ -100,9 +181,19 @@
 				if (layerState[layer.id]?.on) addLayerToMap(mapInstance, layer);
 			}
 		});
+
+		// Persist view state in the hash on every pan/zoom (debounced).
+		mapInstance.on('moveend', scheduleHashWrite);
+		mapInstance.on('zoomend', scheduleHashWrite);
+
+		// Point readout: click anywhere on the map.
+		mapInstance.on('click', (ev) => {
+			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
+		});
 	});
 
 	onDestroy(() => {
+		clearTimeout(hashWriteTimer);
 		mapInstance?.remove();
 		mapInstance = undefined;
 	});
@@ -119,6 +210,17 @@
 
 <div bind:this={mapEl} class="map" aria-label="Light pollution map"></div>
 <LayerRail layers={LAYERS} states={layerState} onchange={onChange} />
+
+{#if readout}
+	<PointReadout
+		lat={readout.lat}
+		lon={readout.lon}
+		data={readout.data}
+		loading={readout.loading}
+		error={readout.error}
+		onclose={() => (readout = undefined)}
+	/>
+{/if}
 
 <footer class="attribution">
 	Data © Jurij Stare,
