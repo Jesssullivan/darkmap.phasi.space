@@ -22,7 +22,10 @@
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
 
-	const nonViirs = $derived(layers.filter((l) => l.group !== 'viirs_annual'));
+	// VIIRS annual is rendered as a year picker below; VIIRS monthly is
+	// rendered by the TimeDock (TIN-1301 sub 6) — filter both out of the
+	// generic per-layer toggle list.
+	const nonViirs = $derived(layers.filter((l) => l.group !== 'viirs_annual' && l.group !== 'viirs_monthly'));
 
 	// Active VIIRS year (single-select within the group). Falls back to the
 	// newest year if nothing's on, or the first .on entry otherwise.
