@@ -4,13 +4,13 @@ metadata:
   name: darkmap
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-body-size: "4m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-body-size: '4m'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '60'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '60'
     # Defense-in-depth: even if a request bypasses the Tailscale
     # operator and reaches nginx, only tailnet (100.64.0.0/10) and
     # internal (10.0.0.0/8) sources are accepted.
-    nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10,10.0.0.0/8"
+    nginx.ingress.kubernetes.io/whitelist-source-range: '100.64.0.0/10,10.0.0.0/8'
 spec:
   ingressClassName: nginx
   tls:

@@ -30,7 +30,7 @@ spec:
                 matchExpressions:
                   - key: kubernetes.io/hostname
                     operator: In
-                    values: ["bumble", "sting"]
+                    values: ['bumble', 'sting']
       containers:
         - name: app
           image: darkmap
@@ -43,9 +43,9 @@ spec:
             - name: NODE_ENV
               value: production
             - name: HOST
-              value: "0.0.0.0"
+              value: '0.0.0.0'
             - name: PORT
-              value: "3000"
+              value: '3000'
             - name: QUERY_RASTER_KEY
               valueFrom:
                 secretKeyRef:
@@ -67,18 +67,18 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: "50m"
-              memory: "128Mi"
+              cpu: '50m'
+              memory: '128Mi'
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: '500m'
+              memory: '512Mi'
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 1000
             readOnlyRootFilesystem: true
             capabilities:
-              drop: ["ALL"]
+              drop: ['ALL']
       securityContext:
         seccompProfile:
           type: RuntimeDefault

@@ -1,0 +1,90 @@
+# =============================================================================
+# GitHub Actions: deploy darkmap.tinyland.dev to the blahaj honey cluster.
+#
+# This workflow is a no-op until the `KUBE_CONFIG_HONEY` secret is provisioned.
+# Once the secret is set (base64-encoded kubeconfig with `honey` context),
+# pushes to main automatically apply the kustomize overlay with the SHA-pinned
+# container image.
+#
+# Manual operator flow:
+#   1. Build/push image (Container workflow).
+#   2. From a tailnet-joined workstation:
+#        export TF_VAR_query_raster_key=<the-real-key>
+#        just tofu-init && just tofu-plan && just tofu-apply
+#        cd infra/kustomize/honey/darkmap
+#        kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${SHA}
+#        kustomize build . | kubectl apply -f -
+# =============================================================================
+
+name: Staging deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Container image tag to deploy (default: current SHA)'
+        required: false
+        default: ''
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: kubectl apply -k
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch' || vars.STAGING_DEPLOY_ENABLED == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install kubectl + kustomize
+        uses: yokawasa/action-setup-kube-tools@v0.11.2
+        with:
+          kubectl: '1.31.0'
+          kustomize: '5.4.3'
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
+        run: |
+          if [ -z "$KUBE_CONFIG_HONEY" ]; then
+            echo "::warning::KUBE_CONFIG_HONEY secret not set — skipping deploy"
+            exit 0
+          fi
+          mkdir -p ~/.kube
+          echo "$KUBE_CONFIG_HONEY" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config use-context honey
+
+      - name: Pin image to current SHA
+        working-directory: infra/kustomize/honey/darkmap
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.sha }}"; fi
+          kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${TAG}
+          kustomize build .
+
+      - name: Apply manifests
+        working-directory: infra/kustomize/honey/darkmap
+        env:
+          KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
+        run: |
+          if [ -z "$KUBE_CONFIG_HONEY" ]; then
+            echo "::warning::KUBE_CONFIG_HONEY secret not set — skipping apply"
+            exit 0
+          fi
+          kustomize build . | kubectl apply -f -
+
+      - name: Wait for rollout
+        env:
+          KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
+        run: |
+          if [ -z "$KUBE_CONFIG_HONEY" ]; then exit 0; fi
+          kubectl -n darkmap rollout status deployment/darkmap --timeout=180s
