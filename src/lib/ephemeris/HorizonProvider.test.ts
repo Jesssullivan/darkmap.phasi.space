@@ -239,11 +239,7 @@ describe('HorizonProvider — polygon cache', () => {
 			calls += 1;
 			return 0;
 		});
-		runPair(
-			layer,
-			{ loc: { lat: 42.12345, lon: -76.5 }, opts },
-			{ loc: { lat: 42.12349, lon: -76.5004 }, opts },
-		);
+		runPair(layer, { loc: { lat: 42.12345, lon: -76.5 }, opts }, { loc: { lat: 42.12349, lon: -76.5004 }, opts });
 		expect(calls).toBe(9);
 	});
 
