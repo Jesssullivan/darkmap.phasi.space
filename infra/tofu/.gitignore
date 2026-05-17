@@ -1,0 +1,13 @@
+.terraform/
+# .terraform.lock.hcl is committed (per Tofu convention) to pin provider versions
+*.tfstate
+*.tfstate.backup
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
