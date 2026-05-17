@@ -77,15 +77,24 @@ format:
 format-check:
     cd {{ root }} && pnpm run format:check
 
-# Run Vitest unit tests
+# Run unit tests through Bazel. Set GF_BAZEL_CONFIG=flywheel on
+# GloriousFlywheel runners to attach to the shared in-cluster Bazel cache.
 test-unit:
+    cd {{ root }} && if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then bazelisk test --config=flywheel //...; else bazelisk test //...; fi
+
+# Local Vitest fallback for workstations without cluster cache reachability
+test-local:
     cd {{ root }} && pnpm run test:unit
+
+# Local Bazel target validation without the in-cluster flywheel cache
+test-bazel-local:
+    cd {{ root }} && bazelisk test //src/lib/server/raster:raster_test
 
 # Run Playwright E2E tests
 test-e2e:
     cd {{ root }} && pnpm run test:e2e
 
-# Run all tests (unit + e2e)
+# Run all tests (Bazel unit + e2e)
 test: test-unit test-e2e
 
 # Run lint + typecheck + unit (pre-commit gate)

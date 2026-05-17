@@ -19,15 +19,31 @@ reviewed static snapshots from `tinyland.dev`.
 - **Shell**: `nix develop` (auto-loaded by `direnv`) — never assume host
   toolchain. CI runs `nix develop --command just <recipe>`.
 - **Build**: `just build` produces a static `build/` (adapter-static).
-- **Check**: `just check` runs sync + svelte-check.
+- **Check**: `just check` runs lint, typecheck, and Bazel unit tests.
 
 ## Bazel Posture
 
-- Bazel exists for **module-graph integrity proofs** and future RBE pipeline
+- Bazel exists for **module-graph integrity proofs** and cache-backed test
   acceleration. The canonical app build remains `pnpm run build`.
 - Registry order: `tinyland-inc/bazel-registry` first, then BCR.
-- RBE profile: `--config=flywheel` (only from runners with cluster reachability).
-- Smoke: `bazelisk mod graph` and `bazelisk build //:node_modules` run in CI.
+- Flywheel profile: `--config=flywheel` (only from runners with cluster
+  reachability). In this repo it is a shared remote-cache profile, not a
+  Bazel `--remote_executor` proof by itself.
+- CI Bazel runner routing uses `BAZEL_LINUX_RUNNER_LABELS_JSON` when set,
+  falling back to `PRIMARY_LINUX_RUNNER_LABELS_JSON` and then
+  `ubuntu-latest`. When the selected labels include a cache-reachable ARC label
+  (`glorious-flywheel`, `jesssullivan-nix`, or `tinyland-nix`), CI sets
+  `GF_BAZEL_CONFIG=flywheel`; otherwise hosted fallback runs the same Bazel
+  test target without the in-cluster cache profile.
+- Tofu plan/apply routing uses `TOFU_LINUX_RUNNER_LABELS_JSON` so RustFS-backed
+  state operations can stay on a cluster-DNS-capable runner even when generic
+  jobs use hosted runners.
+- Smoke: `bazelisk mod graph` and `bazelisk build //:node_modules` run in CI;
+  the npm link-tree build adds `--config=flywheel` only on GloriousFlywheel
+  runners.
+- Unit tests: `just test-unit` runs `bazelisk test //...`; with
+  `GF_BAZEL_CONFIG=flywheel` it runs `bazelisk --config=flywheel test //...`.
+  Use `just test-local` only as a direct Vitest fallback.
 
 ## Theme & Skeleton
 

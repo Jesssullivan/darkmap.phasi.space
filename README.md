@@ -17,7 +17,7 @@ custom raster overlay, public exposure, user SQM submissions write-path.
 
 - **Just** — sole authoritative DX/AX entrypoint (`Justfile`)
 - **Nix flake + direnv** — reproducible dev shell
-- **Bazel 8 + Bzlmod** — RBE-first via `tinyland-inc/bazel-registry`, GloriousFlywheel cache (`--config=flywheel`)
+- **Bazel 8 + Bzlmod** — `tinyland-inc/bazel-registry` first, with optional GloriousFlywheel cache attachment (`--config=flywheel`)
 - **SvelteKit + adapter-static** — static frontend
 - **Effect.ts** — service layer (`RasterClient`, `Cache`, `AdStripper` layers)
 - **MapLibre GL JS** — interactive map (EPSG:3857)
@@ -31,17 +31,31 @@ custom raster overlay, public exposure, user SQM submissions write-path.
 ```bash
 direnv allow
 just setup          # pnpm install --frozen-lockfile
-just check          # lint + typecheck + unit
+just check          # lint + typecheck + Bazel unit tests
 just build          # static SvelteKit build
 just dev            # local Vite dev server
 ```
 
-Bazel smoke (CI proves module graph integrity):
+Bazel smoke and unit tests:
 
 ```bash
-bazelisk mod graph                                  # local
-bazelisk --config=flywheel build //:node_modules    # in-cluster runner
+bazelisk mod graph                                               # local graph proof
+bazelisk test //src/lib/server/raster:raster_test                # local Bazel test
+GF_BAZEL_CONFIG=flywheel just test-unit                          # GloriousFlywheel runner
+bazelisk --config=flywheel build //:node_modules                 # in-cluster cache runner
 ```
+
+`--config=flywheel` uses the in-cluster GloriousFlywheel Bazel cache endpoint
+(`grpc://bazel-cache.nix-cache.svc.cluster.local:9092`). It is cache-backed
+Bazel execution, not proof that this repo is using a Bazel `--remote_executor`.
+The CI Bazel jobs use `BAZEL_LINUX_RUNNER_LABELS_JSON` when set, falling back to
+`PRIMARY_LINUX_RUNNER_LABELS_JSON` and then `ubuntu-latest`. CI sets
+`GF_BAZEL_CONFIG=flywheel` only when the selected runner labels include a
+cache-reachable ARC label (`glorious-flywheel`, `jesssullivan-nix`, or
+`tinyland-nix`); otherwise the same Bazel test target runs without the
+in-cluster cache profile. Tofu plan/apply uses `TOFU_LINUX_RUNNER_LABELS_JSON`
+so RustFS-backed state remains on a cluster-DNS-capable runner. Use
+`just test-local` for direct Vitest fallback.
 
 ## Planning
 
