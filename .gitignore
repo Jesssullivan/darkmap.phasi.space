@@ -39,12 +39,13 @@ Thumbs.db
 result
 result-*
 
-# Bazel
-bazel-*
-bazel-bin/
-bazel-out/
-bazel-testlogs/
-bazel-site.scaffold/
+# Bazel — only the root-level workspace symlinks bazel itself creates.
+# Anchored with leading / so scripts/bazel-*.sh wrappers stay tracked.
+/bazel-*
+/bazel-bin/
+/bazel-out/
+/bazel-testlogs/
+/bazel-site.scaffold/
 .cache/bazel-*
 
 # AI/LLM tooling (CLAUDE.md and AGENTS.md are tracked house contracts)

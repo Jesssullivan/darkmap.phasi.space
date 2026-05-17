@@ -150,6 +150,21 @@ analyze:
 bazel-graph:
     cd {{ root }} && bazelisk mod graph
 
+# Bazel-driven test through the cache-attachment wrapper. Validates
+# BAZEL_REMOTE_CACHE / BAZEL_REMOTE_EXECUTOR env first (rejects shell-
+# placeholder leaks + bad schemes), then attaches the endpoint only if
+# it's real. Used by GF pools that hand off endpoint env per scale-set.
+# See scripts/bazel-cache-backed.sh and the MassageIthaca-pattern
+# cache-attachment contract.
+bazel-test-cached *targets='//...':
+    cd {{ root }} && bash scripts/bazel-cache-backed.sh test {{ targets }}
+
+# Cache-attachment contract probe — what mode would bazel run in?
+# Prints `compatibility-local-only`, `shared-cache-backed`, or
+# `executor-backed` based on env vars (no bazel invocation).
+bazel-cache-contract:
+    cd {{ root }} && bash scripts/cache-attachment-contract.sh
+
 # ─────────────────────────────────────────────
 # Infra — OpenTofu (rustfs S3 state backend)
 # ─────────────────────────────────────────────
