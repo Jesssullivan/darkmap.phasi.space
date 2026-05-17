@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import {
@@ -34,6 +35,13 @@
 		return defaults;
 	};
 	const layerState: Record<string, LayerState> = $state(initialState());
+
+	const initialBasemap = (): string => {
+		if (!browser) return DEFAULT_BASEMAP_ID;
+		const parsed = decodeHash(window.location.hash);
+		return parsed.basemap && BASEMAPS.some((b) => b.id === parsed.basemap) ? parsed.basemap : DEFAULT_BASEMAP_ID;
+	};
+	let activeBasemap = $state(initialBasemap());
 
 	// Point-query readout state.
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
@@ -77,6 +85,7 @@
 			const hash = encodeHash({
 				view: { lat: c.lat, lon: c.lng, zoom: mapInstance.getZoom() },
 				layers: layersMap,
+				basemap: activeBasemap === DEFAULT_BASEMAP_ID ? undefined : activeBasemap,
 			});
 			history.replaceState(null, '', hash || window.location.pathname);
 		}, 250);
@@ -147,27 +156,51 @@
 		});
 	}
 
+	const BASEMAP_SOURCE_ID = 'darkmap-basemap-src';
+	const BASEMAP_LAYER_ID = 'darkmap-basemap-lyr';
+
+	function applyBasemap(map: import('maplibre-gl').Map, id: string): void {
+		const bm = basemapById(id);
+		if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
+		if (map.getSource(BASEMAP_SOURCE_ID)) map.removeSource(BASEMAP_SOURCE_ID);
+		map.addSource(BASEMAP_SOURCE_ID, {
+			type: 'raster',
+			tiles: [...bm.tiles],
+			tileSize: 256,
+			attribution: bm.attribution,
+			maxzoom: bm.maxZoom,
+		});
+		// Insert below any active raster overlays so they remain on top.
+		const firstOverlay = LAYERS.map((l) => layerIdFor(l)).find((id) => map.getLayer(id));
+		map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstOverlay);
+	}
+
+	function onBasemapChange(id: string): void {
+		if (id === activeBasemap || !BASEMAPS.some((b) => b.id === id)) return;
+		activeBasemap = id;
+		if (mapInstance) applyBasemap(mapInstance, id);
+		scheduleHashWrite();
+	}
+
 	onMount(async () => {
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
 		const { center, zoom } = await getInitialView();
+		const bm = basemapById(activeBasemap);
 		mapInstance = new maplibre.Map({
 			container: mapEl,
 			style: {
 				version: 8,
 				sources: {
-					osm: {
+					[BASEMAP_SOURCE_ID]: {
 						type: 'raster',
-						tiles: [
-							'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-							'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-							'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-						],
+						tiles: [...bm.tiles],
 						tileSize: 256,
-						attribution: '© OpenStreetMap',
+						attribution: bm.attribution,
+						maxzoom: bm.maxZoom,
 					},
 				},
-				layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+				layers: [{ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }],
 			},
 			center,
 			zoom,
@@ -209,7 +242,13 @@
 </svelte:head>
 
 <div bind:this={mapEl} class="map" aria-label="Light pollution map"></div>
-<LayerRail layers={LAYERS} states={layerState} onchange={onChange} />
+<LayerRail
+	layers={LAYERS}
+	states={layerState}
+	onchange={onChange}
+	basemap={activeBasemap}
+	onbasemapchange={onBasemapChange}
+/>
 
 {#if readout}
 	<PointReadout
