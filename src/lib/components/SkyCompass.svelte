@@ -88,6 +88,7 @@
 			cursor = p;
 		})().catch(() => undefined);
 		// re-run on time change only — location triggers the heavier effect above
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		time;
 	});
 
