@@ -20,11 +20,11 @@
 
 	const SITE_NAME = 'darkmap.tinyland.dev';
 	const SITE_URL = 'https://darkmap.tinyland.dev';
-	const SITE_TITLE = 'darkmap.tinyland.dev — Tinyland house static-site scaffold';
+	const SITE_TITLE = 'darkmap.tinyland.dev — ad-free light pollution map';
 	const SITE_DESCRIPTION =
-		'Tinyland house scaffold for static SvelteKit brand sites with Just, Nix, Bazel, Skeleton, and static projection discipline.';
-	const REPO_URL = 'https://github.com/tinyland-inc/darkmap.tinyland.dev';
-	const SECURITY_URL = 'https://github.com/tinyland-inc/darkmap.tinyland.dev/security/advisories/new';
+		'Ad-free reimplementation of lightpollutionmap.info. VIIRS DNB, Falchi 2016 World Atlas, SQM. Tailnet-only.';
+	const REPO_URL = 'https://github.com/Jesssullivan/darkmap.tinyland.dev';
+	const SECURITY_URL = 'https://github.com/Jesssullivan/darkmap.tinyland.dev/security/advisories/new';
 	const OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 	const jsonLd = {
