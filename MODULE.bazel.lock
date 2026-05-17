@@ -356,7 +356,7 @@
     "@@aspect_rules_js+//npm:extensions.bzl%pnpm": {
       "general": {
         "bzlTransitiveDigest": "8Fn1V6ojA2oD887lYsnqxAWs3gaYzxWM3Wxi0UmA5tI=",
-        "usagesDigest": "dOIoQcWUyxi/kGI2IBA6eRbQ9oYcdhs2u1b1fr10t7c=",
+        "usagesDigest": "hAo9mRH0a9Eu4aJ1qZlWr4ukd21VkGJquxt5GbpnN8I=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -510,7 +510,7 @@
     "@@aspect_rules_swc+//swc:extensions.bzl%swc": {
       "general": {
         "bzlTransitiveDigest": "Qx9HF9IyA7ELCK8heZlGHEirIa5eLZEuHK+vISNgjx8=",
-        "usagesDigest": "u1gq8Re+jYGHQQMGZuMmQ6iI1FQDN5nEAQzxI3cVOmM=",
+        "usagesDigest": "EYLP2NrHy8DhscwcUNoEF+ZH1O0A5tpF/88G123dlHk=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -622,7 +622,7 @@
     "@@aspect_rules_ts+//ts:extensions.bzl%ext": {
       "general": {
         "bzlTransitiveDigest": "kpFi+ae3stSvLHgS7Fiwn/tb3J3dDqMOi1EP3tJ/TKY=",
-        "usagesDigest": "cLz/Is+DVWkbRHo4pihYgd1rIsospm9M2eIuGS+z0As=",
+        "usagesDigest": "Mjgz9SFQZ1qvCJYc0/wXlayN57pXhHHxm5FnBsT9sQI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -630,7 +630,7 @@
           "npm_typescript": {
             "repoRuleId": "@@aspect_rules_ts+//ts/private:npm_repositories.bzl%http_archive_version",
             "attributes": {
-              "version": "5.9.3",
+              "version": "6.0.0-dev.20260416",
               "integrity": "",
               "urls": [
                 "https://registry.npmjs.org/typescript/-/typescript-{}.tgz"
@@ -870,7 +870,7 @@
     "@@rules_nodejs+//nodejs:extensions.bzl%node": {
       "general": {
         "bzlTransitiveDigest": "4pUxCNc22K4I+6+4Nxu52Hur12tFRfa1JMsN5mdDv60=",
-        "usagesDigest": "Zei3ppin1szFRB4r/OL7pf1/kWCUsTthvuv+E6Mxipo=",
+        "usagesDigest": "SlqDKU2215zLaLLZmrsLSmxnM8LoYjlBhxAq995sHWY=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},

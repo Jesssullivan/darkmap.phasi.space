@@ -3,11 +3,11 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"description": "Tinyland house scaffold for static SvelteKit brand sites (Skeleton 4 + Bazel + Nix + Just)",
-	"homepage": "https://github.com/tinyland-inc/darkmap.tinyland.dev",
+	"description": "Ad-free reverse-engineered reimplementation of lightpollutionmap.info (SvelteKit + Effect.ts + MapLibre on blahaj, tailnet-only)",
+	"homepage": "https://github.com/Jesssullivan/darkmap.tinyland.dev",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/tinyland-inc/darkmap.tinyland.dev.git"
+		"url": "https://github.com/Jesssullivan/darkmap.tinyland.dev.git"
 	},
 	"license": "MIT",
 	"packageManager": "pnpm@10.13.1",
@@ -29,11 +29,14 @@
 		"test:e2e": "playwright test"
 	},
 	"dependencies": {
+		"@effect/platform": "^0.96.0",
+		"@effect/platform-node": "^0.106.0",
 		"@fontsource/inter": "^5.2.8",
 		"@lucide/svelte": "^1.14.0",
 		"@tummycrypt/tinyland-color-utils": "0.2.3",
 		"@tummycrypt/tinyvectors": "0.3.0",
-		"effect": "^3.21.2"
+		"effect": "^3.21.2",
+		"maplibre-gl": "^5.5.0"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.59.1",
@@ -59,7 +62,7 @@
 		"svelte-check": "^4.4.8",
 		"tailwindcss": "^4.2.4",
 		"tsx": "^4.21.0",
-		"typescript": "5.9.3",
+		"typescript": "next",
 		"typescript-eslint": "^8.59.2",
 		"vite": "^8.0.11",
 		"vitest": "^4.1.4"
