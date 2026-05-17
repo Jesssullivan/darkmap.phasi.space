@@ -25,6 +25,8 @@ export interface HashState {
 	readonly view?: MapView;
 	/** Active (on) layers + their opacity. Layers absent here are off. */
 	readonly layers?: ReadonlyMap<string, number>;
+	/** Basemap id (`dark` | `osm` | `satellite`). */
+	readonly basemap?: string;
 }
 
 const round = (n: number, places: number): number => {
@@ -44,13 +46,16 @@ export function encodeHash(state: HashState): string {
 			.join(',');
 		parts.push(`l=${entries}`);
 	}
+	if (state.basemap) {
+		parts.push(`b=${encodeURIComponent(state.basemap)}`);
+	}
 	return parts.length === 0 ? '' : `#${parts.join('&')}`;
 }
 
 export function decodeHash(hash: string): HashState {
 	const trimmed = hash.startsWith('#') ? hash.slice(1) : hash;
 	if (!trimmed) return {};
-	const out: { view?: MapView; layers?: Map<string, number> } = {};
+	const out: { view?: MapView; layers?: Map<string, number>; basemap?: string } = {};
 	for (const segment of trimmed.split('&')) {
 		const eq = segment.indexOf('=');
 		if (eq < 0) continue;
@@ -80,6 +85,9 @@ export function decodeHash(hash: string): HashState {
 				if (id && Number.isFinite(op)) map.set(id, Math.min(1, Math.max(0, op)));
 			}
 			if (map.size > 0) out.layers = map;
+		} else if (key === 'b') {
+			const id = decodeURIComponent(value);
+			if (id) out.basemap = id;
 		}
 	}
 	return out;

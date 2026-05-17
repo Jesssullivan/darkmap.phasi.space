@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
 	import Legend from './Legend.svelte';
@@ -12,9 +13,11 @@
 		layers: ReadonlyArray<RasterLayerDef>;
 		states: Record<string, LayerState>;
 		onchange: (id: string, partial: Partial<LayerState>) => void;
+		basemap: string;
+		onbasemapchange: (id: string) => void;
 	}
 
-	let { layers, states, onchange }: Props = $props();
+	let { layers, states, onchange, basemap, onbasemapchange }: Props = $props();
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
@@ -77,6 +80,24 @@
 		<h2>Layers</h2>
 		<p>VIIRS · World Atlas · SQM</p>
 	</header>
+
+	<section class="basemap-section" aria-label="Basemap">
+		<p class="section-title">Basemap</p>
+		<div class="basemap-row" role="radiogroup" aria-label="Basemap">
+			{#each BASEMAPS as bm (bm.id)}
+				<button
+					type="button"
+					class="basemap-chip"
+					class:active={basemap === bm.id}
+					aria-pressed={basemap === bm.id}
+					title={bm.description}
+					onclick={() => onbasemapchange(bm.id)}
+				>
+					{bm.label}
+				</button>
+			{/each}
+		</div>
+	</section>
 
 	<ul>
 		<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
@@ -238,6 +259,49 @@
 		font-size: 0.7rem;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
+	}
+	.basemap-section {
+		margin-bottom: 1rem;
+		padding-bottom: 0.85rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.section-title {
+		margin: 0 0 0.4rem 0;
+		font-size: 0.7rem;
+		opacity: 0.55;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+	.basemap-row {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.25rem;
+	}
+	.basemap-chip {
+		font-family: inherit;
+		font-size: 0.72rem;
+		padding: 0.3rem 0;
+		background: rgba(255, 255, 255, 0.05);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 4px;
+		cursor: pointer;
+		transition:
+			background 0.12s,
+			border-color 0.12s;
+	}
+	.basemap-chip:hover:not(.active) {
+		background: rgba(255, 255, 255, 0.1);
+	}
+	.basemap-chip.active {
+		background: #ffd166;
+		color: #0a0e16;
+		border-color: #ffd166;
+		font-weight: 600;
+	}
+	.basemap-chip:focus-visible {
+		outline: 2px solid #ffd166;
+		outline-offset: 1px;
 	}
 	ul {
 		list-style: none;

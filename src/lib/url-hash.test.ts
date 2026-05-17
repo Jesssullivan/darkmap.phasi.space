@@ -107,4 +107,15 @@ describe('decodeHash', () => {
 		expect(decoded.view).toEqual(original.view);
 		expect([...(decoded.layers ?? [])]).toEqual([...original.layers]);
 	});
+
+	it('parses + round-trips the basemap segment', () => {
+		const out = decodeHash('#m=42.44,-76.5,9&l=viirs_2019:0.85&b=satellite');
+		expect(out.basemap).toBe('satellite');
+		const back = encodeHash(out);
+		expect(back).toContain('b=satellite');
+	});
+
+	it('omits basemap when undefined', () => {
+		expect(encodeHash({ view: { lat: 1, lon: 2, zoom: 3 } })).toBe('#m=1,2,3');
+	});
 });
