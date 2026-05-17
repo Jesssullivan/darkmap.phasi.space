@@ -1,0 +1,22 @@
+# Tailscale-operator-exposed sibling Service. Same selector as
+# `Service/darkmap`; the operator watches for the annotations and
+# provisions a tailnet proxy with MagicDNS hostname `darkmap`.
+#
+# Pattern lifted from blahaj/deploy/honey/retained-nix-cache-tailnet-services.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: darkmap-tailnet
+  annotations:
+    tailscale.com/expose: 'true'
+    tailscale.com/hostname: darkmap
+    tailscale.com/proxy-class: honey-sting-tailnet
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: darkmap
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
