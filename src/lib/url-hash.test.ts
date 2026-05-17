@@ -118,4 +118,29 @@ describe('decodeHash', () => {
 	it('omits basemap when undefined', () => {
 		expect(encodeHash({ view: { lat: 1, lon: 2, zoom: 3 } })).toBe('#m=1,2,3');
 	});
+
+	it('encodes the ephemeris-cursor time as minute-precision ISO UTC', () => {
+		const out = encodeHash({ time: new Date('2024-12-21T17:00:00Z') });
+		expect(out).toBe('#et=2024-12-21T17:00Z');
+	});
+
+	it('truncates sub-minute precision when encoding', () => {
+		const out = encodeHash({ time: new Date('2024-12-21T17:00:42.987Z') });
+		expect(out).toBe('#et=2024-12-21T17:00Z');
+	});
+
+	it('round-trips the time segment with minute precision', () => {
+		const t = new Date('2024-12-21T17:00:00Z');
+		const back = decodeHash(encodeHash({ time: t }));
+		expect(back.time?.getTime()).toBe(t.getTime());
+	});
+
+	it('accepts a full ISO-8601 instant on decode (hand-edited URLs)', () => {
+		const back = decodeHash('#et=2024-12-21T17:00:42.987Z');
+		expect(back.time?.toISOString()).toBe('2024-12-21T17:00:42.987Z');
+	});
+
+	it('ignores malformed et segments', () => {
+		expect(decodeHash('#et=nonsense').time).toBeUndefined();
+	});
 });
