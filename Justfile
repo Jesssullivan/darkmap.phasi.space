@@ -141,6 +141,36 @@ analyze:
 bazel-graph:
     cd {{ root }} && bazelisk mod graph
 
+# ─────────────────────────────────────────────
+# Infra — OpenTofu (rustfs S3 state backend)
+# ─────────────────────────────────────────────
+
+tofu_dir := root / "infra/tofu"
+
+# Initialize the Tofu working directory + remote state backend
+tofu-init:
+    cd {{ tofu_dir }} && tofu init -backend-config=backend.hcl
+
+# Re-initialize after backend changes
+tofu-init-reconfigure:
+    cd {{ tofu_dir }} && tofu init -backend-config=backend.hcl -reconfigure
+
+# Static validation — no network or state access required
+tofu-validate:
+    cd {{ tofu_dir }} && tofu fmt -check -recursive && tofu validate
+
+# Print the planned diff (non-empty on first run; clean after apply)
+tofu-plan:
+    cd {{ tofu_dir }} && tofu plan -out=darkmap.tfplan
+
+# Apply the previously-planned changes
+tofu-apply:
+    cd {{ tofu_dir }} && tofu apply darkmap.tfplan
+
+# Format Tofu sources
+tofu-fmt:
+    cd {{ tofu_dir }} && tofu fmt -recursive
+
 # Generate changelog (git-cliff)
 changelog:
     git-cliff --output CHANGELOG.md
@@ -160,7 +190,7 @@ install-hooks:
 # Show environment info
 info:
     @echo "Site:    darkmap.tinyland.dev"
-    @echo "Repo:    tinyland-inc/darkmap.tinyland.dev"
+    @echo "Repo:    Jesssullivan/darkmap.tinyland.dev"
     @echo "Node:    $(node --version 2>/dev/null || echo 'not available')"
     @echo "pnpm:    $(pnpm --version 2>/dev/null || echo 'not available')"
     @echo "Just:    $(just --version 2>/dev/null || echo 'not available')"
@@ -169,4 +199,4 @@ info:
 
 # View the GitHub repo (opens in browser)
 gh-repo:
-    gh repo view tinyland-inc/darkmap.tinyland.dev --web
+    gh repo view Jesssullivan/darkmap.tinyland.dev --web

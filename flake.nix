@@ -25,6 +25,9 @@
             gh
             bazelisk
             gitleaks
+            opentofu
+            kubectl
+            kustomize
           ];
 
           shellHook = ''
@@ -39,6 +42,8 @@
             echo "  bazel    $(bazelisk --version 2>&1 | head -n1)"
             echo "  gh       $(gh --version | head -n1)"
             echo "  gitleaks $(gitleaks version 2>&1 | head -n1)"
+            echo "  tofu     $(tofu --version 2>&1 | head -n1)"
+            echo "  kubectl  $(kubectl version --client 2>&1 | head -n1)"
           '';
         };
 
