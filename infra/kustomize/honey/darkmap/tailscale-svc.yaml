@@ -8,7 +8,7 @@ kind: Service
 metadata:
   name: darkmap-tailnet
   annotations:
-    tailscale.com/expose: "true"
+    tailscale.com/expose: 'true'
     tailscale.com/hostname: darkmap
     tailscale.com/proxy-class: honey-sting-tailnet
 spec:
