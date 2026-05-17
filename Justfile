@@ -171,6 +171,28 @@ tofu-apply:
 tofu-fmt:
     cd {{ tofu_dir }} && tofu fmt -recursive
 
+# ─────────────────────────────────────────────
+# Infra — Kustomize (blahaj / honey)
+# ─────────────────────────────────────────────
+
+kustomize_dir := root / "infra/kustomize/honey/darkmap"
+
+# Render the kustomize overlay to stdout
+kustomize-build:
+    kustomize build {{ kustomize_dir }}
+
+# Client-side static validation (no cluster connection required)
+kustomize-validate:
+    kustomize build {{ kustomize_dir }} | kubectl apply --dry-run=client -f -
+
+# Server-side dry-run (requires kubectl context with cluster access)
+kustomize-validate-server:
+    kustomize build {{ kustomize_dir }} | kubectl apply --dry-run=server -f -
+
+# Apply the manifests to the cluster
+kustomize-apply:
+    kustomize build {{ kustomize_dir }} | kubectl apply -f -
+
 # Generate changelog (git-cliff)
 changelog:
     git-cliff --output CHANGELOG.md
