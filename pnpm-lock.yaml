@@ -26,6 +26,9 @@ importers:
       '@tummycrypt/tinyvectors':
         specifier: 0.3.0
         version: 0.3.0(svelte@5.55.7(@typescript-eslint/types@8.59.3))
+      astronomy-engine:
+        specifier: ^2.1.19
+        version: 2.1.19
       effect:
         specifier: ^3.21.2
         version: 3.21.2
@@ -1427,6 +1430,9 @@ packages:
 
   ast-v8-to-istanbul@1.0.0:
     resolution: {integrity: sha512-1fSfIwuDICFA4LKkCzRPO7F0hzFf0B7+Xqrl27ynQaa+Rh0e1Es0v6kWHPott3lU10AyAr7oKHa65OppjLn3Rg==}
+
+  astronomy-engine@2.1.19:
+    resolution: {integrity: sha512-8yWKNf7UeNbH458h3sAJ6ZgAjE5jTXp/mNNRFoC20j2SHwZIjAQeEsBB2Q3uCFRaTCCJRv33K2XhkhZQMXoX6w==}
 
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
@@ -4095,6 +4101,8 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
       js-tokens: 10.0.0
+
+  astronomy-engine@2.1.19: {}
 
   axobject-query@4.1.0: {}
 

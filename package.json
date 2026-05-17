@@ -35,6 +35,7 @@
 		"@lucide/svelte": "^1.16.0",
 		"@tummycrypt/tinyland-color-utils": "0.2.3",
 		"@tummycrypt/tinyvectors": "0.3.0",
+		"astronomy-engine": "^2.1.19",
 		"effect": "^3.21.2",
 		"maplibre-gl": "^5.5.0"
 	},
