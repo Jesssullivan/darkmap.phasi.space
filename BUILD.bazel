@@ -1,0 +1,20 @@
+"""
+Root BUILD.bazel for darkmap.tinyland.dev.
+
+Minimal: just create the @npm//... node_modules tree. The SvelteKit
+static site is built by `pnpm run build` (vite build) — Bazel does not
+produce build/.
+"""
+
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+npm_link_all_packages(name = "node_modules")
+
+exports_files(
+    [
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)
