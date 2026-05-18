@@ -15,11 +15,14 @@ build --disk_cache=~/.cache/bazel-darkmap
 build --keep_going
 build --show_timestamps
 
-# Private GloriousFlywheel cache profile.
-# Opt in only from runners that can reach the in-cluster cache service.
-common:flywheel --remote_cache=grpc://bazel-cache.nix-cache.svc.cluster.local:9092
-common:flywheel --remote_upload_local_results=true
-common:flywheel --remote_local_fallback
+# Flywheel cache + REAPI binding vendored from
+# tinyland-inc/ci-templates/bazelrc/flywheel.bazelrc into .bazelrc.flywheel
+# at this repo's root. Defines:
+#   --config=flywheel           cache-only, safe from any cluster-reachable runner
+#   --config=flywheel-executor  cache + REAPI executor, proved target classes only
+# See docs/CI-SCHEMA.md §5 for the binding contract and proved-class allowlist.
+# Refresh via `just sync-flywheel-bazelrc <tag>` once ci-templates v1.0.0 ships.
+try-import %workspace%/.bazelrc.flywheel
 
 # Cache-attachment-contract profiles (mirrors MassageIthaca pattern).
 #

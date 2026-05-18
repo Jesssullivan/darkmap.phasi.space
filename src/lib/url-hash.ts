@@ -8,12 +8,9 @@
  *    &l=<id>:<opacity>[,<id>:<opacity>...]
  *    &b=<basemap>
  *    &et=<iso>              -- ephemeris cursor instant
- *    &t=YYYY-MM             -- active VIIRS monthly composite
- *    &p=1                   -- monthly-slider autoplay on
  *
  * Examples:
  *   #m=42.4434,-76.5019,9&l=viirs_2019:0.85
- *   #m=40.7128,-74.0060,11&t=2020-07&p=1
  *   #m=42.4434,-76.5019,9&et=2024-12-21T17:00Z
  *
  * Only on-layers appear in `l=`. Opacity is encoded with 2 decimal
@@ -28,11 +25,6 @@ export interface MapView {
 	readonly zoom: number;
 }
 
-export interface MonthlyMonth {
-	readonly year: number;
-	readonly month: number; // 1..12
-}
-
 export interface HashState {
 	readonly view?: MapView;
 	/** Active (on) layers + their opacity. Layers absent here are off. */
@@ -41,10 +33,6 @@ export interface HashState {
 	readonly basemap?: string;
 	/** Ephemeris-overlay cursor instant (UTC, minute precision). */
 	readonly time?: Date;
-	/** Currently-active VIIRS monthly composite (sub 3+ time slider). */
-	readonly monthlyMonth?: MonthlyMonth;
-	/** Monthly slider autoplay flag (sub 3+). */
-	readonly monthlyAutoplay?: boolean;
 }
 
 const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
@@ -76,13 +64,6 @@ export function encodeHash(state: HashState): string {
 	if (state.time) {
 		parts.push(`et=${encodeIsoMinute(state.time)}`);
 	}
-	if (state.monthlyMonth) {
-		const { year, month } = state.monthlyMonth;
-		parts.push(`t=${year}-${pad(month)}`);
-	}
-	if (state.monthlyAutoplay) {
-		parts.push(`p=1`);
-	}
 	return parts.length === 0 ? '' : `#${parts.join('&')}`;
 }
 
@@ -94,8 +75,6 @@ export function decodeHash(hash: string): HashState {
 		layers?: Map<string, number>;
 		basemap?: string;
 		time?: Date;
-		monthlyMonth?: MonthlyMonth;
-		monthlyAutoplay?: boolean;
 	} = {};
 	for (const segment of trimmed.split('&')) {
 		const eq = segment.indexOf('=');
@@ -135,19 +114,6 @@ export function decodeHash(hash: string): HashState {
 			// with seconds/millis is fine.
 			const d = new Date(decodeURIComponent(value));
 			if (!Number.isNaN(d.getTime())) out.time = d;
-		} else if (key === 't') {
-			// `t=YYYY-MM` — active VIIRS monthly composite. Month is 1..12.
-			const match = /^(\d{4})-(\d{1,2})$/.exec(value);
-			if (match) {
-				const year = Number.parseInt(match[1], 10);
-				const month = Number.parseInt(match[2], 10);
-				if (Number.isFinite(year) && month >= 1 && month <= 12) {
-					out.monthlyMonth = { year, month };
-				}
-			}
-		} else if (key === 'p') {
-			// `p=1` -> autoplay on. Any other value -> off.
-			if (value === '1') out.monthlyAutoplay = true;
 		}
 	}
 	return out;

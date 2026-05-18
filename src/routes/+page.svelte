@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Effect, Layer } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
@@ -9,26 +10,21 @@
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
-	import TimeDock from '$lib/components/TimeDock.svelte';
 	import {
 		FALLBACK_CENTER,
 		FALLBACK_ZOOM,
 		LAYERS,
 		rasterUrlTemplate,
-		VIIRS_MONTHS,
 		VIIRS_YEARS,
 		type RasterLayerDef,
 	} from '$lib/layers';
-	import { prefetchMonthlyTiles } from '$lib/monthlyPrefetch';
-	import { swapMonthlyLayer, teardownMonthlyLayer, type MonthlyMapAdapter } from '$lib/monthlySwap';
-	import { decodeHash, encodeHash, type MonthlyMonth } from '$lib/url-hash';
+	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
+	import { decodeHash, encodeHash } from '$lib/url-hash';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
+	let controllerLayer: Layer.Layer<MapLayerController> | undefined;
 
-	// Initial state honors the URL hash if present, otherwise the manifest
-	// defaults. `decodeHash` runs at module load so SSR sees the default
-	// state; the browser refines it inside onMount.
 	const initialState = (): Record<string, LayerState> => {
 		const defaults: Record<string, LayerState> = Object.fromEntries(
 			LAYERS.map((l) => [l.id, { on: l.defaultEnabled, opacity: l.opacity }]),
@@ -36,7 +32,6 @@
 		if (!browser) return defaults;
 		const parsed = decodeHash(window.location.hash);
 		if (!parsed.layers) return defaults;
-		// Hash overrides: any layer listed in the hash is on; others are off.
 		for (const l of LAYERS) {
 			const op = parsed.layers.get(l.id);
 			defaults[l.id] = op === undefined ? { on: false, opacity: l.opacity } : { on: true, opacity: op };
@@ -52,9 +47,6 @@
 	};
 	let activeBasemap = $state(initialBasemap());
 
-	// Ephemeris overlay state. Off by default; toggled via the button in the
-	// bottom-right corner. `time` is the cursor instant for the gantt;
-	// `center` tracks the viewport so the gantt recomputes when you pan.
 	const initialTime = (): Date => {
 		if (browser) {
 			const parsed = decodeHash(window.location.hash);
@@ -70,143 +62,6 @@
 	});
 	let viewBounds: { north: number; south: number; east: number; west: number } | undefined = $state();
 
-	// VIIRS Monthly TimeDock state. Toggle controls the dock visibility; when
-	// open we mount a hidden monthly raster layer and swap it on month change.
-	const NEWEST_MONTH: MonthlyMonth | null =
-		VIIRS_MONTHS.length > 0
-			? {
-					year: VIIRS_MONTHS[VIIRS_MONTHS.length - 1].year ?? 0,
-					month: VIIRS_MONTHS[VIIRS_MONTHS.length - 1].month ?? 1,
-				}
-			: null;
-	const initialMonthly = (): { open: boolean; month: MonthlyMonth | null; autoplay: boolean } => {
-		if (browser) {
-			const parsed = decodeHash(window.location.hash);
-			if (parsed.monthlyMonth) {
-				return { open: true, month: parsed.monthlyMonth, autoplay: parsed.monthlyAutoplay ?? false };
-			}
-		}
-		return { open: false, month: NEWEST_MONTH, autoplay: false };
-	};
-	const initMonthly = initialMonthly();
-	let monthlyOpen = $state(initMonthly.open);
-	let monthlyMonth = $state<MonthlyMonth | null>(initMonthly.month);
-	let monthlyAutoplay = $state(initMonthly.autoplay);
-	/** Most-recently mounted monthly layer id, tracked for swap-engine teardown. */
-	let mountedMonthlyLayerId: string | null = null;
-
-	const monthlyLayerIdFor = (m: MonthlyMonth): string => `viirs_${m.year}_${m.month < 10 ? '0' + m.month : m.month}`;
-
-	function asMonthlyAdapter(map: import('maplibre-gl').Map): MonthlyMapAdapter {
-		return {
-			getSource: (id) => Boolean(map.getSource(id)),
-			getLayer: (id) => Boolean(map.getLayer(id)),
-			addSource: (id, opts) => map.addSource(id, { type: 'raster', tiles: [...opts.tiles], tileSize: opts.tileSize }),
-			removeSource: (id) => map.removeSource(id),
-			addLayer: (spec, beforeId) =>
-				map.addLayer({ id: spec.id, type: 'raster', source: spec.source, paint: spec.paint }, beforeId),
-			removeLayer: (id) => map.removeLayer(id),
-			setPaintProperty: (id, prop, value) => map.setPaintProperty(id, prop, value),
-			once: (event, handler) => {
-				map.once(event, () => handler());
-			},
-		};
-	}
-
-	async function mountMonthly(m: MonthlyMonth): Promise<void> {
-		if (!mapInstance) return;
-		const newId = monthlyLayerIdFor(m);
-		const adapter = asMonthlyAdapter(mapInstance);
-		await swapMonthlyLayer(adapter, {
-			oldLayerId: mountedMonthlyLayerId,
-			newLayerId: newId,
-			opacity: 0.85,
-			tileUrlTemplate: rasterUrlTemplate,
-		});
-		mountedMonthlyLayerId = newId;
-
-		// Prefetch the next month's viewport tiles so scrubbing forward is
-		// instant. Only when we have viewport bounds + a successor.
-		if (viewBounds && mapInstance) {
-			const idx = VIIRS_MONTHS.findIndex((l) => l.year === m.year && l.month === m.month);
-			const next = idx >= 0 && idx + 1 < VIIRS_MONTHS.length ? VIIRS_MONTHS[idx + 1] : null;
-			if (next && next.year !== undefined && next.month !== undefined) {
-				prefetchMonthlyTiles(monthlyLayerIdFor({ year: next.year, month: next.month }), rasterUrlTemplate, {
-					...viewBounds,
-					zoom: mapInstance.getZoom(),
-				});
-			}
-		}
-	}
-
-	function teardownMonthly(): void {
-		if (!mapInstance) return;
-		teardownMonthlyLayer(asMonthlyAdapter(mapInstance), mountedMonthlyLayerId);
-		mountedMonthlyLayerId = null;
-	}
-
-	function onMonthlyToggle(): void {
-		monthlyOpen = !monthlyOpen;
-		if (monthlyOpen) {
-			if (!monthlyMonth) monthlyMonth = NEWEST_MONTH;
-			if (monthlyMonth) void mountMonthly(monthlyMonth);
-		} else {
-			teardownMonthly();
-			monthlyAutoplay = false;
-		}
-		scheduleHashWrite();
-	}
-
-	function onMonthlyChange(m: MonthlyMonth): void {
-		monthlyMonth = m;
-		void mountMonthly(m);
-		scheduleHashWrite();
-	}
-
-	// Autoplay loop. Owned by the parent (not TimeDock) so each tick
-	// `await`s the previous mountMonthly before scheduling the next.
-	// Avoids the source-stack race that an unrestrained 700 ms
-	// `setInterval` had on cold tile fetches.
-	const MONTHLY_AUTOPLAY_INTERVAL_MS = 700;
-	let monthlyAutoplayHandle: ReturnType<typeof setTimeout> | undefined;
-
-	function clearAutoplayHandle(): void {
-		if (monthlyAutoplayHandle !== undefined) {
-			clearTimeout(monthlyAutoplayHandle);
-			monthlyAutoplayHandle = undefined;
-		}
-	}
-
-	function scheduleAutoplayTick(): void {
-		clearAutoplayHandle();
-		monthlyAutoplayHandle = setTimeout(async () => {
-			if (!monthlyAutoplay || !monthlyMonth) return;
-			const idx = VIIRS_MONTHS.findIndex((l) => l.year === monthlyMonth!.year && l.month === monthlyMonth!.month);
-			if (idx < 0 || idx + 1 >= VIIRS_MONTHS.length) {
-				// End of range — pause so the user notices instead of looping.
-				monthlyAutoplay = false;
-				scheduleHashWrite();
-				return;
-			}
-			const next = VIIRS_MONTHS[idx + 1];
-			const nextMonth: MonthlyMonth = { year: next.year ?? 0, month: next.month ?? 1 };
-			monthlyMonth = nextMonth;
-			await mountMonthly(nextMonth);
-			scheduleHashWrite();
-			if (monthlyAutoplay) scheduleAutoplayTick();
-		}, MONTHLY_AUTOPLAY_INTERVAL_MS);
-	}
-
-	function onMonthlyAutoplayChange(a: boolean): void {
-		monthlyAutoplay = a;
-		if (a) scheduleAutoplayTick();
-		else clearAutoplayHandle();
-		scheduleHashWrite();
-	}
-
-	// Map error toast state. MapLibre dispatches `'error'` for tile / source
-	// load failures (e.g. /api/raster 502s). We append to this list and the
-	// MapErrorToast component auto-dismisses each after a few seconds.
 	let toastErrors = $state<ToastErr[]>([]);
 	let toastIdSeed = 0;
 	function pushToast(text: string, source?: string): void {
@@ -217,20 +72,14 @@
 		toastErrors = toastErrors.filter((e) => e.id !== id);
 	}
 
-	// Point-query readout state.
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
 	let readout: Readout | undefined = $state();
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
-		// Use the currently-active VIIRS year if any, else the newest.
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
 		try {
-			const params = new URLSearchParams({
-				layer: activeViirs,
-				lat: String(lat),
-				lon: String(lon),
-			});
+			const params = new URLSearchParams({ layer: activeViirs, lat: String(lat), lon: String(lon) });
 			const res = await fetch(`/api/featureinfo?${params}`);
 			if (!res.ok) {
 				readout = { lat, lon, loading: false, error: `${res.status} ${res.statusText}` };
@@ -261,34 +110,39 @@
 				layers: layersMap,
 				basemap: activeBasemap === DEFAULT_BASEMAP_ID ? undefined : activeBasemap,
 				time: ephemerisOpen ? ephemerisTime : undefined,
-				monthlyMonth: monthlyOpen && monthlyMonth ? monthlyMonth : undefined,
-				monthlyAutoplay: monthlyOpen && monthlyAutoplay ? true : undefined,
 			});
 			history.replaceState(null, '', hash || window.location.pathname);
 		}, 250);
 	}
 
-	const sourceIdFor = (l: RasterLayerDef) => `darkmap-${l.id}-src`;
-	const layerIdFor = (l: RasterLayerDef) => `darkmap-${l.id}-lyr`;
-
-	function addLayerToMap(map: import('maplibre-gl').Map, l: RasterLayerDef): void {
-		if (map.getSource(sourceIdFor(l))) return;
-		map.addSource(sourceIdFor(l), {
-			type: 'raster',
-			tiles: [rasterUrlTemplate(l.id)],
-			tileSize: 256,
-		});
-		map.addLayer({
-			id: layerIdFor(l),
-			type: 'raster',
-			source: sourceIdFor(l),
-			paint: { 'raster-opacity': layerState[l.id]?.opacity ?? l.opacity },
-		});
+	function runController<A>(eff: Effect.Effect<A, MapLayerError, MapLayerController>): Promise<A> | undefined {
+		if (!controllerLayer) return undefined;
+		return Effect.runPromise(
+			eff.pipe(
+				Effect.provide(controllerLayer),
+				Effect.tapError((err) => Effect.sync(() => pushToast(`${err.op} ${err.id}: ${err.reason}`, err.id))),
+			),
+		);
 	}
 
-	function removeLayerFromMap(map: import('maplibre-gl').Map, l: RasterLayerDef): void {
-		if (map.getLayer(layerIdFor(l))) map.removeLayer(layerIdFor(l));
-		if (map.getSource(sourceIdFor(l))) map.removeSource(sourceIdFor(l));
+	function mountLayer(l: RasterLayerDef): void {
+		void runController(
+			Effect.flatMap(MapLayerController, (c) =>
+				c.mount({
+					id: l.id,
+					tileUrlTemplate: rasterUrlTemplate(l.id),
+					opacity: layerState[l.id]?.opacity ?? l.opacity,
+				}),
+			),
+		);
+	}
+
+	function unmountLayer(l: RasterLayerDef): void {
+		void runController(Effect.flatMap(MapLayerController, (c) => c.unmount(l.id)));
+	}
+
+	function setLayerOpacity(l: RasterLayerDef, op: number): void {
+		void runController(Effect.flatMap(MapLayerController, (c) => c.setOpacity(l.id, op)));
 	}
 
 	function onChange(id: string, partial: Partial<LayerState>): void {
@@ -298,16 +152,12 @@
 		const next = { ...prev, ...partial };
 		layerState[id] = next;
 		if (!mapInstance) return;
-		// Toggle changes: add or remove the source+layer.
 		if (partial.on !== undefined && partial.on !== prev.on) {
-			if (next.on) addLayerToMap(mapInstance, layer);
-			else removeLayerFromMap(mapInstance, layer);
+			if (next.on) mountLayer(layer);
+			else unmountLayer(layer);
 		}
-		// Opacity changes: push directly to MapLibre without re-fetching tiles.
 		if (partial.opacity !== undefined && partial.opacity !== prev.opacity && next.on) {
-			if (mapInstance.getLayer(layerIdFor(layer))) {
-				mapInstance.setPaintProperty(layerIdFor(layer), 'raster-opacity', next.opacity);
-			}
+			setLayerOpacity(layer, next.opacity);
 		}
 		scheduleHashWrite();
 	}
@@ -315,13 +165,9 @@
 	function getInitialView(): Promise<{ center: [number, number]; zoom: number }> {
 		const fallback = { center: [...FALLBACK_CENTER] as [number, number], zoom: FALLBACK_ZOOM };
 		if (!browser) return Promise.resolve(fallback);
-		// Hash wins over geolocation when present — shareable view URLs are explicit.
 		const parsed = decodeHash(window.location.hash);
 		if (parsed.view) {
-			return Promise.resolve({
-				center: [parsed.view.lon, parsed.view.lat],
-				zoom: parsed.view.zoom,
-			});
+			return Promise.resolve({ center: [parsed.view.lon, parsed.view.lat], zoom: parsed.view.zoom });
 		}
 		if (!('geolocation' in navigator)) return Promise.resolve(fallback);
 		return new Promise((resolve) => {
@@ -347,8 +193,7 @@
 			attribution: bm.attribution,
 			maxzoom: bm.maxZoom,
 		});
-		// Insert below any active raster overlays so they remain on top.
-		const firstOverlay = LAYERS.map((l) => layerIdFor(l)).find((id) => map.getLayer(id));
+		const firstOverlay = LAYERS.map((l) => `darkmap-${l.id}-lyr`).find((id) => map.getLayer(id));
 		map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstOverlay);
 	}
 
@@ -384,18 +229,16 @@
 			attributionControl: false,
 		});
 		mapInstance.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
+		controllerLayer = makeMapLayerControllerLive(mapInstance);
 
-		mapInstance.on('load', () => {
-			if (!mapInstance) return;
-			for (const layer of LAYERS) {
-				if (layerState[layer.id]?.on) addLayerToMap(mapInstance, layer);
-			}
-		});
+		// Mount initial layers through the controller. The controller awaits
+		// `style.load` internally, so we no longer race "Style is not done
+		// loading" by reaching into addSource on a half-initialized map.
+		for (const layer of LAYERS) {
+			if (layerState[layer.id]?.on) mountLayer(layer);
+		}
 
-		// Persist view state in the hash on every pan/zoom (debounced).
-		// Also keep `viewCenter` in sync so the ephemeris overlay can
-		// recompute against the on-screen center.
-		const syncCenter = () => {
+		const syncCenter = (): void => {
 			if (!mapInstance) return;
 			const c = mapInstance.getCenter();
 			viewCenter = { lat: c.lat, lon: c.lng };
@@ -414,26 +257,16 @@
 		});
 		mapInstance.on('zoomend', scheduleHashWrite);
 
-		// If the hash includes `&et=`, restore the overlay open on load.
 		if (decodeHash(window.location.hash).time) ephemerisOpen = true;
 
-		// If the hash includes `&t=YYYY-MM`, mount the monthly layer once
-		// the basemap + main layers are settled.
-		if (monthlyOpen && monthlyMonth) void mountMonthly(monthlyMonth);
-
-		// Point readout: click anywhere on the map.
 		mapInstance.on('click', (ev) => {
 			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
 		});
 
-		// Tile / source failures: surface them in the toast so users see why
-		// a layer is blank. MapLibre emits this for any source that returns
-		// non-OK or fails to parse. We filter to raster sources we own.
 		mapInstance.on('error', (ev) => {
 			const sourceId = (ev as { sourceId?: string }).sourceId ?? (ev as { source?: { id?: string } }).source?.id;
 			const err = (ev as { error?: { message?: string } }).error;
 			if (!err) return;
-			// Ignore basemap tile errors (those are upstream-of-upstream).
 			if (sourceId === BASEMAP_SOURCE_ID) return;
 			pushToast(err.message ?? 'tile load failed', sourceId);
 		});
@@ -441,9 +274,9 @@
 
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
-		clearAutoplayHandle();
 		mapInstance?.remove();
 		mapInstance = undefined;
+		controllerLayer = undefined;
 	});
 </script>
 
@@ -477,26 +310,24 @@
 
 {#if ephemerisOpen}
 	<SkyCompass location={viewCenter} time={ephemerisTime} />
-	<div style:--gantt-bottom-rem={monthlyOpen ? '6.5rem' : '1rem'} style:display="contents">
-		<EphemerisGantt
-			location={viewCenter}
-			time={ephemerisTime}
-			bounds={viewBounds}
-			onTimeChange={(t) => {
-				ephemerisTime = t;
-				scheduleHashWrite();
-			}}
-		/>
-	</div>
+	<EphemerisGantt
+		location={viewCenter}
+		time={ephemerisTime}
+		bounds={viewBounds}
+		onTimeChange={(t) => {
+			ephemerisTime = t;
+			scheduleHashWrite();
+		}}
+	/>
 {/if}
 
 <MapToolbar
 	items={[
 		{
 			id: 'ephemeris',
-			label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
+			label: 'Toggle twilight strip',
 			glyph: '☼/☾',
-			title: 'Twilight strip + sun/moon overlay',
+			title: 'Toggle twilight strip',
 			pressed: ephemerisOpen,
 			onclick: () => {
 				ephemerisOpen = !ephemerisOpen;
@@ -506,26 +337,8 @@
 				scheduleHashWrite();
 			},
 		},
-		{
-			id: 'monthly',
-			label: monthlyOpen ? 'Hide monthly slider' : 'Show monthly slider',
-			glyph: '⏱',
-			title: 'VIIRS monthly time slider',
-			pressed: monthlyOpen,
-			onclick: onMonthlyToggle,
-		},
 	]}
 />
-
-{#if monthlyOpen && monthlyMonth}
-	<TimeDock
-		month={monthlyMonth}
-		autoplay={monthlyAutoplay}
-		onMonthChange={onMonthlyChange}
-		onAutoplayChange={onMonthlyAutoplayChange}
-		onClose={onMonthlyToggle}
-	/>
-{/if}
 
 {#if readout}
 	<PointReadout

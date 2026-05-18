@@ -287,3 +287,89 @@ info:
 # View the GitHub repo (opens in browser)
 gh-repo:
     gh repo view Jesssullivan/darkmap.tinyland.dev --web
+
+# ─────────────────────────────────────────────
+# CI-SCHEMA v1.0 (lanes, flywheel, conformance — see docs/CI-SCHEMA.md)
+# ─────────────────────────────────────────────
+
+# Print resolved lanes as a table
+lanes-list:
+    @cd {{ root }} && jq -r '"NAME\tTRIGGER\tRUNNER\tE2E\tTHEME"' .github/lanes.json
+    @cd {{ root }} && jq -r '.lanes[] | [.name, (.trigger // "pull_request"), (.runner_class // "(default)"), (.e2e // false | tostring), .theme] | @tsv' .github/lanes.json | column -t -s $'\t'
+
+# Validate .github/lanes.json against docs/schemas/lanes.schema.json
+lanes-validate:
+    cd {{ root }} && python3 scripts/validate-lanes.py
+
+# Dry-run construct the Blahaj provision payload for a PR
+lane-dispatch pr filter="all":
+    cd {{ root }} && python3 scripts/lane-dispatch.py --pr {{ pr }} --filter "{{ filter }}"
+
+# Dry-run construct the Blahaj destroy payload for a PR (set REAP_CONFIRM=1 + pass --dispatch to actually send)
+lane-reap pr:
+    @cd {{ root }} && read -p "Construct reap payload for PR #{{ pr }}? [y/N] " ans; [ "$ans" = "y" ] || { echo "aborted."; exit 1; }
+    cd {{ root }} && python3 scripts/lane-dispatch.py --pr {{ pr }} --reap
+    @echo "(dry-run; set REAP_CONFIRM=1 and pass --dispatch to actually send)"
+
+# Run the spoke conformance checklist (docs/CI-SCHEMA.md §11)
+conformance:
+    cd {{ root }} && bash scripts/check-conformance.sh
+
+# ─────────────────────────────────────────────
+# Flywheel (cache-first; executor opt-in; see docs/CI-SCHEMA.md §5)
+# Env knob: FLYWHEEL=local|cache|executor|auto (default auto)
+#   local     → no remote_* flags at all
+#   cache     → --config=flywheel (cache-only)
+#   executor  → --config=flywheel-executor (proved-class executor + cache)
+#   auto      → probe bazel-cache.nix-cache.svc.cluster.local:9092 reachability;
+#               fall through to cache if reachable, local otherwise.
+# Coexists with darkmap's existing bazel-test-cached / bazel-cache-contract
+# recipes (which use the cache-attachment-contract.sh wrapper for dynamic
+# endpoint resolution). Use these recipes when the cluster cache DNS is
+# stable; use bazel-test-cached when the endpoint is delivered dynamically.
+# ─────────────────────────────────────────────
+
+# Resolved flywheel config flag for the current host (auto-detect by default)
+_flywheel-flag:
+    @mode="${FLYWHEEL:-auto}"; \
+    case "$mode" in \
+      local)    echo "" ;; \
+      cache)    echo "--config=flywheel" ;; \
+      executor) echo "--config=flywheel-executor" ;; \
+      auto)     if nc -z -w1 bazel-cache.nix-cache.svc.cluster.local 9092 2>/dev/null; then \
+                  echo "--config=flywheel"; \
+                else \
+                  echo "" >&2; echo "[flywheel] cluster cache unreachable; running pure local" >&2; \
+                  echo ""; \
+                fi ;; \
+      *) echo "[flywheel] unknown FLYWHEEL=$mode (expected local|cache|executor|auto)" >&2; exit 64 ;; \
+    esac
+
+# Bazel build via flywheel (defaults to //:node_modules smoke target)
+flywheel-build target="//:node_modules":
+    @cfg=$(just _flywheel-flag); \
+    echo "[flywheel-build] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk build $cfg {{ target }}"; \
+    cd {{ root }} && bazelisk build $cfg {{ target }}
+
+# Bazel test via flywheel
+flywheel-test target="//...":
+    @cfg=$(just _flywheel-flag); \
+    echo "[flywheel-test] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk test $cfg {{ target }}"; \
+    cd {{ root }} && bazelisk test $cfg {{ target }}
+
+# Remote dev server — v1.1+ stub (see ci-templates/docs/spec/dev-remote.md)
+dev-remote lane="default":
+    @echo "dev-remote is a v1.1+ stub. Dev servers are explicitly blocked from REAPI"
+    @echo "(GloriousFlywheel/config/rbe-target-eligibility.json), so a cluster-side"
+    @echo "pnpm dev tunnel requires the lane-preview-tunnel composite action which"
+    @echo "ships in ci-templates v1.1+. Track at: tinyland-inc/ci-templates/docs/roadmap.md"
+    @exit 2
+
+# Sync vendored .bazelrc.flywheel from a pinned ci-templates tag (placeholder until v1.0.0 ships)
+sync-flywheel-bazelrc tag="v1.0.0":
+    @echo "sync-flywheel-bazelrc {{ tag }}: ci-templates v1.0.0 not yet released."
+    @echo "Once tagged, this recipe will:"
+    @echo "  gh api --output - repos/tinyland-inc/ci-templates/contents/bazelrc/flywheel.bazelrc?ref={{ tag }} \\"
+    @echo "    | jq -r .content | base64 -d > .bazelrc.flywheel"
+    @echo "  and update the header comment to record the tag."
+    @exit 2

@@ -93,3 +93,121 @@ After `gh repo create --template tinyland-inc/darkmap.tinyland.dev`:
   Pin via the BCR.
 - Don't bypass `Justfile` in CI or local — DX/AX must stay homogenous.
 - Don't unpin Skeleton or Tailwind v4-compat shim without coordination.
+
+## Multi-Lane Posture
+
+- The normative CI + lane contract is [`docs/CI-SCHEMA.md`](./docs/CI-SCHEMA.md).
+  Read it before changing `.github/lanes.json`, `.github/workflows/*.yml`,
+  any `infra/tofu/` file, or any `flywheel-*` Justfile recipe.
+- darkmap runs **one lane** (`default` in `.github/lanes.json`). The lanes
+  abstraction is in place so future-darkmap experimentation (e.g., a
+  `staging` lane bound to the K8s shadow env) is a one-file edit.
+- Lane edits are a one-file change. After editing `.github/lanes.json`,
+  run `just lanes-validate` and `just conformance` before committing.
+- A three-lane reference is checked in at `.github/lanes.example.json`
+  (not loaded by CI — copy fields you need into `lanes.json`).
+- This spoke conforms to `tinyland-inc/site.scaffold@feat/ci-schema-d1`
+  (commit `e53f2c2`) at adoption time. Bump via a follow-on PR when
+  scaffold ships a v1.0 tag.
+
+## Flywheel Binding
+
+- Two configs, two contracts (see `docs/CI-SCHEMA.md` §5):
+  - `--config=flywheel` — remote *cache* only. Safe everywhere with
+    cluster reachability. Vendored in `.bazelrc.flywheel`.
+  - `--config=flywheel-executor` — remote *executor* + cache.
+    Proved-class-only, cluster-runner-only. The `flywheel-bazel`
+    composite action in `tinyland-inc/ci-templates` refuses to set
+    this on `ubuntu-latest`.
+- Coexists with darkmap's bespoke `--config=ci-cached` and
+  `--config=executor-backed` profiles which use
+  `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution
+  (no hardcoded URL). Both flows are valid:
+  - `--config=flywheel[-executor]` when the cluster cache DNS is
+    stable (e.g. running on `tinyland-nix` ARC runners).
+  - `--config=ci-cached` / `--config=executor-backed` when the
+    runner pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
+- Proved-for-spoke target classes (mirrored from
+  `tinyland-inc/GloriousFlywheel/config/rbe-target-eligibility.json`):
+  `sveltekit-app-build`, `sveltekit-unit-tests`,
+  `deployment-bundle-packaging`, `docs-site-static-build`. Candidate
+  (still rejected at runtime): `web-playwright-chromium-static-smoke`.
+- **Hard NOs**: no rustfs **RBE state / action-cache** authority; no
+  OpenTofu RBE (`opentofu-validate`/`opentofu-fmt` are blocked); no
+  developer-server RBE (`//app:dev` cannot run on REAPI); cache hits
+  ≠ RBE.
+- Local DX: `nix develop` for the toolchain, `FLYWHEEL=local|cache|executor|auto`
+  env knob picks the bazelrc config for the `just flywheel-build` /
+  `just flywheel-test` recipes. `auto` probes cluster cache
+  reachability and falls through to pure-local if not on a cluster
+  runner.
+
+## Per-PR Ephemeral Envs
+
+- The schema specifies one ephemeral environment per declared lane,
+  provisioned via the `tinyland-inc/blahaj` GitHub App
+  (`repository_dispatch` payload schema:
+  `docs/schemas/blahaj-dispatch.schema.json`).
+- DNS naming: `pr-{PR_NUMBER}-{LANE}.darkmap.tinyland.dev`.
+- Image tag template: `pr-{PR_NUMBER}-sha-{COMMIT_SHA}`.
+- TTL: default 72h. Per-PR raise via labels `lane-ttl/7d`,
+  `lane-ttl/30d`, `lane-ttl/keep` (capped at 720h). Reap on PR close
+  + hourly TTL backstop + manual `workflow_dispatch`. Reap is
+  idempotent.
+- **Blahaj installation status on darkmap: NOT YET WIRED.** M3
+  (`.github/workflows/lane-env.yml`) is gated on
+  `tinyland-inc/ci-templates@v1.0.0` shipping; the lane-env workflow
+  will be added at that time. Whether Blahaj also gets installed on
+  this repo is an operator decision tracked in
+  [TIN-1384](https://linear.app/tinyland/issue/TIN-1384).
+- Local dry-run available today: `just lane-dispatch <pr>` prints
+  the payload Blahaj would receive; `just lane-reap <pr>` does the
+  same for destroy (with a confirm prompt; `--dispatch` requires
+  `REAP_CONFIRM=1`).
+
+## Tofu Posture
+
+- darkmap's existing `infra/tofu/` is **preserved**. M4
+  ([TIN-1385](https://linear.app/tinyland/issue/TIN-1385)) will
+  *compose* the five spoke-* modules from
+  `tinyland-inc/GloriousFlywheel/tofu/modules/spoke-*` alongside the
+  darkmap-specific Cloudflare + Kustomize resources — never replace
+  them.
+- State backend is S3-compatible: rustfs at
+  `attic-rustfs-hl.nix-cache.svc:9000` via the standard S3 API.
+  **This is NOT a §5 invariant violation** — that invariant forbids
+  rustfs as RBE CAS / action-cache authority, not as a Tofu state
+  S3 backend. rustfs exposes an S3-compatible API on `:9000` and
+  using it for `terraform.tfstate` is legitimate.
+- State key path will move to `spokes/darkmap/terraform.tfstate`
+  when M4 lands; current key is per `infra/tofu/backend.hcl`.
+- Modules to be composed (post-M4):
+  - `spoke-state-namespace` — S3 prefix + reaper IAM.
+  - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.tinyland.dev`.
+  - `spoke-cache-quota` — Attic + Bazel cache allocation.
+  - `spoke-runner-binding` — runner-class ACL (hard-deny).
+  - `spoke-blahaj-app-install` — only if Blahaj is to be installed.
+
+## Conformance
+
+- `just conformance` runs `scripts/check-conformance.sh` — the
+  12-item checklist in `docs/CI-SCHEMA.md` §11. A green run means
+  the spoke is house-style compliant. MANUAL items are documented
+  below.
+- **Ownership gap (Path A)**: darkmap is
+  `Jesssullivan/darkmap.tinyland.dev`, NOT in `tinyland-inc/*`. The
+  org-default `tinyland-spoke-default` branch-protection ruleset
+  (lives in `tinyland-inc/.github`) does NOT auto-apply to this
+  repo. Branch protection is configured manually in
+  `Settings → Rules → Rulesets`. Conformance reports this as MANUAL;
+  acceptable. (Path B alternative: manually import the ruleset JSON
+  via `gh api /repos/Jesssullivan/darkmap.tinyland.dev/rulesets -X
+  POST --input <ruleset.json>` — one-time; updates require
+  re-application.)
+- **Pre-cutover MANUAL items** (unblock through subsequent
+  milestones):
+  - `ci.yml` ci-templates pin → M3
+    ([TIN-1384](https://linear.app/tinyland/issue/TIN-1384))
+  - Tailnet DNS per lane → M6
+    ([TIN-1387](https://linear.app/tinyland/issue/TIN-1387)
+    validation)
