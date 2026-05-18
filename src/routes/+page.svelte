@@ -6,15 +6,19 @@
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
+	import TimeDock from '$lib/components/TimeDock.svelte';
 	import {
 		FALLBACK_CENTER,
 		FALLBACK_ZOOM,
 		LAYERS,
 		rasterUrlTemplate,
+		VIIRS_MONTHS,
 		VIIRS_YEARS,
 		type RasterLayerDef,
 	} from '$lib/layers';
-	import { decodeHash, encodeHash } from '$lib/url-hash';
+	import { prefetchMonthlyTiles } from '$lib/monthlyPrefetch';
+	import { swapMonthlyLayer, teardownMonthlyLayer, type MonthlyMapAdapter } from '$lib/monthlySwap';
+	import { decodeHash, encodeHash, type MonthlyMonth } from '$lib/url-hash';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
@@ -63,6 +67,104 @@
 	});
 	let viewBounds: { north: number; south: number; east: number; west: number } | undefined = $state();
 
+	// VIIRS Monthly TimeDock state. Toggle controls the dock visibility; when
+	// open we mount a hidden monthly raster layer and swap it on month change.
+	const NEWEST_MONTH: MonthlyMonth | null =
+		VIIRS_MONTHS.length > 0
+			? {
+					year: VIIRS_MONTHS[VIIRS_MONTHS.length - 1].year ?? 0,
+					month: VIIRS_MONTHS[VIIRS_MONTHS.length - 1].month ?? 1,
+				}
+			: null;
+	const initialMonthly = (): { open: boolean; month: MonthlyMonth | null; autoplay: boolean } => {
+		if (browser) {
+			const parsed = decodeHash(window.location.hash);
+			if (parsed.monthlyMonth) {
+				return { open: true, month: parsed.monthlyMonth, autoplay: parsed.monthlyAutoplay ?? false };
+			}
+		}
+		return { open: false, month: NEWEST_MONTH, autoplay: false };
+	};
+	const initMonthly = initialMonthly();
+	let monthlyOpen = $state(initMonthly.open);
+	let monthlyMonth = $state<MonthlyMonth | null>(initMonthly.month);
+	let monthlyAutoplay = $state(initMonthly.autoplay);
+	/** Most-recently mounted monthly layer id, tracked for swap-engine teardown. */
+	let mountedMonthlyLayerId: string | null = null;
+
+	const monthlyLayerIdFor = (m: MonthlyMonth): string => `viirs_${m.year}_${m.month < 10 ? '0' + m.month : m.month}`;
+
+	function asMonthlyAdapter(map: import('maplibre-gl').Map): MonthlyMapAdapter {
+		return {
+			getSource: (id) => Boolean(map.getSource(id)),
+			getLayer: (id) => Boolean(map.getLayer(id)),
+			addSource: (id, opts) => map.addSource(id, { type: 'raster', tiles: [...opts.tiles], tileSize: opts.tileSize }),
+			removeSource: (id) => map.removeSource(id),
+			addLayer: (spec, beforeId) =>
+				map.addLayer({ id: spec.id, type: 'raster', source: spec.source, paint: spec.paint }, beforeId),
+			removeLayer: (id) => map.removeLayer(id),
+			setPaintProperty: (id, prop, value) => map.setPaintProperty(id, prop, value),
+			once: (event, handler) => {
+				map.once(event, () => handler());
+			},
+		};
+	}
+
+	async function mountMonthly(m: MonthlyMonth): Promise<void> {
+		if (!mapInstance) return;
+		const newId = monthlyLayerIdFor(m);
+		const adapter = asMonthlyAdapter(mapInstance);
+		await swapMonthlyLayer(adapter, {
+			oldLayerId: mountedMonthlyLayerId,
+			newLayerId: newId,
+			opacity: 0.85,
+			tileUrlTemplate: rasterUrlTemplate,
+		});
+		mountedMonthlyLayerId = newId;
+
+		// Prefetch the next month's viewport tiles so scrubbing forward is
+		// instant. Only when we have viewport bounds + a successor.
+		if (viewBounds && mapInstance) {
+			const idx = VIIRS_MONTHS.findIndex((l) => l.year === m.year && l.month === m.month);
+			const next = idx >= 0 && idx + 1 < VIIRS_MONTHS.length ? VIIRS_MONTHS[idx + 1] : null;
+			if (next && next.year !== undefined && next.month !== undefined) {
+				prefetchMonthlyTiles(monthlyLayerIdFor({ year: next.year, month: next.month }), rasterUrlTemplate, {
+					...viewBounds,
+					zoom: mapInstance.getZoom(),
+				});
+			}
+		}
+	}
+
+	function teardownMonthly(): void {
+		if (!mapInstance) return;
+		teardownMonthlyLayer(asMonthlyAdapter(mapInstance), mountedMonthlyLayerId);
+		mountedMonthlyLayerId = null;
+	}
+
+	function onMonthlyToggle(): void {
+		monthlyOpen = !monthlyOpen;
+		if (monthlyOpen) {
+			if (!monthlyMonth) monthlyMonth = NEWEST_MONTH;
+			if (monthlyMonth) void mountMonthly(monthlyMonth);
+		} else {
+			teardownMonthly();
+			monthlyAutoplay = false;
+		}
+		scheduleHashWrite();
+	}
+
+	function onMonthlyChange(m: MonthlyMonth): void {
+		monthlyMonth = m;
+		void mountMonthly(m);
+		scheduleHashWrite();
+	}
+
+	function onMonthlyAutoplayChange(a: boolean): void {
+		monthlyAutoplay = a;
+		scheduleHashWrite();
+	}
+
 	// Point-query readout state.
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
 	let readout: Readout | undefined = $state();
@@ -107,6 +209,8 @@
 				layers: layersMap,
 				basemap: activeBasemap === DEFAULT_BASEMAP_ID ? undefined : activeBasemap,
 				time: ephemerisOpen ? ephemerisTime : undefined,
+				monthlyMonth: monthlyOpen && monthlyMonth ? monthlyMonth : undefined,
+				monthlyAutoplay: monthlyOpen && monthlyAutoplay ? true : undefined,
 			});
 			history.replaceState(null, '', hash || window.location.pathname);
 		}, 250);
@@ -261,6 +365,10 @@
 		// If the hash includes `&et=`, restore the overlay open on load.
 		if (decodeHash(window.location.hash).time) ephemerisOpen = true;
 
+		// If the hash includes `&t=YYYY-MM`, mount the monthly layer once
+		// the basemap + main layers are settled.
+		if (monthlyOpen && monthlyMonth) void mountMonthly(monthlyMonth);
+
 		// Point readout: click anywhere on the map.
 		mapInstance.on('click', (ev) => {
 			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
@@ -294,15 +402,17 @@
 
 {#if ephemerisOpen}
 	<SkyCompass location={viewCenter} time={ephemerisTime} />
-	<EphemerisGantt
-		location={viewCenter}
-		time={ephemerisTime}
-		bounds={viewBounds}
-		onTimeChange={(t) => {
-			ephemerisTime = t;
-			scheduleHashWrite();
-		}}
-	/>
+	<div style:--gantt-bottom-rem={monthlyOpen ? '6.5rem' : '1rem'} style:display="contents">
+		<EphemerisGantt
+			location={viewCenter}
+			time={ephemerisTime}
+			bounds={viewBounds}
+			onTimeChange={(t) => {
+				ephemerisTime = t;
+				scheduleHashWrite();
+			}}
+		/>
+	</div>
 {/if}
 
 <button
@@ -320,6 +430,26 @@
 >
 	☼/☾
 </button>
+
+<button
+	class="monthly-toggle"
+	type="button"
+	aria-pressed={monthlyOpen}
+	onclick={onMonthlyToggle}
+	title="Toggle VIIRS monthly time slider"
+>
+	⏱
+</button>
+
+{#if monthlyOpen && monthlyMonth}
+	<TimeDock
+		month={monthlyMonth}
+		autoplay={monthlyAutoplay}
+		onMonthChange={onMonthlyChange}
+		onAutoplayChange={onMonthlyAutoplayChange}
+		onClose={onMonthlyToggle}
+	/>
+{/if}
 
 {#if readout}
 	<PointReadout
@@ -386,6 +516,29 @@
 		color: #ffd166;
 	}
 	.ephemeris-toggle[aria-pressed='true'] {
+		color: #ffd166;
+		border-color: rgba(255, 209, 102, 0.65);
+	}
+	.monthly-toggle {
+		position: fixed;
+		right: 0.75rem;
+		bottom: 3.25rem;
+		z-index: 7;
+		background: rgba(8, 10, 16, 0.85);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		border-radius: 999px;
+		padding: 0.4rem 0.7rem;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.85rem;
+		cursor: pointer;
+		backdrop-filter: blur(6px);
+	}
+	.monthly-toggle:hover {
+		border-color: rgba(255, 209, 102, 0.65);
+		color: #ffd166;
+	}
+	.monthly-toggle[aria-pressed='true'] {
 		color: #ffd166;
 		border-color: rgba(255, 209, 102, 0.65);
 	}

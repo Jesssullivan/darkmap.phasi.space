@@ -403,7 +403,7 @@
 		position: fixed;
 		left: 1rem;
 		right: 1rem;
-		bottom: 1rem;
+		bottom: var(--gantt-bottom-rem, 1rem);
 		background: rgba(8, 10, 16, 0.85);
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 6px;
