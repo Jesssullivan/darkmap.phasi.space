@@ -35,7 +35,10 @@ concurrency:
 jobs:
   deploy:
     name: kubectl apply -k
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    # Cluster API at `100.x` is tailnet-only; we have to run on a
+    # tailnet-joined self-hosted runner. The TOFU runner pool already
+    # has cluster reachability (used by tofu-apply against rustfs).
+    runs-on: ${{ fromJSON(vars.TOFU_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     if: github.event_name == 'workflow_dispatch' || vars.STAGING_DEPLOY_ENABLED == 'true'
     permissions:
