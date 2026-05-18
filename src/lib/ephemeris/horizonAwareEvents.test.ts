@@ -74,6 +74,54 @@ describe('refineHorizonEvent — twilight offsets', () => {
 	});
 });
 
+describe('refineHorizonEvent — polygonResolver (GAP-14a-wiring)', () => {
+	it('invokes the resolver at each bisection probe with the sun azimuth', () => {
+		const start = 0;
+		const flatSunrise = new Date(start + 2 * 3600 * 1000);
+		const seenAzimuths: number[] = [];
+		const resolver = (azDeg: number): HorizonPolygon => {
+			seenAzimuths.push(azDeg);
+			return flatHorizon;
+		};
+		refineHorizonEvent(flatSunrise, linearSun(start), flatHorizon, { polygonResolver: resolver });
+		// At least one probe per bisection iteration; linear sun has az=90
+		// fixed so every probe should ask the resolver for 90°.
+		expect(seenAzimuths.length).toBeGreaterThan(2);
+		expect(seenAzimuths.every((a) => a === 90)).toBe(true);
+	});
+
+	it('picks up dense-fan terrain that the static polygon would miss', () => {
+		// Sparse static polygon has 0° at az 90°, so it would refine to the
+		// flat sunrise. A dense-fan resolver returns a 10° peak right at the
+		// sun azimuth — refined sunrise should match the easternMountain case.
+		const start = 0;
+		const flatSunrise = new Date(start + 2 * 3600 * 1000);
+		const resolver = (_azDeg: number): HorizonPolygon => easternMountain;
+		const refinedStatic = refineHorizonEvent(flatSunrise, linearSun(start), flatHorizon);
+		const refinedDense = refineHorizonEvent(flatSunrise, linearSun(start), flatHorizon, {
+			polygonResolver: resolver,
+		});
+		expect(refinedStatic).not.toBeNull();
+		expect(refinedDense).not.toBeNull();
+		// Static says ~2h (flat sunrise), dense says ~3h (mountain blocks 10°).
+		expect((refinedDense as Date).getTime()).toBeGreaterThan((refinedStatic as Date).getTime() + 30 * 60 * 1000);
+	});
+
+	it('falls back to the static polygon when the resolver returns it unchanged', () => {
+		const start = 0;
+		const flatSunrise = new Date(start + 2 * 3600 * 1000);
+		const refinedWithFallback = refineHorizonEvent(flatSunrise, linearSun(start), easternMountain, {
+			polygonResolver: () => easternMountain,
+		});
+		const refinedWithoutResolver = refineHorizonEvent(flatSunrise, linearSun(start), easternMountain);
+		expect(refinedWithFallback).not.toBeNull();
+		expect(refinedWithoutResolver).not.toBeNull();
+		expect(Math.abs((refinedWithFallback as Date).getTime() - (refinedWithoutResolver as Date).getTime())).toBeLessThan(
+			2000,
+		);
+	});
+});
+
 describe('refineEventSet', () => {
 	const start = 0;
 	const sunFn = linearSun(start);
