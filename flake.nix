@@ -16,18 +16,31 @@
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
+            # Core JS toolchain
             nodejs_22
             pnpm
             typescript
             typescript-language-server
+
+            # Build / VCS / CLI
             just
             git
             gh
             bazelisk
             gitleaks
+
+            # Infra
             opentofu
+            terraform-ls
+            tflint
             kubectl
             kustomize
+
+            # CI-schema + lane tooling (docs/CI-SCHEMA.md)
+            python3
+            python3Packages.jsonschema
+            jq
+            netcat-gnu
           ];
 
           shellHook = ''
@@ -44,6 +57,8 @@
             echo "  gitleaks $(gitleaks version 2>&1 | head -n1)"
             echo "  tofu     $(tofu --version 2>&1 | head -n1)"
             echo "  kubectl  $(kubectl version --client 2>&1 | head -n1)"
+            echo "  python   $(python3 --version)"
+            echo "  jq       $(jq --version)"
           '';
         };
 
