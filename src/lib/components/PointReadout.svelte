@@ -172,7 +172,10 @@
 							>
 						</dd>
 					</dl>
-					<p class="note">UTC · (±m) = shift vs flat horizon at this pin. Terrain from Mapzen Terrarium z=12.</p>
+					<p class="note">
+						UTC · (±m) = shift vs flat horizon at this pin. Terrain from Mapzen Terrarium z=12 · {ephemeris.fans.length}
+						dense {ephemeris.fans.length === 1 ? 'fan' : 'fans'} at the sun's event azimuths.
+					</p>
 				{:else}
 					<p class="note">Click to compute terrain-aware twilight times for this pin.</p>
 				{/if}
