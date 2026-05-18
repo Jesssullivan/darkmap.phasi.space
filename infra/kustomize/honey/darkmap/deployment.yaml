@@ -3,7 +3,11 @@ kind: Deployment
 metadata:
   name: darkmap
 spec:
-  replicas: 1
+  # 2 replicas + maxUnavailable: 0 means node drain or rolling update
+  # always keeps at least one pod serving. PodDisruptionBudget (see
+  # poddisruptionbudget.yaml in this overlay) guarantees the same
+  # against voluntary disruption.
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
