@@ -5,6 +5,7 @@
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
+	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import TimeDock from '$lib/components/TimeDock.svelte';
@@ -164,6 +165,19 @@
 	function onMonthlyAutoplayChange(a: boolean): void {
 		monthlyAutoplay = a;
 		scheduleHashWrite();
+	}
+
+	// Map error toast state. MapLibre dispatches `'error'` for tile / source
+	// load failures (e.g. /api/raster 502s). We append to this list and the
+	// MapErrorToast component auto-dismisses each after a few seconds.
+	let toastErrors = $state<ToastErr[]>([]);
+	let toastIdSeed = 0;
+	function pushToast(text: string, source?: string): void {
+		const id = ++toastIdSeed;
+		toastErrors = [...toastErrors, { id, text, source }];
+	}
+	function dismissToast(id: number): void {
+		toastErrors = toastErrors.filter((e) => e.id !== id);
 	}
 
 	// Point-query readout state.
@@ -374,6 +388,18 @@
 		mapInstance.on('click', (ev) => {
 			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
 		});
+
+		// Tile / source failures: surface them in the toast so users see why
+		// a layer is blank. MapLibre emits this for any source that returns
+		// non-OK or fails to parse. We filter to raster sources we own.
+		mapInstance.on('error', (ev) => {
+			const sourceId = (ev as { sourceId?: string }).sourceId ?? (ev as { source?: { id?: string } }).source?.id;
+			const err = (ev as { error?: { message?: string } }).error;
+			if (!err) return;
+			// Ignore basemap tile errors (those are upstream-of-upstream).
+			if (sourceId === BASEMAP_SOURCE_ID) return;
+			pushToast(err.message ?? 'tile load failed', sourceId);
+		});
 	});
 
 	onDestroy(() => {
@@ -393,6 +419,8 @@
 </svelte:head>
 
 <div bind:this={mapEl} class="map" aria-label="Light pollution map"></div>
+
+<MapErrorToast errors={toastErrors} onDismiss={dismissToast} />
 
 <GeocoderSearch
 	bias={viewCenter}
