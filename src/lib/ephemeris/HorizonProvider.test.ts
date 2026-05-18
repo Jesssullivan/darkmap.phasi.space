@@ -300,3 +300,58 @@ describe('chainElevationLookups', () => {
 		expect(exit._tag).toBe('Failure');
 	});
 });
+
+describe('HorizonProvider — polygonNearAzimuth (dense local fan)', () => {
+	const nearOpts = { rays: 5, halfWidthDeg: 2, distancesMeters: [500] };
+	const fanOf = (elev: (l: LatLon) => number, az: number) =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				const h = yield* HorizonProvider;
+				return yield* h.polygonNearAzimuth({ lat: 0, lon: 0 }, az, nearOpts);
+			}).pipe(Effect.provide(horizonWith(elev))),
+		);
+
+	it('emits the requested number of rays', () => {
+		const poly = fanOf(() => 0, 90);
+		expect(poly).toHaveLength(5);
+	});
+
+	it('centers the fan on the requested azimuth, spanning ±halfWidth', () => {
+		const poly = fanOf(() => 0, 90);
+		const azs = poly.map((s) => s.azimuthDeg);
+		expect(azs[0]).toBeCloseTo(88, 5);
+		expect(azs[2]).toBeCloseTo(90, 5);
+		expect(azs[4]).toBeCloseTo(92, 5);
+	});
+
+	it('canonicalizes azimuths to [0, 360) when fan crosses the 0° boundary', () => {
+		const poly = fanOf(() => 0, 0);
+		for (const s of poly) {
+			expect(s.azimuthDeg).toBeGreaterThanOrEqual(0);
+			expect(s.azimuthDeg).toBeLessThan(360);
+		}
+	});
+
+	it('reflects directional terrain — east wall raises altitudes at azimuth 90°', () => {
+		const wall = (l: LatLon) => (l.lon > 0 ? 100 : 0);
+		const east = fanOf(wall, 90);
+		const west = fanOf(wall, 270);
+		expect(east[2].altitudeDeg).toBeGreaterThan(5);
+		expect(west[2].altitudeDeg).toBeLessThan(0);
+	});
+
+	it('honors a 1-ray request (degenerate fan = single sample at azimuth - halfWidth)', () => {
+		const poly = Effect.runSync(
+			Effect.gen(function* () {
+				const h = yield* HorizonProvider;
+				return yield* h.polygonNearAzimuth({ lat: 0, lon: 0 }, 90, {
+					rays: 1,
+					halfWidthDeg: 2,
+					distancesMeters: [500],
+				});
+			}).pipe(Effect.provide(horizonWith(() => 0))),
+		);
+		expect(poly).toHaveLength(1);
+		expect(poly[0].azimuthDeg).toBeCloseTo(88, 5);
+	});
+});

@@ -47,6 +47,17 @@ export class HorizonProvider extends Context.Tag('@darkmap/HorizonProvider')<
 	HorizonProvider,
 	{
 		readonly polygonAt: (loc: LatLon, opts?: HorizonOptions) => Effect.Effect<HorizonPolygon, HorizonError>;
+		/**
+		 * Dense local-fan polygon centered on a specific azimuth — used
+		 * by horizon-aware event refinement so the sun's altitude is
+		 * compared against the terrain at the sun's actual bearing, not
+		 * a 10°-interpolated estimate.
+		 */
+		readonly polygonNearAzimuth: (
+			loc: LatLon,
+			azimuthDeg: number,
+			opts?: NearAzimuthOptions,
+		) => Effect.Effect<HorizonPolygon, HorizonError>;
 	}
 >() {}
 
@@ -62,6 +73,18 @@ export interface HorizonOptions {
 	/** Observer eye height above ground (default 1.7 m, ~human standing). */
 	readonly eyeHeightMeters?: number;
 }
+
+export interface NearAzimuthOptions {
+	/** Number of rays in the local fan (default 5). */
+	readonly rays?: number;
+	/** Half-width of the fan in degrees (default 2 — total 4° span). */
+	readonly halfWidthDeg?: number;
+	readonly distancesMeters?: readonly number[];
+	readonly eyeHeightMeters?: number;
+}
+
+const DEFAULT_NEAR_RAYS = 5;
+const DEFAULT_NEAR_HALF_WIDTH_DEG = 2;
 
 const DEFAULT_DISTANCES = [250, 500, 1_000, 2_000, 3_500, 5_500, 8_000, 12_000, 17_000, 25_000] as const;
 const DEFAULT_RAYS = 36;
@@ -139,6 +162,33 @@ export const HorizonProviderLive = Layer.effect(
 					const polygon = out as HorizonPolygon;
 					cache.set(key, polygon);
 					return polygon;
+				}),
+			polygonNearAzimuth: (loc, azimuthDeg, opts) =>
+				Effect.gen(function* () {
+					const rays = opts?.rays ?? DEFAULT_NEAR_RAYS;
+					const halfWidth = opts?.halfWidthDeg ?? DEFAULT_NEAR_HALF_WIDTH_DEG;
+					const distances = opts?.distancesMeters ?? DEFAULT_DISTANCES;
+					const eyeAddedM = opts?.eyeHeightMeters ?? DEFAULT_EYE_M;
+					const groundElev = yield* elev.metersAt(loc);
+					const eyeElev = groundElev + eyeAddedM;
+					const out: HorizonSample[] = [];
+					// `rays` azimuths spanning [azimuthDeg - halfWidth, azimuthDeg + halfWidth].
+					// Result is sorted by azimuth ascending in canonical (0..360].
+					const step = rays === 1 ? 0 : (2 * halfWidth) / (rays - 1);
+					for (let i = 0; i < rays; i++) {
+						const rawAz = azimuthDeg - halfWidth + i * step;
+						const az = ((rawAz % 360) + 360) % 360;
+						let maxAlt = -90;
+						for (const d of distances) {
+							const target = destinationPoint(loc.lat, loc.lon, az, d);
+							const targetElev = yield* elev.metersAt(target);
+							const alt = angularElevationDeg(eyeElev, targetElev, d);
+							if (alt > maxAlt) maxAlt = alt;
+						}
+						out.push({ azimuthDeg: az, altitudeDeg: maxAlt });
+					}
+					out.sort((a, b) => a.azimuthDeg - b.azimuthDeg);
+					return out as HorizonPolygon;
 				}),
 		});
 	}),
