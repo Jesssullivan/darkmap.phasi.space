@@ -63,12 +63,17 @@
 <style>
 	/* Indent matches the layer-card body (.year-row, .opacity-row, .desc all
 	   sit at 1.5rem from the layer toggle's checkbox edge). Same left rail
-	   leaves ~1rem on the right of the rail for the gradient to breathe. */
+	   leaves ~1rem on the right of the rail for the gradient to breathe.
+	   `max-width: 100%` + `overflow: hidden` cap any tick that would push
+	   past the rail's right edge — common with the 15-stop World Atlas
+	   ramp's `mcd/m²` labels. */
 	.legend {
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.7rem;
 		margin: 0.6rem 0 0 1.5rem;
 		padding-right: 0.5rem;
+		max-width: calc(100% - 2rem);
+		overflow: hidden;
 	}
 	.title {
 		margin: 0 0 0.4rem 0;
@@ -96,6 +101,12 @@
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 		font-size: 0.62rem;
+		/* Hard cap on a single tick's width so it can't push past the bar
+		   when the label is long (e.g. "0.178mcd/m²" on the World Atlas
+		   ramp). Browsers will truncate with ellipsis if needed. */
+		max-width: 5.5rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.tick:first-child {
 		transform: translateX(0);
