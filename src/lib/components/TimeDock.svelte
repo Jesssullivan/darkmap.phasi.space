@@ -161,7 +161,8 @@
 	.dock {
 		position: fixed;
 		left: 1rem;
-		right: 1rem;
+		/* Leave room for the MapToolbar's column on the right. */
+		right: var(--map-toolbar-inset-rem, 5rem);
 		bottom: 1rem;
 		background: rgba(8, 10, 16, 0.85);
 		border: 1px solid rgba(255, 255, 255, 0.08);

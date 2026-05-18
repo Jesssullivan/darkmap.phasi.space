@@ -6,6 +6,7 @@
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
+	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import TimeDock from '$lib/components/TimeDock.svelte';
@@ -489,31 +490,32 @@
 	</div>
 {/if}
 
-<button
-	class="ephemeris-toggle"
-	type="button"
-	aria-pressed={ephemerisOpen}
-	onclick={() => {
-		ephemerisOpen = !ephemerisOpen;
-		if (ephemerisOpen && !decodeHash(window.location.hash).time) {
-			ephemerisTime = new Date();
-		}
-		scheduleHashWrite();
-	}}
-	title="Toggle twilight strip"
->
-	☼/☾
-</button>
-
-<button
-	class="monthly-toggle"
-	type="button"
-	aria-pressed={monthlyOpen}
-	onclick={onMonthlyToggle}
-	title="Toggle VIIRS monthly time slider"
->
-	⏱
-</button>
+<MapToolbar
+	items={[
+		{
+			id: 'ephemeris',
+			label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
+			glyph: '☼/☾',
+			title: 'Twilight strip + sun/moon overlay',
+			pressed: ephemerisOpen,
+			onclick: () => {
+				ephemerisOpen = !ephemerisOpen;
+				if (ephemerisOpen && !decodeHash(window.location.hash).time) {
+					ephemerisTime = new Date();
+				}
+				scheduleHashWrite();
+			},
+		},
+		{
+			id: 'monthly',
+			label: monthlyOpen ? 'Hide monthly slider' : 'Show monthly slider',
+			glyph: '⏱',
+			title: 'VIIRS monthly time slider',
+			pressed: monthlyOpen,
+			onclick: onMonthlyToggle,
+		},
+	]}
+/>
 
 {#if monthlyOpen && monthlyMonth}
 	<TimeDock
@@ -567,51 +569,5 @@
 	}
 	.attribution a {
 		color: #ffd166;
-	}
-	.ephemeris-toggle {
-		position: fixed;
-		right: 0.75rem;
-		bottom: 0.75rem;
-		z-index: 7;
-		background: rgba(8, 10, 16, 0.85);
-		color: #e9ecf3;
-		border: 1px solid rgba(255, 255, 255, 0.18);
-		border-radius: 999px;
-		padding: 0.4rem 0.75rem;
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: 0.75rem;
-		cursor: pointer;
-		backdrop-filter: blur(6px);
-	}
-	.ephemeris-toggle:hover {
-		border-color: rgba(255, 209, 102, 0.65);
-		color: #ffd166;
-	}
-	.ephemeris-toggle[aria-pressed='true'] {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.65);
-	}
-	.monthly-toggle {
-		position: fixed;
-		right: 0.75rem;
-		bottom: 3.25rem;
-		z-index: 7;
-		background: rgba(8, 10, 16, 0.85);
-		color: #e9ecf3;
-		border: 1px solid rgba(255, 255, 255, 0.18);
-		border-radius: 999px;
-		padding: 0.4rem 0.7rem;
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: 0.85rem;
-		cursor: pointer;
-		backdrop-filter: blur(6px);
-	}
-	.monthly-toggle:hover {
-		border-color: rgba(255, 209, 102, 0.65);
-		color: #ffd166;
-	}
-	.monthly-toggle[aria-pressed='true'] {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.65);
 	}
 </style>
