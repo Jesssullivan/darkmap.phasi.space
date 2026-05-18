@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: darkmap
+spec:
+  # With replicas=2 and minAvailable=1, voluntary disruption (node drain,
+  # cordon, API-driven eviction) can take at most one pod at a time.
+  # Involuntary disruption (node crash, OOM) is unaffected — PDB is a
+  # scheduler hint, not a hard guarantee.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: darkmap
