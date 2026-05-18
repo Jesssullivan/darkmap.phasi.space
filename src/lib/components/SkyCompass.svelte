@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Effect, Layer } from 'effect';
 	import { onDestroy } from 'svelte';
+	import { airmassKastenYoung, formatAirmass } from '$lib/ephemeris/airmass';
 	import type { BodyPosition, EphemerisReadout, LatLon, SkyPositions } from '$lib/ephemeris/EphemerisClient';
 	import type { HorizonPolygon } from '$lib/ephemeris/HorizonProvider';
 
@@ -272,6 +273,11 @@
 			<span class="badge sun">☼</span>
 			<span>alt {fmtAlt(cursor?.sun.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.sun.azimuthDeg)}</span>
+			{#if cursor && cursor.sun.altitudeDeg > 0}
+				<span class="airmass" title="Atmospheric airmass (Kasten-Young 1989)"
+					>X {formatAirmass(airmassKastenYoung(cursor.sun.altitudeDeg))}</span
+				>
+			{/if}
 			{#if sunHorizonDelta?.blocked}
 				<span class="blocked">behind terrain {fmtAlt(sunHorizonDelta.horizonAlt)}</span>
 			{:else if sunHorizonDelta}
@@ -360,6 +366,11 @@
 	.phase {
 		margin-left: auto;
 		opacity: 0.6;
+	}
+	.airmass {
+		opacity: 0.7;
+		color: #ffd166;
+		font-variant-numeric: tabular-nums;
 	}
 	.horizon {
 		opacity: 0.55;
