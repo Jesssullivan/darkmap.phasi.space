@@ -1,7 +1,13 @@
 import { Effect } from 'effect';
 import { error, json } from '@sveltejs/kit';
-import { GeocoderClient, GeocoderClientLive } from '$lib/server/geocoder/GeocoderClient';
+import { GeocoderClient, GeocoderClientLive, type GeocodeResult } from '$lib/server/geocoder/GeocoderClient';
+import { TtlCache } from '$lib/server/geocoder/cache';
 import type { RequestHandler } from './$types';
+
+// Per-process LRU+TTL cache. Compresses autocomplete typing patterns
+// where the same final query lands many times in a few seconds, and
+// makes a 5-minute revisit free for any (q, limit, bias) combination.
+const cache = new TtlCache<readonly GeocodeResult[]>({ maxEntries: 256, ttlMs: 5 * 60 * 1000 });
 
 /**
  * Geocode proxy. The browser hits `/api/geocode?q=<text>` and we forward
@@ -33,6 +39,15 @@ export const GET: RequestHandler = async ({ url }) => {
 				})()
 			: undefined;
 
+	const cacheKey = `${q}|${limit}|${bias?.lat ?? ''}|${bias?.lon ?? ''}`;
+	const cached = cache.get(cacheKey);
+	if (cached) {
+		return json(
+			{ results: cached, attribution: 'Geocoding © OpenStreetMap contributors, via Photon (komoot)' },
+			{ headers: { 'x-cache': 'HIT' } },
+		);
+	}
+
 	const program = Effect.gen(function* () {
 		const client = yield* GeocoderClient;
 		return yield* client.search({ q, limit, bias });
@@ -42,5 +57,9 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (exit._tag === 'Failure') {
 		throw error(502, 'geocoder upstream failed');
 	}
-	return json({ results: exit.value });
+	cache.set(cacheKey, exit.value);
+	return json(
+		{ results: exit.value, attribution: 'Geocoding © OpenStreetMap contributors, via Photon (komoot)' },
+		{ headers: { 'x-cache': 'MISS' } },
+	);
 };

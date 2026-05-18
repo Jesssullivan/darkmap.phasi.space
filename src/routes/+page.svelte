@@ -474,7 +474,8 @@
 <footer class="attribution">
 	Data © Jurij Stare,
 	<a href="https://www.lightpollutionmap.info">lightpollutionmap.info</a>
-	— NASA VIIRS DNB · Falchi et al. 2016
+	— NASA VIIRS DNB · Falchi et al. 2016 · Geocoding © OpenStreetMap contributors, via
+	<a href="https://photon.komoot.io">Photon</a> · Elevation © Mapzen Terrarium
 </footer>
 
 <style>
