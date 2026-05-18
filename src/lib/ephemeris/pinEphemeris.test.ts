@@ -63,6 +63,51 @@ describe('computePinEphemerisWithLayer', () => {
 	});
 });
 
+describe('computePinEphemerisWithLayer — dense fans (GAP-14c)', () => {
+	it('emits a fan for each flat event (sunrise + sunset)', async () => {
+		const result = await computePinEphemerisWithLayer(ITHACA, SAMPLE_TIME, flatLayer());
+		expect(result.fans).toHaveLength(2);
+		// Sunrise az is ENE (~60° at Ithaca solstice), sunset is WNW (~300°).
+		const azimuths = result.fans.map((f) => f.centerAzimuthDeg).sort((a, b) => a - b);
+		expect(azimuths[0]).toBeGreaterThan(30);
+		expect(azimuths[0]).toBeLessThan(90);
+		expect(azimuths[1]).toBeGreaterThan(270);
+		expect(azimuths[1]).toBeLessThan(330);
+	});
+
+	it('each fan has the documented ray count (9) covering a 30° span', async () => {
+		const result = await computePinEphemerisWithLayer(ITHACA, SAMPLE_TIME, flatLayer());
+		for (const fan of result.fans) {
+			expect(fan.polygon).toHaveLength(9);
+			// Polygon is sorted ascending; canonicalised into [0, 360).
+			// We can't simply max-min when the fan wraps past 0/360, so check the
+			// span by counting how much rotation we'd have to apply.
+			const azimuths = fan.polygon.map((s) => s.azimuthDeg);
+			// Find the maximum gap; the "span" is 360 minus that gap (since the
+			// rays are clustered together).
+			const sorted = [...azimuths].sort((a, b) => a - b);
+			let maxGap = sorted[0] + 360 - sorted[sorted.length - 1];
+			for (let i = 1; i < sorted.length; i++) maxGap = Math.max(maxGap, sorted[i] - sorted[i - 1]);
+			const span = 360 - maxGap;
+			expect(span).toBeGreaterThan(29);
+			expect(span).toBeLessThan(31);
+		}
+	});
+
+	it('with no event azimuths (impossible polar window), fans is empty and refined still computes', async () => {
+		// Mock a degenerate flat readout by computing far north at solstice;
+		// astronomy-engine returns null sunrise above the arctic circle.
+		const NORTH_POLE_ISH = { lat: 89, lon: 0 };
+		const result = await computePinEphemerisWithLayer(NORTH_POLE_ISH, SAMPLE_TIME, flatLayer());
+		expect(result.flat.events.sunrise).toBeNull();
+		expect(result.flat.events.sunset).toBeNull();
+		expect(result.fans).toHaveLength(0);
+		// Refinement should still run (degenerate inputs → degenerate outputs).
+		expect(result.refined.sunrise).toBeNull();
+		expect(result.refined.sunset).toBeNull();
+	});
+});
+
 describe('computePinEphemeris memoisation', () => {
 	beforeEach(() => {
 		_resetPinEphemerisMemo();
