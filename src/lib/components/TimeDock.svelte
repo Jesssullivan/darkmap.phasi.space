@@ -7,23 +7,20 @@
 	 * dock's month changes.
 	 */
 
-	import { onDestroy } from 'svelte';
 	import { VIIRS_MONTHLY_END, VIIRS_MONTHLY_START, VIIRS_MONTHS } from '$lib/layers';
 	import type { MonthlyMonth } from '$lib/url-hash';
 
 	interface Props {
 		/** Currently-active month. */
 		month: MonthlyMonth;
-		/** True when autoplay is animating forward. */
+		/** True when autoplay is animating forward (parent owns the loop). */
 		autoplay: boolean;
-		/** Milliseconds between autoplay ticks. */
-		autoplayIntervalMs?: number;
 		onMonthChange: (m: MonthlyMonth) => void;
 		onAutoplayChange: (a: boolean) => void;
 		onClose?: () => void;
 	}
 
-	let { month, autoplay, autoplayIntervalMs = 700, onMonthChange, onAutoplayChange, onClose }: Props = $props();
+	let { month, autoplay, onMonthChange, onAutoplayChange, onClose }: Props = $props();
 
 	const TOTAL = VIIRS_MONTHS.length;
 
@@ -67,28 +64,11 @@
 		return out;
 	});
 
-	// Autoplay tick. Advances one month every `autoplayIntervalMs`. When
-	// it hits the last month, it pauses (rather than looping) so the
-	// user notices end-of-range.
-	let autoplayHandle: ReturnType<typeof setInterval> | undefined;
-	$effect(() => {
-		if (autoplayHandle) {
-			clearInterval(autoplayHandle);
-			autoplayHandle = undefined;
-		}
-		if (!autoplay) return;
-		autoplayHandle = setInterval(() => {
-			const idx = indexOf(month);
-			if (idx >= TOTAL - 1) {
-				onAutoplayChange(false);
-				return;
-			}
-			onMonthChange(monthAt(idx + 1));
-		}, autoplayIntervalMs);
-	});
-	onDestroy(() => {
-		if (autoplayHandle) clearInterval(autoplayHandle);
-	});
+	// Autoplay loop lives in the parent (`+page.svelte`) so each tick
+	// can `await` the layer swap before scheduling the next — at 700 ms
+	// intervals with cold tile fetches the previous `setInterval` raced
+	// the swap and stacked sources. TimeDock just calls
+	// `onAutoplayChange(true|false)` and renders the play/pause state.
 
 	const handleSlider = (ev: Event): void => {
 		const value = Number((ev.target as HTMLInputElement).value);

@@ -162,8 +162,44 @@
 		scheduleHashWrite();
 	}
 
+	// Autoplay loop. Owned by the parent (not TimeDock) so each tick
+	// `await`s the previous mountMonthly before scheduling the next.
+	// Avoids the source-stack race that an unrestrained 700 ms
+	// `setInterval` had on cold tile fetches.
+	const MONTHLY_AUTOPLAY_INTERVAL_MS = 700;
+	let monthlyAutoplayHandle: ReturnType<typeof setTimeout> | undefined;
+
+	function clearAutoplayHandle(): void {
+		if (monthlyAutoplayHandle !== undefined) {
+			clearTimeout(monthlyAutoplayHandle);
+			monthlyAutoplayHandle = undefined;
+		}
+	}
+
+	function scheduleAutoplayTick(): void {
+		clearAutoplayHandle();
+		monthlyAutoplayHandle = setTimeout(async () => {
+			if (!monthlyAutoplay || !monthlyMonth) return;
+			const idx = VIIRS_MONTHS.findIndex((l) => l.year === monthlyMonth!.year && l.month === monthlyMonth!.month);
+			if (idx < 0 || idx + 1 >= VIIRS_MONTHS.length) {
+				// End of range — pause so the user notices instead of looping.
+				monthlyAutoplay = false;
+				scheduleHashWrite();
+				return;
+			}
+			const next = VIIRS_MONTHS[idx + 1];
+			const nextMonth: MonthlyMonth = { year: next.year ?? 0, month: next.month ?? 1 };
+			monthlyMonth = nextMonth;
+			await mountMonthly(nextMonth);
+			scheduleHashWrite();
+			if (monthlyAutoplay) scheduleAutoplayTick();
+		}, MONTHLY_AUTOPLAY_INTERVAL_MS);
+	}
+
 	function onMonthlyAutoplayChange(a: boolean): void {
 		monthlyAutoplay = a;
+		if (a) scheduleAutoplayTick();
+		else clearAutoplayHandle();
 		scheduleHashWrite();
 	}
 
@@ -404,6 +440,7 @@
 
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
+		clearAutoplayHandle();
 		mapInstance?.remove();
 		mapInstance = undefined;
 	});
