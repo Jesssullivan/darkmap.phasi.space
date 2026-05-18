@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
+
 	export interface ReadoutData {
 		readonly viirs?: {
 			readonly layer: string;
@@ -15,22 +17,19 @@
 	interface Props {
 		lat: number;
 		lon: number;
+		time: Date;
 		data: ReadoutData | undefined;
 		loading: boolean;
 		error?: string;
 		onclose: () => void;
 	}
 
-	let { lat, lon, data, loading, error, onclose }: Props = $props();
+	let { lat, lon, time, data, loading, error, onclose }: Props = $props();
 
 	const fmtCoord = (n: number) => n.toFixed(4);
-	// Brightness of a VIIRS pixel: average the RGB. The styled palette runs
-	// dark -> bright so the average is a usable single-number indicator.
 	const viirsAvg = $derived.by(() =>
 		data?.viirs ? Math.round((data.viirs.red + data.viirs.green + data.viirs.blue) / 3) : undefined,
 	);
-	// Falchi 2015 brightness classes: < 8 = wilderness, 8-32 = rural, 32-87 = suburban, > 87 = urban.
-	// Source: Falchi et al. 2016 World Atlas, Table 1 (mcd/m² ratios).
 	const waClass = $derived.by(() => {
 		const g = data?.worldAtlas?.grayIndex;
 		if (g === undefined) return undefined;
@@ -41,6 +40,59 @@
 		if (g < 460) return 'Urban';
 		return 'Inner city';
 	});
+
+	// Lighthouse / horizon-aware ephemeris. Opens on click, fetches the
+	// 36-ray terrain polygon + refined twilight events for this pin. The
+	// helper memoises per (lat3, lon3, UTC-day) so re-opening the same
+	// pin is instant.
+	let ephemerisOpen = $state(false);
+	let ephemeris: PinEphemerisReadout | null = $state(null);
+	let ephemerisLoading = $state(false);
+	let ephemerisError: string | null = $state(null);
+
+	async function loadEphemeris(): Promise<void> {
+		ephemerisLoading = true;
+		ephemerisError = null;
+		try {
+			const { computePinEphemeris } = await import('$lib/ephemeris/pinEphemeris');
+			ephemeris = await computePinEphemeris({ lat, lon }, time);
+		} catch (e) {
+			ephemerisError = e instanceof Error ? e.message : String(e);
+		} finally {
+			ephemerisLoading = false;
+		}
+	}
+
+	function toggleEphemeris(): void {
+		ephemerisOpen = !ephemerisOpen;
+		if (ephemerisOpen && !ephemeris && !ephemerisLoading) {
+			void loadEphemeris();
+		}
+	}
+
+	// Clicking a new pin wipes any prior ephemeris result so the section
+	// shows the correct loading state when the user re-opens it.
+	$effect(() => {
+		// Track lat/lon/day, intentionally reset ephemeris when any change.
+		const _ = `${lat}|${lon}|${time.getUTCFullYear()}-${time.getUTCMonth()}-${time.getUTCDate()}`;
+		void _;
+		ephemeris = null;
+		ephemerisError = null;
+	});
+
+	const fmtClock = (d: Date | null): string => {
+		if (!d) return '—';
+		const hh = d.getUTCHours().toString().padStart(2, '0');
+		const mm = d.getUTCMinutes().toString().padStart(2, '0');
+		return `${hh}:${mm}`;
+	};
+
+	const deltaMin = (flat: Date | null, refined: Date | null): string => {
+		if (!flat || !refined) return '';
+		const dMin = Math.round((refined.getTime() - flat.getTime()) / 60000);
+		if (Math.abs(dMin) < 1) return '';
+		return dMin > 0 ? ` (+${dMin}m)` : ` (${dMin}m)`;
+	};
 </script>
 
 <div class="readout" role="dialog" aria-label="Point readout">
@@ -74,6 +126,59 @@
 			<p class="loading">No data at this point.</p>
 		{/if}
 	{/if}
+
+	<section class="ephemeris-section">
+		<button
+			class="ephemeris-header"
+			type="button"
+			aria-expanded={ephemerisOpen}
+			aria-controls="pin-ephemeris-body"
+			onclick={toggleEphemeris}
+		>
+			<span class="caret" aria-hidden="true">{ephemerisOpen ? '▾' : '▸'}</span>
+			<span>Horizon-aware ephemeris</span>
+		</button>
+		{#if ephemerisOpen}
+			<div id="pin-ephemeris-body" class="ephemeris-body">
+				{#if ephemerisLoading}
+					<p class="loading">Tracing local horizon…</p>
+					<p class="note">Fetching elevation tiles + raycasting 36 azimuths. First open takes a few seconds.</p>
+				{:else if ephemerisError}
+					<p class="error">{ephemerisError}</p>
+				{:else if ephemeris}
+					{@const r = ephemeris.refined}
+					{@const f = ephemeris.flat.events}
+					<dl class="events">
+						<dt>Astro dawn</dt>
+						<dd>
+							{fmtClock(r.astronomicalDawn)}<span class="delta">{deltaMin(f.astronomicalDawn, r.astronomicalDawn)}</span
+							>
+						</dd>
+						<dt>Nautical dawn</dt>
+						<dd>{fmtClock(r.nauticalDawn)}<span class="delta">{deltaMin(f.nauticalDawn, r.nauticalDawn)}</span></dd>
+						<dt>Civil dawn</dt>
+						<dd>{fmtClock(r.civilDawn)}<span class="delta">{deltaMin(f.civilDawn, r.civilDawn)}</span></dd>
+						<dt>Sunrise</dt>
+						<dd>{fmtClock(r.sunrise)}<span class="delta">{deltaMin(f.sunrise, r.sunrise)}</span></dd>
+						<dt>Sunset</dt>
+						<dd>{fmtClock(r.sunset)}<span class="delta">{deltaMin(f.sunset, r.sunset)}</span></dd>
+						<dt>Civil dusk</dt>
+						<dd>{fmtClock(r.civilDusk)}<span class="delta">{deltaMin(f.civilDusk, r.civilDusk)}</span></dd>
+						<dt>Nautical dusk</dt>
+						<dd>{fmtClock(r.nauticalDusk)}<span class="delta">{deltaMin(f.nauticalDusk, r.nauticalDusk)}</span></dd>
+						<dt>Astro dusk</dt>
+						<dd>
+							{fmtClock(r.astronomicalDusk)}<span class="delta">{deltaMin(f.astronomicalDusk, r.astronomicalDusk)}</span
+							>
+						</dd>
+					</dl>
+					<p class="note">UTC · (±m) = shift vs flat horizon at this pin. Terrain from Mapzen Terrarium z=12.</p>
+				{:else}
+					<p class="note">Click to compute terrain-aware twilight times for this pin.</p>
+				{/if}
+			</div>
+		{/if}
+	</section>
 </div>
 
 <style>
@@ -166,5 +271,58 @@
 	.error {
 		color: #ff6b6b;
 		margin: 0.5rem 0 0 0;
+	}
+	.ephemeris-section {
+		margin-top: 0.85rem;
+		padding-top: 0.65rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
+	}
+	.ephemeris-header {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		color: rgba(233, 236, 243, 0.85);
+		font: inherit;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		cursor: pointer;
+		text-align: left;
+	}
+	.ephemeris-header:hover {
+		color: #ffd166;
+	}
+	.caret {
+		display: inline-block;
+		width: 0.7rem;
+		opacity: 0.75;
+	}
+	.ephemeris-body {
+		margin-top: 0.5rem;
+	}
+	.events {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.15rem 0.75rem;
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+		font-size: 0.78rem;
+	}
+	.events dt {
+		opacity: 0.7;
+	}
+	.events dd {
+		margin: 0;
+		text-align: right;
+		color: #ffd166;
+	}
+	.delta {
+		margin-left: 0.3rem;
+		opacity: 0.65;
+		color: #e9ecf3;
 	}
 </style>

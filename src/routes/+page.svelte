@@ -344,6 +344,7 @@
 	<PointReadout
 		lat={readout.lat}
 		lon={readout.lon}
+		time={ephemerisTime}
 		data={readout.data}
 		loading={readout.loading}
 		error={readout.error}
