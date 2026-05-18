@@ -1,6 +1,6 @@
 name: Lane env
 
-# Thin wrapper over tinyland-inc/ci-templates@v1.1.3's spoke-lane-env.yml.
+# Thin wrapper over tinyland-inc/ci-templates@v1.1.4's spoke-lane-env.yml.
 # See docs/CI-SCHEMA.md §4 + §7 for the dispatch payload + ephemeral-env
 # contract.
 #
@@ -50,14 +50,14 @@ jobs:
     # disable the wrapper repo-wide via the GitHub UI without editing
     # the file.
     if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED != 'false' }}
-    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.1.3
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.1.4
     with:
       spoke: darkmap
       lanes_path: .github/lanes.json
       enable_tailnet_qa: false
       reap: ${{ github.event.action == 'closed' || inputs.reap || false }}
       pr_number: ${{ github.event.pull_request.number || inputs.pr }}
-    # No secrets block: spoke-lane-env.yml@v1.1.3 declares
+    # No secrets block: spoke-lane-env.yml@v1.1.4 declares
     # BLAHAJ_DISPATCH_TOKEN + TAILSCALE_API_KEY as `required: false`.
     # Once Blahaj is installed and BLAHAJ_DISPATCH_TOKEN is set as a
     # repo secret, add it back here as:

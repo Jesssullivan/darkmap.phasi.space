@@ -15,7 +15,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Thin wrapper over tinyland-inc/ci-templates@v1.1.3's spoke-ci.yml.
+# Thin wrapper over tinyland-inc/ci-templates@v1.1.4's spoke-ci.yml.
 # See docs/CI-SCHEMA.md §6 for the runner-class matrix.
 #
 # Passes darkmap's existing dynamic runner-class fallback via
@@ -24,20 +24,20 @@ concurrency:
 # aren't reachable — matching the pre-wrapper behavior of darkmap's
 # hand-rolled ci.yml.
 #
-# Bump @v1.1.3 deliberately after reviewing the ci-templates CHANGELOG.
+# Bump @v1.1.4 deliberately after reviewing the ci-templates CHANGELOG.
 
 jobs:
   ci:
-    uses: tinyland-inc/ci-templates/.github/workflows/spoke-ci.yml@v1.1.3
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-ci.yml@v1.1.4
     with:
-      node_version: "22"
-      pnpm_version: "10.13.1"
+      node_version: '22'
+      pnpm_version: '10.13.1'
       flywheel_config: flywheel
       playwright_enabled: false
       lanes_path: .github/lanes.json
       default_runner_class: tinyland-nix
       runner_labels_json: ${{ vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
-    # No secrets block: spoke-ci.yml@v1.1.3 declares ATTIC_TOKEN as
+    # No secrets block: spoke-ci.yml@v1.1.4 declares ATTIC_TOKEN as
     # `required: false`. `secrets: inherit` is rejected at workflow
     # parse-time when caller (Jesssullivan/*) and callee (tinyland-inc/*)
     # are not in the same org/enterprise. Omit entirely.
