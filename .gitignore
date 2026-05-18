@@ -59,3 +59,9 @@ result-*
 # Tofu local-override (operator-side rustfs port-forward, never commit)
 infra/tofu/backend.local.hcl
 infra/tofu/darkmap.tfplan
+
+# Tofu init/state artifacts (docs/CI-SCHEMA.md §7; state belongs in env-owned S3, not the repo)
+infra/tofu/.terraform/
+infra/tofu/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.backup
