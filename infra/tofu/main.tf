@@ -60,7 +60,14 @@ resource "cloudflare_dns_record" "darkmap_a" {
 # ─────────────────────────────────────────────────────────────────────
 
 locals {
-  spoke_modules_source = "git::ssh://git@github.com/tinyland-inc/GloriousFlywheel.git//tofu/modules"
+  # HTTPS (not SSH) so hosted CI runners without an ssh-agent — and
+  # without a deploy key for tinyland-inc/GloriousFlywheel — can fetch
+  # the modules anonymously. GloriousFlywheel is a public repo, so
+  # `git clone https://github.com/...` works with no auth. Surfaced by
+  # darkmap M3+M4 PR #77 CI: SSH cloning failed with
+  # `Host key verification failed`. Logged as a feedback note in
+  # `docs/playbook/scaffold-v1-upgrade.md` §8 Pitfalls.
+  spoke_modules_source = "git::https://github.com/tinyland-inc/GloriousFlywheel.git//tofu/modules"
   spoke_modules_ref    = "spoke-tofu-modules-v1.0.0"
 }
 

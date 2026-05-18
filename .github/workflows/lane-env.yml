@@ -1,0 +1,64 @@
+name: Lane env
+
+# Triggered only manually until Blahaj is installed on this repo.
+#
+# WHY: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
+# declares `secrets: BLAHAJ_DISPATCH_TOKEN: required: true`. GitHub
+# resolves required secrets at workflow-call parse time, BEFORE the
+# job-level `if:` gate is evaluated. So gating with
+# `if: vars.BLAHAJ_LANE_ENV_ENABLED == 'true'` does NOT prevent the
+# workflow file from failing when the secret is empty — it fails with
+# "workflow file issue" before any job logic runs.
+#
+# Surfaced by darkmap's M6 validation test PR #82. Captured as a
+# ci-templates v1.0.1 feedback PR proposing
+# `BLAHAJ_DISPATCH_TOKEN: required: false` (with an internal early-exit
+# when the token is empty), which lets spokes safely no-op-gate the
+# pull_request trigger and only flip it on once Blahaj is wired.
+#
+# Until that PR lands AND Blahaj is installed on
+# Jesssullivan/darkmap.tinyland.dev:
+#   - workflow_dispatch path is available for manual testing once the
+#     secret is populated (operator step; gate the manual run on
+#     visual confirmation, not on the var).
+#   - pull_request trigger is commented out below.
+#
+# When Blahaj IS installed and BLAHAJ_DISPATCH_TOKEN exists as a repo
+# secret, uncomment the `pull_request:` block.
+
+on:
+  # pull_request:
+  #   types: [opened, synchronize, reopened, ready_for_review, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        required: true
+        type: number
+      reap:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  statuses: write
+  deployments: write
+
+concurrency:
+  group: lane-env-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  lane-env:
+    if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED == 'true' }}
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
+    with:
+      spoke: darkmap
+      lanes_path: .github/lanes.json
+      enable_tailnet_qa: false
+      reap: ${{ inputs.reap || false }}
+      pr_number: ${{ inputs.pr }}
+    secrets:
+      BLAHAJ_DISPATCH_TOKEN: ${{ secrets.BLAHAJ_DISPATCH_TOKEN }}
