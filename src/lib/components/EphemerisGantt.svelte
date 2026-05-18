@@ -419,14 +419,22 @@
 	}
 	.bar {
 		position: relative;
-		height: 1rem;
+		/* Bumped from 1rem so the touch target meets WCAG 2.5.5 (24x24px).
+		   Desktop reads fine at 1.5rem too — the bands stay visible. */
+		height: 1.5rem;
 		border-radius: 3px;
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		cursor: pointer;
 		outline: none;
 	}
-	.bar:focus {
+	.bar:focus-visible {
 		box-shadow: 0 0 0 2px rgba(127, 187, 255, 0.5);
+	}
+	@media (pointer: coarse) {
+		.bar {
+			/* Even more generous on touch devices. */
+			height: 1.75rem;
+		}
 	}
 	.cursor {
 		position: absolute;
