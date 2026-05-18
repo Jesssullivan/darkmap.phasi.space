@@ -217,6 +217,16 @@ kustomize-validate-server:
 kustomize-apply:
     kustomize build {{ kustomize_dir }} | kubectl apply -f -
 
+# Operator deploy: apply manifests + rollout-restart so :main pulls the
+# newest image + wait for the rollout to settle. Replaces the CI
+# staging-deploy when the ARC runner pool can't reach the cluster API
+# (the runner pods sit on a network that has no route to the cluster
+# tailnet IP — only `kustomize-apply` from a tailnet-joined workstation
+# works today). See .github/workflows/staging-deploy.yml header.
+deploy: kustomize-apply
+    kubectl -n darkmap rollout restart deployment/darkmap
+    kubectl -n darkmap rollout status deployment/darkmap --timeout=180s
+
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)
 # ─────────────────────────────────────────────
