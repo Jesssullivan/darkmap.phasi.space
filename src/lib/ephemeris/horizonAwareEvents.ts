@@ -38,9 +38,23 @@ export interface RefineOptions {
 	readonly precisionMs?: number;
 	/** Max bisection iterations. Default 12 (gives ~3 s precision over a 4 h window). */
 	readonly maxIters?: number;
+	/**
+	 * Optional per-azimuth horizon polygon resolver. When provided, each
+	 * bisection probe looks up the horizon altitude through this resolver
+	 * with the sun's *current* azimuth — picking up the dense local fan
+	 * from `HorizonProvider.polygonNearAzimuth` instead of the
+	 * 10°-interpolated estimate the static polygon yields. When omitted,
+	 * the function falls back to the static polygon argument.
+	 *
+	 * Callers typically pre-compute a small library of fans at strategic
+	 * azimuths (e.g. the flat-event azimuth ±15° / ±30°) and have the
+	 * resolver pick the closest. Returning the static polygon for
+	 * unknown azimuths is a sound fallback.
+	 */
+	readonly polygonResolver?: (azimuthDeg: number) => HorizonPolygon;
 }
 
-const DEFAULT_OPTS: Required<RefineOptions> = {
+const DEFAULT_OPTS: Omit<Required<RefineOptions>, 'polygonResolver'> = {
 	windowMs: 2 * 3600 * 1000,
 	offsetDeg: 0,
 	precisionMs: 1000,
@@ -59,10 +73,12 @@ export const refineHorizonEvent = (
 	opts: RefineOptions = {},
 ): Date | null => {
 	const o = { ...DEFAULT_OPTS, ...opts };
+	const resolve = opts.polygonResolver;
 
 	const f = (t: Date): number => {
 		const p = sunAt(t);
-		const h = horizonAtAzimuth(polygon, p.azimuthDeg) + o.offsetDeg;
+		const localPolygon = resolve ? resolve(p.azimuthDeg) : polygon;
+		const h = horizonAtAzimuth(localPolygon, p.azimuthDeg) + o.offsetDeg;
 		return p.altitudeDeg - h;
 	};
 
@@ -115,6 +131,8 @@ export const refineEventSet = (
 ): FlatEventSet => {
 	const refine = (t: Date | null, offsetDeg: number): Date | null =>
 		t === null ? null : refineHorizonEvent(t, sunAt, polygon, { ...opts, offsetDeg });
+	// `opts.polygonResolver` flows through implicitly via the spread above —
+	// `refineHorizonEvent` reads it back off the options object.
 	return {
 		astronomicalDawn: refine(flat.astronomicalDawn, -18),
 		nauticalDawn: refine(flat.nauticalDawn, -12),
