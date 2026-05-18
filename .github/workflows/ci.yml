@@ -37,4 +37,7 @@ jobs:
       lanes_path: .github/lanes.json
       default_runner_class: tinyland-nix
       runner_labels_json: ${{ vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
-    secrets: inherit
+    # No secrets block: spoke-ci.yml@v1.1.0 declares ATTIC_TOKEN as
+    # `required: false`. `secrets: inherit` is rejected at workflow
+    # parse-time when caller (Jesssullivan/*) and callee (tinyland-inc/*)
+    # are not in the same org/enterprise. Omit entirely.

@@ -57,5 +57,12 @@ jobs:
       enable_tailnet_qa: false
       reap: ${{ github.event.action == 'closed' || inputs.reap || false }}
       pr_number: ${{ github.event.pull_request.number || inputs.pr }}
-    secrets:
-      BLAHAJ_DISPATCH_TOKEN: ${{ secrets.BLAHAJ_DISPATCH_TOKEN }}
+    # No secrets block: spoke-lane-env.yml@v1.1.0 declares
+    # BLAHAJ_DISPATCH_TOKEN + TAILSCALE_API_KEY as `required: false`.
+    # Once Blahaj is installed and BLAHAJ_DISPATCH_TOKEN is set as a
+    # repo secret, add it back here as:
+    #   secrets:
+    #     BLAHAJ_DISPATCH_TOKEN: ${{ secrets.BLAHAJ_DISPATCH_TOKEN }}
+    # Until then, omit — passing an undefined `${{ secrets.X }}`
+    # expression in a workflow_call secrets block can trip parse-time
+    # validation in some GH paths.
