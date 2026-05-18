@@ -8,6 +8,17 @@ spec:
   # poddisruptionbudget.yaml in this overlay) guarantees the same
   # against voluntary disruption.
   replicas: 2
+  # 2026-05-18: 78-minute rollout drift caused asset-hash mismatch
+  # (three image SHAs alive simultaneously, nginx round-robined to
+  # pods missing the requested bundle hashes, users saw 500s on
+  # /_app/immutable/entry/*.js). progressDeadlineSeconds catches
+  # a stuck pod inside 5 min so the kubelet retries instead of
+  # leaving a half-rolled state hanging.
+  progressDeadlineSeconds: 300
+  # Wait 5 s after a pod hits Ready before counting it Available, so
+  # nginx finishes registering the endpoint before we send the next
+  # replica's pod into Terminating.
+  minReadySeconds: 5
   strategy:
     type: RollingUpdate
     rollingUpdate:
