@@ -7,6 +7,7 @@
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
+	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
@@ -320,21 +321,24 @@
 	/>
 {/if}
 
-<button
-	class="ephemeris-toggle"
-	type="button"
-	aria-pressed={ephemerisOpen}
-	onclick={() => {
-		ephemerisOpen = !ephemerisOpen;
-		if (ephemerisOpen && !decodeHash(window.location.hash).time) {
-			ephemerisTime = new Date();
-		}
-		scheduleHashWrite();
-	}}
-	title="Toggle twilight strip"
->
-	☼/☾
-</button>
+<MapToolbar
+	items={[
+		{
+			id: 'ephemeris',
+			label: 'Toggle twilight strip',
+			glyph: '☼/☾',
+			title: 'Toggle twilight strip',
+			pressed: ephemerisOpen,
+			onclick: () => {
+				ephemerisOpen = !ephemerisOpen;
+				if (ephemerisOpen && !decodeHash(window.location.hash).time) {
+					ephemerisTime = new Date();
+				}
+				scheduleHashWrite();
+			},
+		},
+	]}
+/>
 
 {#if readout}
 	<PointReadout
@@ -378,28 +382,5 @@
 	}
 	.attribution a {
 		color: #ffd166;
-	}
-	.ephemeris-toggle {
-		position: fixed;
-		right: 0.75rem;
-		bottom: 0.75rem;
-		z-index: 7;
-		background: rgba(8, 10, 16, 0.85);
-		color: #e9ecf3;
-		border: 1px solid rgba(255, 255, 255, 0.18);
-		border-radius: 999px;
-		padding: 0.4rem 0.75rem;
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: 0.75rem;
-		cursor: pointer;
-		backdrop-filter: blur(6px);
-	}
-	.ephemeris-toggle:hover {
-		border-color: rgba(255, 209, 102, 0.65);
-		color: #ffd166;
-	}
-	.ephemeris-toggle[aria-pressed='true'] {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.65);
 	}
 </style>
