@@ -41,6 +41,12 @@ spec:
       # The blahaj `honey-sting-tailnet` ProxyClass is restricted to
       # honey/sting; pin the workload to the same shape so the tailnet
       # exposure and the workload are colocated and predictable.
+      #
+      # 2026-05-18: bumble dropped from the preference list after it
+      # went Ready,SchedulingDisabled with a stale heartbeat — every
+      # rollout's new replicas landed there and hung in
+      # ContainerCreating because the cordon stopped pulls. Re-add
+      # bumble once the node returns to healthy.
       nodeSelector:
         kubernetes.io/os: linux
       affinity:
@@ -51,7 +57,7 @@ spec:
                 matchExpressions:
                   - key: kubernetes.io/hostname
                     operator: In
-                    values: ['bumble', 'sting']
+                    values: ['honey', 'sting']
       containers:
         - name: app
           image: darkmap
