@@ -300,7 +300,9 @@
 <style>
 	.sky {
 		position: fixed;
-		top: 1rem;
+		/* Sit under the top-center geocoder search input so it doesn't
+		   stack over it on narrow widths. */
+		top: 3.75rem;
 		right: 1rem;
 		width: 9.5rem;
 		background: rgba(8, 10, 16, 0.78);
@@ -312,6 +314,13 @@
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		font-family: var(--font-mono, ui-monospace, monospace);
 		color: #e9ecf3;
+	}
+	/* Hide the dome on phone widths; the gantt + readout still cover
+	   the use case. Future ticket: collapse into a tappable badge. */
+	@media (max-width: 560px) {
+		.sky {
+			display: none;
+		}
 	}
 	svg {
 		display: block;
