@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
+	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
@@ -392,6 +393,14 @@
 </svelte:head>
 
 <div bind:this={mapEl} class="map" aria-label="Light pollution map"></div>
+
+<GeocoderSearch
+	bias={viewCenter}
+	onSelect={(sel) => {
+		if (!mapInstance) return;
+		mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
+	}}
+/>
 <LayerRail
 	layers={LAYERS}
 	states={layerState}
