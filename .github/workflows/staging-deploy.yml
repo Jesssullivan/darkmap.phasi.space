@@ -1,19 +1,26 @@
 # =============================================================================
 # GitHub Actions: deploy darkmap.tinyland.dev to the blahaj honey cluster.
 #
-# This workflow is a no-op until the `KUBE_CONFIG_HONEY` secret is provisioned.
-# Once the secret is set (base64-encoded kubeconfig with `honey` context),
-# pushes to main automatically apply the kustomize overlay with the SHA-pinned
-# container image.
+# STATUS (2026-05-18): the CI auto-deploy path is BLOCKED by runner-pool
+# connectivity. The ARC self-hosted runner pods cannot route to the
+# cluster API at the tailnet IP 100.113.89.12:6443 — `kubectl apply`
+# times out at the TCP dial stage even with --validate=false (#68) and
+# after switching off ubuntu-latest (#67). Two follow-up paths to
+# unblock:
+#   (a) Mount an in-cluster ServiceAccount with RBAC on darkmap ns +
+#       use https://kubernetes.default.svc (preferred, scoped)
+#   (b) Add a Tailscale sidecar to the runner pod so its kubeconfig
+#       works
 #
-# Manual operator flow:
-#   1. Build/push image (Container workflow).
-#   2. From a tailnet-joined workstation:
-#        export TF_VAR_query_raster_key=<the-real-key>
-#        just tofu-init && just tofu-plan && just tofu-apply
-#        cd infra/kustomize/honey/darkmap
-#        kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${SHA}
-#        kustomize build . | kubectl apply -f -
+# Until (a) or (b) lands, the canonical deploy is operator-side from a
+# tailnet-joined workstation:
+#
+#   just deploy
+#
+# That applies the kustomize overlay, rollout-restarts so the `:main`
+# floating tag picks up the fresh image, and waits for the rollout.
+# The CI workflow stays in place so it'll just start working again
+# once connectivity is fixed.
 # =============================================================================
 
 name: Staging deploy
