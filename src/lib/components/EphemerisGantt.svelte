@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Effect } from 'effect';
 	import { onDestroy } from 'svelte';
+	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
 	import { viewportGridPoints } from '$lib/viewportGrid';
 
@@ -312,21 +313,40 @@
 		<span class="date">{fmtDate(dayStart)} UTC</span>
 		<span class="cursor-label">cursor {fmtClock(time)}</span>
 		{#if closestRange}
-			<span class="pill" title="Spread across visible viewport (4x4 sample grid)">
-				{labelFor(closestRange.key)}
-				{fmtClock(closestRange.range.min)}–{fmtClock(closestRange.range.max)}
-				<span class="delta"
-					>{fmtDelta((closestRange.range.max.getTime() - closestRange.range.min.getTime()) / 60_000)}</span
-				>
-			</span>
+			<HelpTooltip>
+				{#snippet trigger()}
+					<span class="pill">
+						{labelFor(closestRange.key)}
+						{fmtClock(closestRange.range.min)}–{fmtClock(closestRange.range.max)}
+						<span class="delta"
+							>{fmtDelta((closestRange.range.max.getTime() - closestRange.range.min.getTime()) / 60_000)}</span
+						>
+					</span>
+				{/snippet}
+				{#snippet content()}
+					<div>
+						<strong>Event-time spread across the visible viewport.</strong>
+						<br />
+						Sampled at 16 points (4×4 grid) inside the map bounds. Δ shrinks as you zoom in; state-scale views can show tens
+						of minutes between the earliest and latest civil dusk.
+					</div>
+				{/snippet}
+			</HelpTooltip>
 		{/if}
-		<span class="phase" title="Moon illumination">
-			{#if readout}
-				{readout.moon.phaseName} · {(readout.moon.illumination * 100).toFixed(0)}%
-			{:else if loading}
-				…
-			{/if}
-		</span>
+		{#if readout}
+			{@const moon = readout.moon}
+			<HelpTooltip
+				text="Moon phase angle {moon.phaseDeg.toFixed(1)}° · illumination {(moon.illumination * 100).toFixed(1)}%"
+			>
+				{#snippet trigger()}
+					<span class="phase">
+						{moon.phaseName} · {(moon.illumination * 100).toFixed(0)}%
+					</span>
+				{/snippet}
+			</HelpTooltip>
+		{:else if loading}
+			<span class="phase">…</span>
+		{/if}
 	</div>
 	<div
 		class="bar"
