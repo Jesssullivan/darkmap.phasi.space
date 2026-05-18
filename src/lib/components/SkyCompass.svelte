@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Effect, Layer } from 'effect';
 	import { onDestroy } from 'svelte';
+	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import { airmassKastenYoung, formatAirmass } from '$lib/ephemeris/airmass';
 	import type { BodyPosition, EphemerisReadout, LatLon, SkyPositions } from '$lib/ephemeris/EphemerisClient';
 	import type { HorizonPolygon } from '$lib/ephemeris/HorizonProvider';
@@ -274,9 +275,22 @@
 			<span>alt {fmtAlt(cursor?.sun.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.sun.azimuthDeg)}</span>
 			{#if cursor && cursor.sun.altitudeDeg > 0}
-				<span class="airmass" title="Atmospheric airmass (Kasten-Young 1989)"
-					>X {formatAirmass(airmassKastenYoung(cursor.sun.altitudeDeg))}</span
-				>
+				{@const sunAlt = cursor.sun.altitudeDeg}
+				<HelpTooltip>
+					{#snippet trigger()}
+						<span class="airmass">X {formatAirmass(airmassKastenYoung(sunAlt))}</span>
+					{/snippet}
+					{#snippet content()}
+						<div>
+							<strong>Atmospheric airmass</strong> — Kasten &amp; Young (1989).
+							<br />
+							At zenith X=1.0, at 45° alt X≈1.41, at 10° alt X≈5.6. Above ~30° plane-parallel
+							<code>sec(z)</code> is close enough; below that, curvature dominates.
+							<br />
+							<a href="/docs#science">/docs#science</a>
+						</div>
+					{/snippet}
+				</HelpTooltip>
 			{/if}
 			{#if sunHorizonDelta?.blocked}
 				<span class="blocked">behind terrain {fmtAlt(sunHorizonDelta.horizonAlt)}</span>
