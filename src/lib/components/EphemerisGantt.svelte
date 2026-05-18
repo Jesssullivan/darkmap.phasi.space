@@ -2,6 +2,7 @@
 	import { Effect } from 'effect';
 	import { onDestroy } from 'svelte';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
+	import { viewportGridPoints } from '$lib/viewportGrid';
 
 	export interface ViewportBounds {
 		readonly north: number;
@@ -107,19 +108,8 @@
 		(async () => {
 			const c = await loadClient();
 			// 4x4 grid plus the center pin. Skip if the box is degenerate.
-			const dlat = bounds.north - bounds.south;
-			const dlon = bounds.east - bounds.west;
-			if (dlat <= 0 || dlon === 0) return;
-			const SAMPLES = 4;
-			const points: LatLon[] = [];
-			for (let i = 0; i < SAMPLES; i++) {
-				for (let j = 0; j < SAMPLES; j++) {
-					points.push({
-						lat: bounds.south + ((i + 0.5) / SAMPLES) * dlat,
-						lon: bounds.west + ((j + 0.5) / SAMPLES) * dlon,
-					});
-				}
-			}
+			const points = viewportGridPoints(bounds, 4);
+			if (points.length === 0) return;
 			const readouts = await Promise.all(points.map((p) => c(p, time)));
 			if (myGen !== cancelGen) return;
 			const KEYS: EventKey[] = [
