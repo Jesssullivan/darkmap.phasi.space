@@ -83,7 +83,11 @@ jobs:
             echo "::warning::KUBE_CONFIG_HONEY secret not set — skipping apply"
             exit 0
           fi
-          kustomize build . | kubectl apply -f -
+          # --validate=false skips the openapi schema download which has
+          # been timing out from the ARC runner pool. The apply itself
+          # still goes through the kube-apiserver and gets validated
+          # server-side.
+          kustomize build . | kubectl apply --validate=false -f -
 
       - name: Wait for rollout
         env:
