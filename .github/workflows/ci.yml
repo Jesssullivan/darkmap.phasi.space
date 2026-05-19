@@ -9,64 +9,35 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Thin wrapper over tinyland-inc/ci-templates@v1.1.5's spoke-ci.yml.
+# See docs/CI-SCHEMA.md §6 for the runner-class matrix.
+#
+# Passes darkmap's existing dynamic runner-class fallback via
+# `runner_labels_json` (new in ci-templates v1.1.0). This preserves
+# graceful degradation to ubuntu-latest when the cluster ARC labels
+# aren't reachable — matching the pre-wrapper behavior of darkmap's
+# hand-rolled ci.yml.
+#
+# Bump @v1.1.5 deliberately after reviewing the ci-templates CHANGELOG.
+
 jobs:
-  secrets-scan:
-    name: secrets-scan
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Scan repository for committed secrets
-        run: nix develop --command gitleaks detect --source . --redact --verbose
-
-  build-and-test:
-    name: build-and-test
-    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
-    timeout-minutes: 30
-    env:
-      GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
-        with:
-          attic-public-key: ${{ vars.ATTIC_PUBLIC_KEY || '' }}
-          command: |
-            nix develop --command just setup
-            nix develop --command just check
-            nix develop --command just build
-          push-cache: 'false'
-
-  bazel-graph:
-    name: bazel-graph
-    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
-    timeout-minutes: 30
-    env:
-      GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
-        with:
-          attic-public-key: ${{ vars.ATTIC_PUBLIC_KEY || '' }}
-          command: |
-            nix develop --command bazelisk mod graph
-            if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then
-              nix develop --command bazelisk build --config=flywheel //:node_modules
-            else
-              nix develop --command bazelisk build //:node_modules
-            fi
-          push-cache: 'false'
+  ci:
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-ci.yml@v1.1.5
+    with:
+      node_version: '22'
+      pnpm_version: '10.13.1'
+      flywheel_config: flywheel
+      playwright_enabled: false
+      lanes_path: .github/lanes.json
+      default_runner_class: tinyland-nix
+      runner_labels_json: ${{ vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
+    # No secrets block: spoke-ci.yml@v1.1.5 declares ATTIC_TOKEN as
+    # `required: false`. `secrets: inherit` is rejected at workflow
+    # parse-time when caller (Jesssullivan/*) and callee (tinyland-inc/*)
+    # are not in the same org/enterprise. Omit entirely.

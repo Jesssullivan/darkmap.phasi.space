@@ -1,34 +1,26 @@
 name: Lane env
 
-# Triggered only manually until Blahaj is installed on this repo.
+# Thin wrapper over tinyland-inc/ci-templates@v1.1.5's spoke-lane-env.yml.
+# See docs/CI-SCHEMA.md §4 + §7 for the dispatch payload + ephemeral-env
+# contract.
 #
-# WHY: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
-# declares `secrets: BLAHAJ_DISPATCH_TOKEN: required: true`. GitHub
-# resolves required secrets at workflow-call parse time, BEFORE the
-# job-level `if:` gate is evaluated. So gating with
-# `if: vars.BLAHAJ_LANE_ENV_ENABLED == 'true'` does NOT prevent the
-# workflow file from failing when the secret is empty — it fails with
-# "workflow file issue" before any job logic runs.
+# v1.1.0 made BLAHAJ_DISPATCH_TOKEN optional and added an internal
+# `check-blahaj-token` gate job that runs first and short-circuits
+# downstream jobs when the secret is empty. So this workflow can keep
+# the `pull_request:` trigger enabled before Blahaj is installed — the
+# pipeline will skip cleanly with a `::notice::` rather than fail with
+# "workflow file issue" at parse time.
 #
-# Surfaced by darkmap's M6 validation test PR #82. Captured as a
-# ci-templates v1.0.1 feedback PR proposing
-# `BLAHAJ_DISPATCH_TOKEN: required: false` (with an internal early-exit
-# when the token is empty), which lets spokes safely no-op-gate the
-# pull_request trigger and only flip it on once Blahaj is wired.
-#
-# Until that PR lands AND Blahaj is installed on
-# Jesssullivan/darkmap.tinyland.dev:
-#   - workflow_dispatch path is available for manual testing once the
-#     secret is populated (operator step; gate the manual run on
-#     visual confirmation, not on the var).
-#   - pull_request trigger is commented out below.
-#
-# When Blahaj IS installed and BLAHAJ_DISPATCH_TOKEN exists as a repo
-# secret, uncomment the `pull_request:` block.
+# When Blahaj is installed on Jesssullivan/darkmap.tinyland.dev and
+# BLAHAJ_DISPATCH_TOKEN is populated as a repo secret, the pipeline
+# automatically starts firing for real (per-lane image builds, Blahaj
+# dispatch, status checks). No code change required at that point —
+# just the secret + (optionally) `vars.BLAHAJ_LANE_ENV_ENABLED = 'true'`
+# to flip the job-level `if:` if you want belt-and-suspenders gating.
 
 on:
-  # pull_request:
-  #   types: [opened, synchronize, reopened, ready_for_review, closed]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
   workflow_dispatch:
     inputs:
       pr:
@@ -52,13 +44,25 @@ concurrency:
 
 jobs:
   lane-env:
-    if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED == 'true' }}
-    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
+    # `vars.BLAHAJ_LANE_ENV_ENABLED == 'true'` belt + suspenders. With
+    # v1.1.0's internal check-blahaj-token gate, the workflow is
+    # ALREADY safe to fire without the var. This `if:` lets the operator
+    # disable the wrapper repo-wide via the GitHub UI without editing
+    # the file.
+    if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED != 'false' }}
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.1.5
     with:
       spoke: darkmap
       lanes_path: .github/lanes.json
       enable_tailnet_qa: false
-      reap: ${{ inputs.reap || false }}
-      pr_number: ${{ inputs.pr }}
-    secrets:
-      BLAHAJ_DISPATCH_TOKEN: ${{ secrets.BLAHAJ_DISPATCH_TOKEN }}
+      reap: ${{ github.event.action == 'closed' || inputs.reap || false }}
+      pr_number: ${{ github.event.pull_request.number || inputs.pr }}
+    # No secrets block: spoke-lane-env.yml@v1.1.5 declares
+    # BLAHAJ_DISPATCH_TOKEN + TAILSCALE_API_KEY as `required: false`.
+    # Once Blahaj is installed and BLAHAJ_DISPATCH_TOKEN is set as a
+    # repo secret, add it back here as:
+    #   secrets:
+    #     BLAHAJ_DISPATCH_TOKEN: ${{ secrets.BLAHAJ_DISPATCH_TOKEN }}
+    # Until then, omit — passing an undefined `${{ secrets.X }}`
+    # expression in a workflow_call secrets block can trip parse-time
+    # validation in some GH paths.
