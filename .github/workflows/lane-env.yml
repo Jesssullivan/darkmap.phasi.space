@@ -2,7 +2,7 @@ name: Lane env
 
 # Triggered only manually until Blahaj is installed on this repo.
 #
-# WHY: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
+# WHY: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v2.0.0
 # declares `secrets: BLAHAJ_DISPATCH_TOKEN: required: true`. GitHub
 # resolves required secrets at workflow-call parse time, BEFORE the
 # job-level `if:` gate is evaluated. So gating with
@@ -53,7 +53,7 @@ concurrency:
 jobs:
   lane-env:
     if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED == 'true' }}
-    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v2.0.0
     with:
       spoke: darkmap
       lanes_path: .github/lanes.json
