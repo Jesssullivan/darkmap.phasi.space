@@ -232,14 +232,14 @@ deploy: kustomize-apply
 # ─────────────────────────────────────────────
 
 # Offline portion of the launch smoke. Runs check + build, starts the
-# adapter-node bundle with a placeholder key on :3055, exercises /
+# adapter-node bundle on :3055, exercises /
 # and /api/raster, asserts no ad/tracking headers leak, and stops.
 smoke-local: check build
     #!/usr/bin/env bash
     set -euo pipefail
     if rg -q ad_prebid build/ 2>/dev/null; then echo "FAIL: ad_prebid found in build/" >&2; exit 1; fi
     echo "PASS: no ad_prebid string in build artifact"
-    QUERY_RASTER_KEY=PLACEHOLDER_SMOKE PORT=3055 HOST=127.0.0.1 node build/index.js > /tmp/darkmap-smoke.log 2>&1 &
+    PORT=3055 HOST=127.0.0.1 node build/index.js > /tmp/darkmap-smoke.log 2>&1 &
     SERVER_PID=$!
     trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
     sleep 2
@@ -248,7 +248,7 @@ smoke-local: check build
     echo "PASS: GET / -> 200"
     if curl -s http://127.0.0.1:3055/ | rg -q ad_prebid; then echo "FAIL: ad_prebid in served HTML" >&2; exit 1; fi
     echo "PASS: served HTML clean of ad_prebid"
-    RASTER_HEADERS=$(curl -sI 'http://127.0.0.1:3055/api/raster?layer=viirs_2021&qt=tile&qd=8/74/96')
+    RASTER_HEADERS=$(curl -sI 'http://127.0.0.1:3055/api/raster?layer=viirs_2019&z=8&x=74&y=96')
     if echo "$RASTER_HEADERS" | rg -iq 'set-cookie|prebid|googletag|x-ad-'; then
       echo "FAIL: raster response leaked an ad/tracking header" >&2
       echo "$RASTER_HEADERS" >&2

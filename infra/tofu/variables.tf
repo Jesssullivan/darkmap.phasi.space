@@ -16,18 +16,6 @@ variable "kube_context" {
   default     = "honey"
 }
 
-variable "query_raster_key" {
-  description = <<EOT
-QueryRaster API key proxied through /api/raster. Source via
-TF_VAR_query_raster_key in apply environments — never commit a real
-value. The default is a placeholder so `tofu plan` succeeds in dry
-runs without leaking a real secret.
-EOT
-  type        = string
-  sensitive   = true
-  default     = "PLACEHOLDER-replace-via-TF_VAR_query_raster_key"
-}
-
 variable "cloudflare_api_token" {
   description = <<EOT
 Cloudflare API token with Zone:DNS:Edit on the tinyland.dev zone.

@@ -1,4 +1,4 @@
-# darkmap.tinyland.dev — namespace + upstream-key secret.
+# darkmap.tinyland.dev — namespace + legacy DNS.
 #
 # The Deployment / Service / Ingress / tailscale-svc are managed via
 # Kustomize (infra/kustomize/honey/darkmap/) so kubectl-apply lifecycle
@@ -11,17 +11,6 @@ resource "kubernetes_namespace_v1" "darkmap" {
       "tinyland.dev/site"     = "darkmap.tinyland.dev"
       "tinyland.dev/exposure" = "tailnet-only"
     }
-  }
-}
-
-resource "kubernetes_secret_v1" "darkmap_upstream" {
-  metadata {
-    name      = "darkmap-upstream"
-    namespace = kubernetes_namespace_v1.darkmap.metadata[0].name
-  }
-  type = "Opaque"
-  data = {
-    QUERY_RASTER_KEY = var.query_raster_key
   }
 }
 
