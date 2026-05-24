@@ -1,6 +1,8 @@
 # infra/tofu
 
-OpenTofu stack for `darkmap.tinyland.dev`. Manages:
+OpenTofu stack for the darkmap deployment. The public service hostname is
+`darkmap.phasi.space`; legacy `darkmap.tinyland.dev` resources may remain until
+the infrastructure cutover is completed. The stack manages:
 
 - Kubernetes `Namespace/darkmap`
 - Kubernetes `Secret/darkmap-upstream` holding `QUERY_RASTER_KEY`
@@ -20,6 +22,12 @@ http://attic-rustfs-hl.nix-cache.svc:9000/tofu-state/darkmap-tinyland-dev/terraf
 Reach it from a tailnet-joined host (operator workstation or the
 GloriousFlywheel CI runner). Backend config is non-interactive in
 `backend.hcl`.
+
+CI jobs do not fall back to hosted runners for this backend. Tofu plan/apply
+and GitOps drift workflows first run `scripts/ci-tofu-route-preflight.mjs` on a
+hosted runner. If no repository-visible cluster-capable runner matches
+`TOFU_LINUX_RUNNER_LABELS_JSON`, the workflow records the blocker and skips the
+stateful job.
 
 ## Local workflow
 

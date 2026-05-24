@@ -1,16 +1,11 @@
 # =============================================================================
-# GitHub Actions: deploy darkmap.tinyland.dev to the blahaj honey cluster.
+# GitHub Actions: deploy darkmap.phasi.space to the blahaj honey cluster.
 #
-# STATUS (2026-05-18): the CI auto-deploy path is BLOCKED by runner-pool
-# connectivity. The ARC self-hosted runner pods cannot route to the
-# cluster API at the tailnet IP 100.113.89.12:6443 — `kubectl apply`
-# times out at the TCP dial stage even with --validate=false (#68) and
-# after switching off ubuntu-latest (#67). Two follow-up paths to
-# unblock:
-#   (a) Mount an in-cluster ServiceAccount with RBAC on darkmap ns +
-#       use https://kubernetes.default.svc (preferred, scoped)
-#   (b) Add a Tailscale sidecar to the runner pod so its kubeconfig
-#       works
+# STATUS (2026-05-24): deploy needs a repository-visible runner with
+# cluster reachability. A hosted runner can build and smoke the public
+# site, but it must not apply Kustomize or touch RustFS-backed state.
+# The route-preflight job below reports this as a GitHub summary instead
+# of leaving the deploy job queued forever.
 #
 # Until (a) or (b) lands, the canonical deploy is operator-side from a
 # tailnet-joined workstation:
@@ -39,17 +34,62 @@ concurrency:
   group: staging-deploy
   cancel-in-progress: false
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
+  route-preflight:
+    name: deploy route preflight
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    if: github.event_name == 'workflow_dispatch' || vars.STAGING_DEPLOY_ENABLED == 'true'
+    outputs:
+      ready: ${{ steps.preflight.outputs.ready }}
+      labels_json: ${{ steps.preflight.outputs.labels_json }}
+      label_list: ${{ steps.preflight.outputs.label_list }}
+      reason: ${{ steps.preflight.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: preflight
+        name: Check cluster runner route
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TOFU_LINUX_RUNNER_LABELS_JSON: ${{ vars.TOFU_LINUX_RUNNER_LABELS_JSON || '' }}
+          PRIMARY_LINUX_RUNNER_LABELS_JSON: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
+        run: node scripts/ci-tofu-route-preflight.mjs
+
+  route-blocked:
+    name: deploy route blocked
+    needs: route-preflight
+    if: needs.route-preflight.outputs.ready != 'true'
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    steps:
+      - name: Summarize blocked deploy route
+        env:
+          LABELS: ${{ needs.route-preflight.outputs.label_list }}
+          REASON: ${{ needs.route-preflight.outputs.reason }}
+        run: |
+          {
+            echo "### staging deploy blocked before kubectl"
+            echo
+            echo "The deploy did not request a cluster job because no"
+            echo "repository-visible, cluster-capable runner matched the"
+            echo "selected Tofu/deploy labels."
+            echo
+            echo "- Selected labels: \`${LABELS}\`"
+            echo "- Reason: ${REASON}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::staging deploy route blocked: ${REASON}"
+
   deploy:
     name: kubectl apply -k
-    # Cluster API at `100.x` is tailnet-only; we have to run on a
-    # tailnet-joined self-hosted runner. The TOFU runner pool already
-    # has cluster reachability (used by tofu-apply against rustfs).
-    runs-on: ${{ fromJSON(vars.TOFU_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    needs: route-preflight
+    if: needs.route-preflight.outputs.ready == 'true'
+    # Kustomize deploys need the same cluster-capable route class as
+    # RustFS-backed Tofu jobs.
+    runs-on: ${{ fromJSON(needs.route-preflight.outputs.labels_json) }}
     timeout-minutes: 10
-    if: github.event_name == 'workflow_dispatch' || vars.STAGING_DEPLOY_ENABLED == 'true'
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -102,3 +142,10 @@ jobs:
         run: |
           if [ -z "$KUBE_CONFIG_HONEY" ]; then exit 0; fi
           kubectl -n darkmap rollout status deployment/darkmap --timeout=180s
+
+      - name: Smoke public edge
+        run: |
+          curl -fsSIL https://darkmap.phasi.space/ | tee /tmp/index.headers
+          curl -fsSIL 'https://darkmap.phasi.space/api/raster?layer=viirs_2019&z=8&x=74&y=96' | tee /tmp/raster.headers
+          grep -qi '^server: cloudflare' /tmp/index.headers
+          grep -qi '^content-type: image/png' /tmp/raster.headers

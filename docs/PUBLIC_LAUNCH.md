@@ -18,24 +18,21 @@ Last refreshed: 2026-05-24.
 - Blahaj source-truth follow-up for the live tunnel route is tracked in
   [tinyland-inc/blahaj#714](https://github.com/tinyland-inc/blahaj/issues/714)
 - Legacy `darkmap.tinyland.dev` remains a tailnet ingress path
-- Public recursive DNS may still resolve `darkmap.phasi.space` through the
-  DreamHost-served CNAME to `darkmap.tinyland.dev` until authority converges
+- Public recursive DNS currently resolves `darkmap.phasi.space` to Cloudflare
+  edge A records, but registrar authority may still show DreamHost
+  nameservers until delegation converges
 - cert-manager issued a valid `darkmap.phasi.space` certificate
 - Cloudflare zone exists for `phasi.space` and is visible to the SOPS-backed
   Cloudflare token
-- authority cleanup remains: registrar delegation still needs to be reconciled
-  with the intended steady-state DNS provider
+- authority cleanup remains: registrar delegation still needs to converge to
+  the intended Cloudflare nameservers
 
 For the Cloudflare zone used by this repo, expected registrar nameservers are:
 
 ```text
-austin.ns.cloudflare.com
-oaklyn.ns.cloudflare.com
+izabella.ns.cloudflare.com
+sullivan.ns.cloudflare.com
 ```
-
-The old or stale pair `izabella.ns.cloudflare.com` /
-`sullivan.ns.cloudflare.com` is not the nameserver pair assigned to the active
-Cloudflare zone used by this repo.
 
 ## DNS Gate
 
@@ -52,7 +49,7 @@ Target steady state:
 Cloudflare edge A/AAAA answers; no 100.64.0.0/10 address
 ```
 
-During propagation, recursive resolvers may still return:
+Older or stale recursive paths may still return:
 
 ```text
 darkmap.tinyland.dev.
@@ -66,12 +63,12 @@ dig +short NS phasi.space @a.nic.space
 dig +short NS phasi.space @1.1.1.1
 ```
 
-Current transition state may still show DreamHost nameservers. Public service
-steady state should show:
+Current transition state may still show DreamHost nameservers. Delegated steady
+state should show:
 
 ```text
-austin.ns.cloudflare.com.
-oaklyn.ns.cloudflare.com.
+izabella.ns.cloudflare.com.
+sullivan.ns.cloudflare.com.
 ```
 
 ## TLS Gate
@@ -136,6 +133,27 @@ Expected:
 - local smoke serves `/` and `/api/raster`
 - build and served HTML remain free of `ad_prebid`
 - raster headers do not include cookies or ad-tech headers
+
+## CI/CD Gate
+
+Public edge smoke is automated by `.github/workflows/public-smoke.yml` on
+`main`, on a six-hour schedule, and manually.
+
+OpenTofu/RustFS and Kustomize deploy jobs must run on a repository-visible
+cluster-capable runner. The Tofu plan/apply, staging deploy, and GitOps drift
+workflows run `scripts/ci-tofu-route-preflight.mjs` first. If
+`TOFU_LINUX_RUNNER_LABELS_JSON` points at labels that are not available to this
+repo, the workflow writes a public-safe GitHub summary and skips the
+cluster-mutating job instead of queuing indefinitely or falling back to hosted
+runners.
+
+The remaining CI/CD closeout is tracked in
+[#110](https://github.com/Jesssullivan/darkmap.phasi.space/issues/110):
+
+- bind a repository-visible runner that can reach RustFS and the cluster API
+- prove `tofu plan -detailed-exitcode` against the RustFS backend
+- prove `kubectl diff` / deploy against the checked-in Kustomize overlay
+- keep public smoke separate from cluster/state proofs
 
 ## Tracker Gate
 

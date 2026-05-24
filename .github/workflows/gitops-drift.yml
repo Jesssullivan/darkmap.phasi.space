@@ -1,33 +1,22 @@
-# =============================================================================
-# GitHub Actions: tofu apply on push to main when infra/tofu/** changed.
-#
-# Gated on the `production` GitHub Environment, which requires manual approval
-# (configure required reviewers in repo Settings → Environments → production).
-# Workflow_dispatch supported for ad-hoc applies after a state import.
-# =============================================================================
-
-name: Tofu apply
+name: GitOps drift
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/tofu-apply.yml'
-      - 'infra/tofu/**'
   workflow_dispatch:
     inputs:
-      auto_approve:
-        description: 'Skip the apply preview step (apply directly to a fresh plan)'
+      fail_on_blocked_route:
+        description: 'Fail when no cluster-capable runner is visible'
         type: boolean
-        default: false
-
-concurrency:
-  group: tofu-apply
-  cancel-in-progress: false
+        default: true
+  schedule:
+    - cron: '17 9 * * *'
 
 permissions:
-  actions: read
   contents: read
+  actions: read
+
+concurrency:
+  group: gitops-drift
+  cancel-in-progress: false
 
 jobs:
   route-preflight:
@@ -42,42 +31,46 @@ jobs:
       - uses: actions/checkout@v6
 
       - id: preflight
-        name: Check RustFS/backend runner route
+        name: Check cluster runner route
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TOFU_LINUX_RUNNER_LABELS_JSON: ${{ vars.TOFU_LINUX_RUNNER_LABELS_JSON || '' }}
           PRIMARY_LINUX_RUNNER_LABELS_JSON: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
         run: node scripts/ci-tofu-route-preflight.mjs
 
-  route-blocked:
-    name: tofu apply route blocked
+  blocked-route:
+    name: drift route blocked
     needs: route-preflight
     if: needs.route-preflight.outputs.ready != 'true'
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     steps:
-      - name: Summarize blocked apply route
+      - name: Report blocked route
         env:
           LABELS: ${{ needs.route-preflight.outputs.label_list }}
           REASON: ${{ needs.route-preflight.outputs.reason }}
+          FAIL_ON_BLOCKED_ROUTE: ${{ github.event_name == 'schedule' || inputs.fail_on_blocked_route }}
         run: |
           {
-            echo "### tofu apply blocked before production environment"
+            echo "### GitOps drift blocked"
             echo
-            echo "The workflow did not request the \`production\` environment"
-            echo "because no repository-visible, cluster-capable runner matched"
-            echo "the selected Tofu labels."
+            echo "OpenTofu/RustFS and Kustomize drift checks require a repository-visible"
+            echo "cluster-capable runner."
             echo
             echo "- Selected labels: \`${LABELS}\`"
             echo "- Reason: ${REASON}"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::warning::tofu apply route blocked: ${REASON}"
 
-  apply:
-    name: tofu apply (production)
+          if [ "$FAIL_ON_BLOCKED_ROUTE" = "true" ]; then
+            echo "::error::GitOps drift route is blocked: ${REASON}"
+            exit 1
+          fi
+
+  drift:
+    name: tofu + kustomize drift
     needs: route-preflight
     if: needs.route-preflight.outputs.ready == 'true'
     runs-on: ${{ fromJSON(needs.route-preflight.outputs.labels_json) }}
-    environment: production
+    timeout-minutes: 20
     env:
       CHECKOUT_PATH: repo-${{ github.job }}
       TF_DATA_DIR: /tmp/darkmap-tofu-${{ github.run_id }}-${{ github.run_attempt }}
@@ -99,12 +92,18 @@ jobs:
           tofu_version: '1.11.6'
           tofu_wrapper: false
 
+      - name: Install kubectl + kustomize
+        uses: yokawasa/action-setup-kube-tools@v0.11.2
+        with:
+          kubectl: '1.31.0'
+          kustomize: '5.4.3'
+
       - name: Configure kubeconfig
         env:
           KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
         run: |
           if [ -z "$KUBE_CONFIG_HONEY" ]; then
-            echo "::error::KUBE_CONFIG_HONEY secret is required for tofu apply"
+            echo "::error::KUBE_CONFIG_HONEY secret is required for GitOps drift"
             exit 1
           fi
 
@@ -121,32 +120,65 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-        run: tofu init -backend-config=backend.hcl
+        run: tofu init -backend-config=backend.hcl -lockfile=readonly
 
-      - name: tofu plan
+      - name: tofu drift plan
+        id: tofu_drift
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
           TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: tofu plan -out=darkmap.tfplan
+        run: |
+          set +e
+          tofu plan -detailed-exitcode -no-color -out=darkmap-drift.tfplan 2>&1 | tee /tmp/tofu-drift.txt
+          plan_exit=${PIPESTATUS[0]}
+          set -e
 
-      - name: tofu apply
-        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-          TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: tofu apply -auto-approve darkmap.tfplan
+          if [ "$plan_exit" = "0" ]; then
+            echo "tofu_status=clean" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-      - name: Upload applied plan + state-version reference
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tofu-apply-${{ github.run_id }}
-          path: |
-            ${{ env.CHECKOUT_PATH }}/infra/tofu/darkmap.tfplan
-            ${{ env.CHECKOUT_PATH }}/infra/tofu/.terraform.lock.hcl
-          retention-days: 90
+          if [ "$plan_exit" = "2" ]; then
+            echo "tofu_status=drift" >> "$GITHUB_OUTPUT"
+            echo "::error::OpenTofu drift detected"
+            exit 1
+          fi
+
+          echo "tofu_status=error" >> "$GITHUB_OUTPUT"
+          exit "$plan_exit"
+
+      - name: kustomize server diff
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/kustomize/honey/darkmap
+        run: |
+          kustomize build . > /tmp/kustomize-rendered.yaml
+
+          set +e
+          kubectl diff -f /tmp/kustomize-rendered.yaml > /tmp/kustomize-drift.txt
+          diff_exit=$?
+          set -e
+
+          if [ "$diff_exit" = "0" ]; then
+            echo "Kustomize live state is clean" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$diff_exit" = "1" ]; then
+            echo "::error::Kustomize drift detected"
+            cat /tmp/kustomize-drift.txt
+            exit 1
+          fi
+
+          exit "$diff_exit"
+
+      - name: Summarize clean drift check
+        if: success()
+        run: |
+          {
+            echo "### GitOps drift"
+            echo
+            echo "- OpenTofu/RustFS state: clean"
+            echo "- Kustomize live state: clean"
+          } >> "$GITHUB_STEP_SUMMARY"
