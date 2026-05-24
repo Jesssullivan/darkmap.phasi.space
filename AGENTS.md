@@ -154,11 +154,14 @@ After creating a new sister site from this scaffold:
   `lane-ttl/30d`, `lane-ttl/keep` (capped at 720h). Reap on PR close
   + hourly TTL backstop + manual `workflow_dispatch`. Reap is
   idempotent.
-- **Blahaj installation status on darkmap: NOT YET WIRED.** M3
-  (`.github/workflows/lane-env.yml`) is gated on
-  `tinyland-inc/ci-templates@v1.0.0` shipping; the lane-env workflow
-  will be added at that time. Whether Blahaj also gets installed on
-  this repo is an operator decision tracked in
+- **Blahaj installation status on darkmap: NOT YET WIRED.** The M3
+  wrapper (`.github/workflows/lane-env.yml`) is present and pinned to
+  `tinyland-inc/ci-templates@v2`, whose optional
+  `BLAHAJ_DISPATCH_TOKEN` gate is fork-safe and skips cleanly when the
+  token is absent. Actual provision/reap dispatch remains disabled
+  until operators set `vars.BLAHAJ_LANE_ENV_ENABLED == 'true'` and add
+  the repo secret. Whether Blahaj also gets installed on this repo is
+  an operator decision tracked in
   [TIN-1384](https://linear.app/tinyland/issue/TIN-1384).
 - Local dry-run available today: `just lane-dispatch <pr>` prints
   the payload Blahaj would receive; `just lane-reap <pr>` does the
