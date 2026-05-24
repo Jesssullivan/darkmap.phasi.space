@@ -139,18 +139,21 @@ Expected:
 Public edge smoke is automated by `.github/workflows/public-smoke.yml` on
 `main`, on a six-hour schedule, and manually.
 
-OpenTofu/RustFS and Kustomize deploy jobs must run on a repository-visible
-cluster-capable runner. The Tofu plan/apply, staging deploy, and GitOps drift
-workflows run `scripts/ci-tofu-route-preflight.mjs` first. If
-`TOFU_LINUX_RUNNER_LABELS_JSON` points at labels that are not available to this
-repo, the workflow writes a public-safe GitHub summary and skips the
-cluster-mutating job instead of queuing indefinitely or falling back to hosted
-runners.
+OpenTofu/RustFS and Kustomize deploy jobs must run on a cluster-capable runner.
+The Tofu plan/apply, staging deploy, and GitOps drift workflows run
+`scripts/ci-tofu-route-preflight.mjs` first. Main-branch apply/deploy/drift may
+dispatch the configured self-hosted ARC route even when GitHub's workflow token
+cannot list repository runners or the ARC scale set is at zero warm runners.
+The guard still refuses to fall back to hosted runners for stateful work.
+
+Cluster jobs call `scripts/ci-normalize-kubeconfig.sh` so ARC runner pods use
+the in-cluster Kubernetes API endpoint instead of a workstation or tailnet API
+server address from the secret.
 
 The remaining CI/CD closeout is tracked in
 [#110](https://github.com/Jesssullivan/darkmap.phasi.space/issues/110):
 
-- bind a repository-visible runner that can reach RustFS and the cluster API
+- prove the fork-safe ARC runner route on a real GitHub Actions deploy job
 - prove `tofu plan -detailed-exitcode` against the RustFS backend
 - prove `kubectl diff` / deploy against the checked-in Kustomize overlay
 - keep public smoke separate from cluster/state proofs

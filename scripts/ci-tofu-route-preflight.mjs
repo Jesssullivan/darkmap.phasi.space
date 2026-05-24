@@ -24,9 +24,11 @@ function addSummary(markdown) {
 }
 
 function apiGet(path) {
-	const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+	const token = env.RUNNER_ROUTE_PREFLIGHT_TOKEN || env.GITHUB_TOKEN || env.GH_TOKEN;
 	if (!token) {
-		throw new Error('GITHUB_TOKEN is required to inspect repository runner availability');
+		throw new Error(
+			'RUNNER_ROUTE_PREFLIGHT_TOKEN or GITHUB_TOKEN is required to inspect repository runner availability',
+		);
 	}
 
 	return new Promise((resolve, reject) => {
@@ -50,7 +52,9 @@ function apiGet(path) {
 				});
 				res.on('end', () => {
 					if (res.statusCode < 200 || res.statusCode >= 300) {
-						reject(new Error(`GitHub API ${res.statusCode}: ${body.slice(0, 500)}`));
+						const error = new Error(`GitHub API ${res.statusCode}: ${body.slice(0, 500)}`);
+						error.statusCode = res.statusCode;
+						reject(error);
 						return;
 					}
 					resolve(JSON.parse(body));
@@ -78,11 +82,13 @@ const selectedLabels = parseLabels(env.TOFU_LINUX_RUNNER_LABELS_JSON, primaryLab
 const labelList = selectedLabels.join(', ');
 const requiresCluster = env.REQUIRE_CLUSTER_RUNNER !== 'false';
 const usesSelfHosted = selectedLabels.includes('self-hosted');
+const allowUnverifiedSelfHostedRoute = env.ALLOW_UNVERIFIED_SELF_HOSTED_ROUTE === 'true';
 
 let ready = false;
 let reason = '';
 let runnerCount = 0;
 let matchingRunnerCount = 0;
+let runnerApiInspection = 'not-run';
 
 try {
 	if (!repository) {
@@ -95,15 +101,32 @@ try {
 		ready = true;
 		reason = 'selected labels use GitHub-hosted routing';
 	} else {
-		const response = await apiGet(`/repos/${repository}/actions/runners?per_page=100`);
-		const runners = response.runners || [];
-		runnerCount = runners.length;
-		const matching = runners.filter((runner) => runner.status === 'online' && hasAllLabels(runner, selectedLabels));
-		matchingRunnerCount = matching.length;
-		ready = matchingRunnerCount > 0;
-		reason = ready
-			? `found ${matchingRunnerCount} online repository-visible runner(s) matching [${labelList}]`
-			: `found no online repository-visible runner matching [${labelList}]`;
+		try {
+			const response = await apiGet(`/repos/${repository}/actions/runners?per_page=100`);
+			runnerApiInspection = 'verified';
+			const runners = response.runners || [];
+			runnerCount = runners.length;
+			const matching = runners.filter((runner) => runner.status === 'online' && hasAllLabels(runner, selectedLabels));
+			matchingRunnerCount = matching.length;
+			ready = matchingRunnerCount > 0;
+			if (ready) {
+				reason = `found ${matchingRunnerCount} online repository-visible runner(s) matching [${labelList}]`;
+			} else if (allowUnverifiedSelfHostedRoute) {
+				runnerApiInspection = 'verified-empty-dispatching';
+				ready = true;
+				reason = `found no online repository-visible runner matching [${labelList}]; dispatching configured ARC route because scale sets may be scale-to-zero`;
+			} else {
+				reason = `found no online repository-visible runner matching [${labelList}]`;
+			}
+		} catch (error) {
+			if (allowUnverifiedSelfHostedRoute && error?.statusCode === 403) {
+				runnerApiInspection = 'forbidden-dispatching';
+				ready = true;
+				reason = `runner API returned 403 to the workflow token; dispatching configured self-hosted ARC route [${labelList}]`;
+			} else {
+				throw error;
+			}
+		}
 	}
 } catch (error) {
 	reason = error instanceof Error ? error.message : String(error);
@@ -115,6 +138,7 @@ setOutput('label_list', labelList);
 setOutput('reason', reason);
 setOutput('runner_count', runnerCount);
 setOutput('matching_runner_count', matchingRunnerCount);
+setOutput('runner_api_inspection', runnerApiInspection);
 
 addSummary(`
 ### Tofu / deploy route preflight
@@ -125,13 +149,15 @@ addSummary(`
 | Requires cluster-capable runner | \`${requiresCluster}\` |
 | Repository-visible runners | \`${runnerCount}\` |
 | Matching online runners | \`${matchingRunnerCount}\` |
+| Runner API inspection | \`${runnerApiInspection}\` |
 | Ready | \`${ready}\` |
 | Reason | ${reason} |
 
 RustFS-backed OpenTofu and Kubernetes deploy jobs must not silently fall back to
 hosted runners. If this preflight is not ready, bind a repository-visible
-self-hosted runner with the selected labels or change
-\`TOFU_LINUX_RUNNER_LABELS_JSON\` to a cluster-capable runner class.
+self-hosted runner with the selected labels, provide a runner-read token as
+\`RUNNER_ROUTE_PREFLIGHT_TOKEN\`, or change \`TOFU_LINUX_RUNNER_LABELS_JSON\` to
+a cluster-capable runner class.
 `);
 
 console.log(`ready=${ready}`);

@@ -1,21 +1,10 @@
 # =============================================================================
 # GitHub Actions: deploy darkmap.phasi.space to the blahaj honey cluster.
 #
-# STATUS (2026-05-24): deploy needs a repository-visible runner with
-# cluster reachability. A hosted runner can build and smoke the public
-# site, but it must not apply Kustomize or touch RustFS-backed state.
-# The route-preflight job below reports this as a GitHub summary instead
-# of leaving the deploy job queued forever.
-#
-# Until (a) or (b) lands, the canonical deploy is operator-side from a
-# tailnet-joined workstation:
-#
-#   just deploy
-#
-# That applies the kustomize overlay, rollout-restarts so the `:main`
-# floating tag picks up the fresh image, and waits for the rollout.
-# The CI workflow stays in place so it'll just start working again
-# once connectivity is fixed.
+# Deploy requires a cluster-capable runner. Hosted runners may build and smoke
+# the public site, but they must not apply Kustomize or touch RustFS-backed
+# state. The route preflight dispatches only to the configured self-hosted
+# labels.
 # =============================================================================
 
 name: Staging deploy
@@ -54,7 +43,9 @@ jobs:
       - id: preflight
         name: Check cluster runner route
         env:
+          RUNNER_ROUTE_PREFLIGHT_TOKEN: ${{ secrets.RUNNER_ROUTE_PREFLIGHT_TOKEN || github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          ALLOW_UNVERIFIED_SELF_HOSTED_ROUTE: 'true'
           TOFU_LINUX_RUNNER_LABELS_JSON: ${{ vars.TOFU_LINUX_RUNNER_LABELS_JSON || '' }}
           PRIMARY_LINUX_RUNNER_LABELS_JSON: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
         run: node scripts/ci-tofu-route-preflight.mjs
@@ -111,7 +102,7 @@ jobs:
           mkdir -p ~/.kube
           echo "$KUBE_CONFIG_HONEY" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
-          kubectl config use-context honey
+          scripts/ci-normalize-kubeconfig.sh ~/.kube/config honey
 
       - name: Pin image to current SHA
         working-directory: infra/kustomize/honey/darkmap
