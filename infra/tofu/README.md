@@ -25,9 +25,15 @@ GloriousFlywheel CI runner). Backend config is non-interactive in
 
 CI jobs do not fall back to hosted runners for this backend. Tofu plan/apply
 and GitOps drift workflows first run `scripts/ci-tofu-route-preflight.mjs` on a
-hosted runner. If no repository-visible cluster-capable runner matches
-`TOFU_LINUX_RUNNER_LABELS_JSON`, the workflow records the blocker and skips the
-stateful job.
+hosted runner. PR plans stay strict unless `RUNNER_ROUTE_PREFLIGHT_TOKEN` can
+read repository runners. Default-branch apply/drift may dispatch the configured
+self-hosted ARC labels even when the workflow token cannot list runners or the
+scale set is at zero warm runners.
+
+Cluster jobs call `scripts/ci-normalize-kubeconfig.sh` after decoding
+`KUBE_CONFIG_HONEY`; inside ARC runner pods it rewrites the kubeconfig server to
+the in-cluster Kubernetes API endpoint and verifies the context before OpenTofu
+uses the Kubernetes provider.
 
 ## Local workflow
 

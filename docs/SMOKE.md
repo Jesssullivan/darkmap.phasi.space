@@ -82,10 +82,15 @@ OpenTofu state, or RustFS backend reachability.
 ## CI/CD Route Smoke
 
 Cluster deploy and OpenTofu/RustFS jobs first run
-`scripts/ci-tofu-route-preflight.mjs` on a hosted runner. If the selected
-`TOFU_LINUX_RUNNER_LABELS_JSON` labels are not visible to this repository, the
-workflow writes a GitHub summary and skips the cluster job instead of queuing
-forever.
+`scripts/ci-tofu-route-preflight.mjs` on a hosted runner. PR `tofu plan` stays
+strict unless a runner-read token is configured. Default-branch apply, deploy,
+and drift workflows may dispatch the configured self-hosted ARC labels even
+when GitHub's workflow token cannot list repository runners or the scale set is
+currently at zero warm runners.
+
+The route guard never rewrites `TOFU_LINUX_RUNNER_LABELS_JSON` to
+`ubuntu-latest`; hosted runners must not touch RustFS state or apply
+Kubernetes manifests.
 
 Use `.github/workflows/gitops-drift.yml` for the scheduled/manual state check.
 When the runner route is ready, it runs:
@@ -93,8 +98,9 @@ When the runner route is ready, it runs:
 - `tofu plan -detailed-exitcode` against the RustFS-backed state backend
 - `kubectl diff` against the checked-in Kustomize overlay
 
-Until the runner route is bound to this public repo, the drift workflow reports
-the route blocker rather than attempting a hosted-runner fallback.
+Cluster jobs normalize the checked-in kubeconfig secret to the in-cluster API
+endpoint before running OpenTofu or `kubectl`, then fail fast if that API is not
+reachable.
 
 ## Browser Smoke
 

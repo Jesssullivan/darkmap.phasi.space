@@ -44,7 +44,9 @@ jobs:
       - id: preflight
         name: Check RustFS/backend runner route
         env:
+          RUNNER_ROUTE_PREFLIGHT_TOKEN: ${{ secrets.RUNNER_ROUTE_PREFLIGHT_TOKEN || github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          ALLOW_UNVERIFIED_SELF_HOSTED_ROUTE: 'true'
           TOFU_LINUX_RUNNER_LABELS_JSON: ${{ vars.TOFU_LINUX_RUNNER_LABELS_JSON || '' }}
           PRIMARY_LINUX_RUNNER_LABELS_JSON: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
         run: node scripts/ci-tofu-route-preflight.mjs
@@ -99,6 +101,11 @@ jobs:
           tofu_version: '1.11.6'
           tofu_wrapper: false
 
+      - name: Install kubectl
+        uses: yokawasa/action-setup-kube-tools@v0.11.2
+        with:
+          kubectl: '1.31.0'
+
       - name: Configure kubeconfig
         env:
           KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
@@ -113,6 +120,7 @@ jobs:
           mkdir -p "$kube_dir"
           echo "$KUBE_CONFIG_HONEY" | base64 -d > "$kubeconfig"
           chmod 600 "$kubeconfig"
+          "$CHECKOUT_PATH/scripts/ci-normalize-kubeconfig.sh" "$kubeconfig" honey
           echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
           echo "TF_VAR_kubeconfig=$kubeconfig" >> "$GITHUB_ENV"
 
