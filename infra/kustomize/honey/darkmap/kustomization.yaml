@@ -21,10 +21,9 @@ resources:
   - ingress.yaml
   - poddisruptionbudget.yaml
 
-# CI substitutes the resolved SHA via `kustomize edit set image
-# darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${GITHUB_SHA}` before
-# applying. The `:main` floating tag is the default for ad-hoc operator
-# applies.
+# CI substitutes the short SHA tag emitted by docker/metadata-action via
+# `kustomize edit set image` before applying. The `:main` floating tag is
+# the default for ad-hoc operator applies.
 images:
   - name: darkmap
     newName: ghcr.io/jesssullivan/darkmap.tinyland.dev

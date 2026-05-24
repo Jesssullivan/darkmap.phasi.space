@@ -104,11 +104,11 @@ jobs:
           chmod 600 ~/.kube/config
           scripts/ci-normalize-kubeconfig.sh ~/.kube/config honey
 
-      - name: Pin image to current SHA
+      - name: Pin image to current short SHA
         working-directory: infra/kustomize/honey/darkmap
         run: |
           TAG="${{ github.event.inputs.image_tag }}"
-          if [ -z "$TAG" ]; then TAG="${{ github.sha }}"; fi
+          if [ -z "$TAG" ]; then TAG="${GITHUB_SHA:0:7}"; fi
           kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${TAG}
           kustomize build .
 
@@ -132,7 +132,12 @@ jobs:
           KUBE_CONFIG_HONEY: ${{ secrets.KUBE_CONFIG_HONEY }}
         run: |
           if [ -z "$KUBE_CONFIG_HONEY" ]; then exit 0; fi
-          kubectl -n darkmap rollout status deployment/darkmap --timeout=180s
+          if ! kubectl -n darkmap rollout status deployment/darkmap --timeout=180s; then
+            kubectl -n darkmap get deploy,rs,pods -o wide
+            kubectl -n darkmap describe deploy darkmap
+            kubectl -n darkmap get events --sort-by=.lastTimestamp | tail -80
+            exit 1
+          fi
 
       - name: Smoke public edge
         run: |
