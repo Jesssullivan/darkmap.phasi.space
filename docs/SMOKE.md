@@ -29,24 +29,27 @@ just kustomize-validate-server
 just deploy
 ```
 
-Before treating DNS as fully public, verify the public DNS record:
+Before treating DNS as fully delegated, verify the public DNS record:
 
 ```bash
 dig +short CNAME darkmap.phasi.space @1.1.1.1
 dig +short A darkmap.phasi.space @1.1.1.1
 ```
 
-Target steady state:
+Current acceptable public-edge state:
 
 ```text
 <Cloudflare edge addresses, no 100.64.0.0/10 address>
 ```
 
-During authority propagation, public resolvers may still return the older
-DreamHost-served CNAME to `darkmap.tinyland.dev` and the `100.125.97.64`
-tailnet ingress IP. Also audit `dig +short NS phasi.space @a.nic.space`.
-Cloudflare steady state should show `austin.ns.cloudflare.com` and
-`oaklyn.ns.cloudflare.com` for the zone used by this repo.
+Authority may still be served by DreamHost while the zone handoff finishes.
+Audit `dig +short NS phasi.space @a.nic.space` separately from the A/AAAA
+answers. The intended registrar-side Cloudflare nameservers are:
+
+```text
+izabella.ns.cloudflare.com.
+sullivan.ns.cloudflare.com.
+```
 
 Then verify the public edge:
 
@@ -62,6 +65,36 @@ Expected:
 - `ad_prebid` count is `0`
 - the final header scan exits with no matches
 - once recursive DNS reaches Cloudflare, headers include `server: cloudflare`
+
+## Hosted Public Smoke
+
+GitHub Actions runs `.github/workflows/public-smoke.yml` on `main`, on a
+six-hour schedule, and manually. It uses only public HTTP checks:
+
+- homepage returns through Cloudflare
+- built page does not expose `ad_prebid`
+- raster endpoint returns `image/png`
+- homepage and raster headers do not expose cookies or ad-tech headers
+
+This workflow proves the public edge only. It does not prove Kubernetes deploy,
+OpenTofu state, or RustFS backend reachability.
+
+## CI/CD Route Smoke
+
+Cluster deploy and OpenTofu/RustFS jobs first run
+`scripts/ci-tofu-route-preflight.mjs` on a hosted runner. If the selected
+`TOFU_LINUX_RUNNER_LABELS_JSON` labels are not visible to this repository, the
+workflow writes a GitHub summary and skips the cluster job instead of queuing
+forever.
+
+Use `.github/workflows/gitops-drift.yml` for the scheduled/manual state check.
+When the runner route is ready, it runs:
+
+- `tofu plan -detailed-exitcode` against the RustFS-backed state backend
+- `kubectl diff` against the checked-in Kustomize overlay
+
+Until the runner route is bound to this public repo, the drift workflow reports
+the route blocker rather than attempting a hosted-runner fallback.
 
 ## Browser Smoke
 
