@@ -18,20 +18,18 @@ Last refreshed: 2026-05-24.
 - Blahaj source-truth follow-up for the live tunnel route is tracked in
   [tinyland-inc/blahaj#714](https://github.com/tinyland-inc/blahaj/issues/714)
 - Legacy `darkmap.tinyland.dev` remains a tailnet ingress path
-- Public recursive DNS currently resolves `darkmap.phasi.space` to Cloudflare
-  edge A records, but registrar authority may still show DreamHost
-  nameservers until delegation converges
+- Public recursive DNS resolves `darkmap.phasi.space` to Cloudflare edge A/AAAA
+  records
+- `phasi.space` registrar authority delegates to Cloudflare
 - cert-manager issued a valid `darkmap.phasi.space` certificate
 - Cloudflare zone exists for `phasi.space` and is visible to the SOPS-backed
   Cloudflare token
-- authority cleanup remains: registrar delegation still needs to converge to
-  the intended Cloudflare nameservers
 
 For the Cloudflare zone used by this repo, expected registrar nameservers are:
 
 ```text
-izabella.ns.cloudflare.com
-sullivan.ns.cloudflare.com
+austin.ns.cloudflare.com
+oaklyn.ns.cloudflare.com
 ```
 
 ## DNS Gate
@@ -49,13 +47,6 @@ Target steady state:
 Cloudflare edge A/AAAA answers; no 100.64.0.0/10 address
 ```
 
-Older or stale recursive paths may still return:
-
-```text
-darkmap.tinyland.dev.
-100.125.97.64
-```
-
 Then audit authority:
 
 ```bash
@@ -63,12 +54,11 @@ dig +short NS phasi.space @a.nic.space
 dig +short NS phasi.space @1.1.1.1
 ```
 
-Current transition state may still show DreamHost nameservers. Delegated steady
-state should show:
+Delegated steady state should show:
 
 ```text
-izabella.ns.cloudflare.com.
-sullivan.ns.cloudflare.com.
+austin.ns.cloudflare.com.
+oaklyn.ns.cloudflare.com.
 ```
 
 ## TLS Gate
@@ -106,8 +96,8 @@ HTTP/2 200
 server: cloudflare
 ```
 
-If recursive DNS still returns the tailnet path, a successful response without
-`server: cloudflare` proves only the legacy tailnet ingress path.
+If a future resolver returns a non-Cloudflare path, a successful response
+without `server: cloudflare` proves only that alternate ingress path.
 
 ## Public-Readiness Gate
 
@@ -134,6 +124,21 @@ Expected:
 - build and served HTML remain free of `ad_prebid`
 - raster headers do not include cookies or ad-tech headers
 
+## Public-Safety Notes
+
+The repo intentionally retains a small amount of deployment topology:
+
+- runner labels and workflow routing, so CI/CD failures can be audited publicly
+- Kubernetes namespace/context names, so manifests and smoke docs stay
+  actionable
+- S3-compatible state backend hostnames, because the endpoint is not a
+  credential and the actual access keys live only in secret stores
+- the legacy `darkmap.tinyland.dev` path, because Tofu and Kustomize still
+  preserve it separately from the public `darkmap.phasi.space` edge
+
+Do not add local filesystem paths, plaintext token values, kubeconfig contents,
+or operator-only credential runbooks to public docs.
+
 ## CI/CD Gate
 
 Public edge smoke is automated by `.github/workflows/public-smoke.yml` on
@@ -150,13 +155,14 @@ Cluster jobs call `scripts/ci-normalize-kubeconfig.sh` so ARC runner pods use
 the in-cluster Kubernetes API endpoint instead of a workstation or tailnet API
 server address from the secret.
 
-The remaining CI/CD closeout is tracked in
-[#110](https://github.com/Jesssullivan/darkmap.phasi.space/issues/110):
+The CI/CD closeout is complete in
+[#110](https://github.com/Jesssullivan/darkmap.phasi.space/issues/110). Keep
+public smoke separate from cluster/state proofs:
 
-- prove the fork-safe ARC runner route on a real GitHub Actions deploy job
-- prove `tofu plan -detailed-exitcode` against the RustFS backend
-- prove `kubectl diff` / deploy against the checked-in Kustomize overlay
-- keep public smoke separate from cluster/state proofs
+- public smoke proves the Cloudflare edge and raster endpoint
+- Tofu apply proves RustFS state/backend access from the approved runner class
+- staging deploy proves Kustomize apply and rollout
+- GitOps drift proves Tofu state and live Kustomize shape agree
 
 ## Tracker Gate
 
