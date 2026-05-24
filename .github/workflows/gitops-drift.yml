@@ -156,6 +156,10 @@ jobs:
       - name: kustomize server diff
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/kustomize/honey/darkmap
         run: |
+          TAG="${GITHUB_SHA:0:7}"
+          kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${TAG}
+          echo "Kustomize desired image: ghcr.io/jesssullivan/darkmap.tinyland.dev:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
           kustomize build . > /tmp/kustomize-rendered.yaml
 
           set +e
