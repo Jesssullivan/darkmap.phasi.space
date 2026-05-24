@@ -33,9 +33,8 @@ spec:
         app.kubernetes.io/name: darkmap
     spec:
       # ghcr.io/jesssullivan/darkmap.tinyland.dev is a private package;
-      # the kubelet pulls via the `ghcr-registry` secret (same pattern
-      # as sibling sites: elders, financebro, account-controller-system).
-      # Provisioning of the secret itself is documented in docs/SMOKE.md.
+      # the kubelet pulls via the `ghcr-registry` secret. Provisioning
+      # of the pull secret is an operator concern outside this public repo.
       imagePullSecrets:
         - name: ghcr-registry
       # The blahaj `honey-sting-tailnet` ProxyClass is restricted to

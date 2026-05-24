@@ -1,8 +1,6 @@
-// M3.3 sitemap.xml endpoint. Prerendered at build time by adapter-static so the
-// XML lives at build/sitemap.xml. Add additional routes here as M5 lands them.
 import type { RequestHandler } from './$types';
 
-const SITE = 'https://darkmap.tinyland.dev';
+const SITE = 'https://darkmap.phasi.space';
 const PAGES: string[] = ['/'];
 
 export const prerender = true;

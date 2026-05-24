@@ -1,8 +1,9 @@
 # Security policy
 
-This repository is the source for the static marketing/devtool site at
-<https://darkmap.tinyland.dev>. The site itself is purely static — no server
-runtime, no user accounts, no inbound data, no analytics.
+This repository is the source for the public darkmap site at
+<https://darkmap.phasi.space>. The public edge is Cloudflare Tunnel backed; the
+legacy `darkmap.tinyland.dev` path remains a tailnet ingress. The site has no
+user accounts, payments, runtime database, or analytics.
 
 ## Reporting a vulnerability
 
@@ -10,22 +11,21 @@ Until a public security email is published, please report security
 issues against this site via a **private GitHub security advisory** on
 this repository:
 
-<https://github.com/tinyland-inc/darkmap.tinyland.dev/security/advisories/new>
+<https://github.com/Jesssullivan/darkmap.phasi.space/security/advisories/new>
 
 ## Scope
 
 In scope for this repository:
 
 - Build / CI supply-chain issues
-- Static site content that misrepresents this brand or the Tinyland platform posture
+- Site content that misrepresents this brand or its data sources
 - Secrets accidentally committed to history
 - Third-party dep vulnerabilities affecting the build pipeline
 
 Out of scope:
 
 - Cosmetic / SEO / accessibility issues — please open a normal issue
-- DDoS / availability — site is on Cloudflare Pages with no privileged
-  routes; standard Cloudflare Pages edge availability applies
+- DDoS / availability
 
 ## What we won't do
 

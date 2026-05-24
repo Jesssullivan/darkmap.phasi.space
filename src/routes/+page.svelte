@@ -257,7 +257,9 @@
 		});
 		mapInstance.on('zoomend', scheduleHashWrite);
 
-		if (decodeHash(window.location.hash).time) ephemerisOpen = true;
+		// Default the twilight strip open in the browser, while keeping SSR
+		// stable so the client clock owns the initial ephemeris time.
+		ephemerisOpen = true;
 
 		mapInstance.on('click', (ev) => {
 			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
@@ -281,10 +283,10 @@
 </script>
 
 <svelte:head>
-	<title>darkmap.tinyland.dev</title>
+	<title>darkmap</title>
 	<meta
 		name="description"
-		content="Ad-free reimplementation of lightpollutionmap.info — VIIRS, Falchi 2016 World Atlas, SQM."
+		content="Dark-sky planning map with VIIRS, Falchi 2016 World Atlas, terrain horizon, geocoder, and sun/moon timing."
 	/>
 	<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
 </svelte:head>
@@ -325,9 +327,9 @@
 	items={[
 		{
 			id: 'ephemeris',
-			label: 'Toggle twilight strip',
+			label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
 			glyph: '☼/☾',
-			title: 'Toggle twilight strip',
+			title: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
 			pressed: ephemerisOpen,
 			onclick: () => {
 				ephemerisOpen = !ephemerisOpen;

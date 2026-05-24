@@ -17,7 +17,7 @@ name: Lane env
 # pull_request trigger and only flip it on once Blahaj is wired.
 #
 # Until that PR lands AND Blahaj is installed on
-# Jesssullivan/darkmap.tinyland.dev:
+# Jesssullivan/darkmap.phasi.space:
 #   - workflow_dispatch path is available for manual testing once the
 #     secret is populated (operator step; gate the manual run on
 #     visual confirmation, not on the var).

@@ -471,8 +471,8 @@ Most overruns came from:
 
 After darkmap (lead pilot), the planning session ranked:
 
-1. **omux.xoxd.ai** — ancestral spoke (site.scaffold was extracted
-   from omux). 90% schema-compliant already. Cleanest fit.
+1. **omux ancestral spoke** — site.scaffold was extracted from omux.
+   90% schema-compliant already. Cleanest fit.
 2. **darkmap.tinyland.dev** — done (this playbook).
 3. **MassageIthaca** — defer until payment-mode (TIN-992) and Modal
    decom (TIN-981) settle. Will be the multi-lane stress test.

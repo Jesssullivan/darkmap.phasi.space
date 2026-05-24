@@ -1,8 +1,13 @@
-title = "darkmap.tinyland.dev"
+title = "darkmap"
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "No repository-specific allowlist entries yet."
-paths = ["^$"]
+description = "Generated dependency/cache directories are not repository source."
+paths = [
+  '''(^|/)infra/tofu/\.terraform/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)build/''',
+  '''(^|/)\.svelte-kit/''',
+]

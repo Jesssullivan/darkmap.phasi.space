@@ -1,5 +1,6 @@
 .git
 .direnv
+infra/tofu/.terraform
 node_modules
 .svelte-kit
 build

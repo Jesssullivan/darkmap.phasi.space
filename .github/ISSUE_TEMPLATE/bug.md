@@ -1,6 +1,6 @@
 ---
 name: Bug
-about: Report a bug in the darkmap.tinyland.dev site
+about: Report a bug in the darkmap.phasi.space site
 title: ''
 labels: ['bug']
 assignees: ''
@@ -20,7 +20,7 @@ assignees: ''
 
 - Browser:
 - OS:
-- darkmap.tinyland.dev page:
+- darkmap.phasi.space page:
 
 ## Additional Context
 

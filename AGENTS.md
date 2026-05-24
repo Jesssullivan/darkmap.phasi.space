@@ -1,4 +1,4 @@
-# Agent Notes — darkmap.tinyland.dev
+# Agent Notes — darkmap.phasi.space
 
 This file is the working contract for coding agents and LLMs operating in any
 sister site spawned from this scaffold.
@@ -75,7 +75,7 @@ reviewed static snapshots from `tinyland.dev`.
 
 ## Per-Site Customization Checklist
 
-After `gh repo create --template tinyland-inc/darkmap.tinyland.dev`:
+After creating a new sister site from this scaffold:
 
 1. `direnv allow`
 2. `scripts/rebrand.sh <site.example.com>` — rewrites name strings, env vars,
@@ -195,13 +195,13 @@ After `gh repo create --template tinyland-inc/darkmap.tinyland.dev`:
   the spoke is house-style compliant. MANUAL items are documented
   below.
 - **Ownership gap (Path A)**: darkmap is
-  `Jesssullivan/darkmap.tinyland.dev`, NOT in `tinyland-inc/*`. The
+  `Jesssullivan/darkmap.phasi.space`, NOT in `tinyland-inc/*`. The
   org-default `tinyland-spoke-default` branch-protection ruleset
   (lives in `tinyland-inc/.github`) does NOT auto-apply to this
   repo. Branch protection is configured manually in
   `Settings → Rules → Rulesets`. Conformance reports this as MANUAL;
   acceptable. (Path B alternative: manually import the ruleset JSON
-  via `gh api /repos/Jesssullivan/darkmap.tinyland.dev/rulesets -X
+  via `gh api /repos/Jesssullivan/darkmap.phasi.space/rulesets -X
   POST --input <ruleset.json>` — one-time; updates require
   re-application.)
 - **Pre-cutover MANUAL items** (unblock through subsequent
