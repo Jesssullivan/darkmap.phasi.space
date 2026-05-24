@@ -5,7 +5,7 @@ OpenTofu stack for the darkmap deployment. The public service hostname is
 the infrastructure cutover is completed. The stack manages:
 
 - Kubernetes `Namespace/darkmap`
-- Kubernetes `Secret/darkmap-upstream` holding `QUERY_RASTER_KEY`
+- the legacy Cloudflare DNS record for `darkmap.tinyland.dev`
 
 Everything else (`Deployment`, `Service`, `tailscale-svc`, `Ingress`)
 lives in `infra/kustomize/honey/darkmap/` and is applied with
@@ -40,9 +40,8 @@ uses the Kubernetes provider.
 From the repo root (`direnv allow` first to load the Nix shell):
 
 ```bash
-export TF_VAR_query_raster_key='<the-real-key>'
 just tofu-init
-just tofu-plan          # non-empty diff expected on first run
+just tofu-plan
 just tofu-apply         # type yes
 ```
 
@@ -51,4 +50,4 @@ just tofu-apply         # type yes
 Operationally, Kustomize-driven Deployment/Ingress lifecycle is
 faster to iterate (no providers, no state lock contention) for
 container-image rollouts. Tofu owns the slowly-changing primitives
-(namespace, secret); Kustomize owns the workload.
+(namespace, legacy DNS, spoke modules); Kustomize owns the workload.
