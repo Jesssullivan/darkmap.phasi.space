@@ -23,13 +23,13 @@
 		{ href: '/#contact', label: 'Contact' },
 	];
 
-	const SITE_NAME = 'darkmap.tinyland.dev';
-	const SITE_URL = 'https://darkmap.tinyland.dev';
-	const SITE_TITLE = 'darkmap.tinyland.dev — ad-free light pollution map';
+	const SITE_NAME = 'darkmap';
+	const SITE_URL = 'https://darkmap.phasi.space';
+	const SITE_TITLE = 'darkmap — dark-sky planning map';
 	const SITE_DESCRIPTION =
-		'Ad-free reimplementation of lightpollutionmap.info. VIIRS DNB, Falchi 2016 World Atlas, SQM. Tailnet-only.';
-	const REPO_URL = 'https://github.com/Jesssullivan/darkmap.tinyland.dev';
-	const SECURITY_URL = 'https://github.com/Jesssullivan/darkmap.tinyland.dev/security/advisories/new';
+		'Dark-sky planning map with VIIRS DNB, Falchi 2016 World Atlas, terrain horizon, OSM search, and sun/moon timing.';
+	const REPO_URL = 'https://github.com/Jesssullivan/darkmap.phasi.space';
+	const SECURITY_URL = 'https://github.com/Jesssullivan/darkmap.phasi.space/security/advisories/new';
 	const OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 	const jsonLd = {
@@ -172,7 +172,7 @@
 				class="container mx-auto flex flex-col gap-4 px-6 py-8 text-sm md:flex-row md:items-center md:justify-between"
 			>
 				<p class="text-surface-700-300">
-					A Tinyland static spoke. Public content may later flow from reviewed tinyland.dev projections.
+					A privacy-preserving Tinyland map surface for field planning and night-sky work.
 				</p>
 				<nav class="flex flex-wrap gap-4" aria-label="Footer">
 					<a href="https://tinyland.dev" class="hover:text-primary-500 transition-colors">tinyland.dev</a>

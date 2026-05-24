@@ -9,10 +9,10 @@
 </script>
 
 <svelte:head>
-	<title>darkmap.tinyland.dev — docs</title>
+	<title>darkmap — docs</title>
 	<meta
 		name="description"
-		content="darkmap.tinyland.dev — an ad-free, tailnet-hosted dark-sky / sensor / astronomy planning tool. Sources, science notes, tech stack."
+		content="darkmap — a dark-sky, field-sensing, and astronomy planning tool. Sources, science notes, tech stack."
 	/>
 </svelte:head>
 
@@ -20,7 +20,7 @@
 	<header class="mb-8">
 		<h1 class="font-mono text-2xl font-bold tracking-tight">docs</h1>
 		<p class="text-surface-700-300 mt-2">
-			darkmap.tinyland.dev — a tailnet-only planning surface for instrumentation, sensor, and astronomy field work.
+			darkmap — a planning surface for instrumentation, sensor, astronomy, and low-light field work.
 		</p>
 	</header>
 
@@ -38,9 +38,9 @@
 			night-dependent radar campaigns, and dark-sky-site logistics.
 		</p>
 		<p>
-			The original problem statement was "lightpollutionmap.info but without the ads and the latency." We solved that
-			and kept going. The current surface is squarely tuned for our needs and the needs of the dark-sky / spectroscopy
-			community on this tailnet.
+			The original problem statement was inspired by lightpollutionmap.info: a faster, calmer dark-sky planning surface
+			without ad-tech or tracking. The current surface is tuned for dark-sky, spectroscopy, photography, and field
+			logistics work.
 		</p>
 	</section>
 
@@ -82,9 +82,8 @@
 		<p class="mb-3">
 			darkmap was originally inspired by Jurij Stare's
 			<a href="https://www.lightpollutionmap.info" class="underline">lightpollutionmap.info</a>
-			— the canonical web map for the underlying VIIRS / Falchi datasets. We have since broadened scope significantly (per-view
-			ephemeris, real-terrain horizon raycasting, instrumented sensor and astrophotography workflows) and now stand on our
-			own. We acknowledge the original idea + the upstream GeoServer that hosts publicly available scientific data:
+			— a long-running public map surface for VIIRS and Falchi light-pollution data. It is an inspiration and comparison point,
+			not an affiliation or primary data attribution. Scientific and software attributions are listed below:
 		</p>
 		<dl class="grid grid-cols-1 gap-4 sm:grid-cols-[10rem_1fr]">
 			<dt class="font-semibold">NASA VIIRS DNB</dt>
@@ -97,10 +96,11 @@
 				Falchi et al., Sci. Adv. 2 (2016) — <em>"The new world atlas of artificial night sky brightness"</em>. mcd/m²
 				radiance grid + classification.
 			</dd>
-			<dt class="font-semibold">lightpollutionmap.info GeoServer</dt>
+			<dt class="font-semibold">Current WMS transport</dt>
 			<dd>
-				Public WMS at <code>www2.lightpollutionmap.info/geoserver</code>. We proxy through
-				<code>/api/raster</code> to strip Prebid + ad-tracking headers and inject sane caching.
+				Selected public light-pollution rasters currently load through a public GeoServer WMS transport. We proxy
+				through
+				<code>/api/raster</code> to normalize caching and keep ad-tech headers out of darkmap responses.
 			</dd>
 			<dt class="font-semibold">AWS Mapzen Terrarium</dt>
 			<dd>
@@ -158,14 +158,11 @@
 				Bazel 8 + Bzlmod via tinyland-inc/bazel-registry, with the MassageIthaca cache-attachment-contract pattern for
 				RBE
 			</li>
-			<li>
-				OpenTofu, kustomize, Tailscale operator on the blahaj RKE2 cluster. State in rustfs S3. Tailnet-only via CIDR
-				whitelist on nginx ingress.
-			</li>
+			<li>OpenTofu and kustomize for the current deploy path. Runtime secrets stay outside the repository.</li>
 		</ul>
 		<p class="text-surface-700-300 mt-4 text-xs">
-			See <a href="https://github.com/Jesssullivan/darkmap.tinyland.dev" class="underline">the repo</a> for AGENTS.md, README.md,
-			and the full deploy runbook.
+			See <a href="https://github.com/Jesssullivan/darkmap.phasi.space" class="underline">the repo</a> for source, issues,
+			and contribution context.
 		</p>
 	</section>
 </article>

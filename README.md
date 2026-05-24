@@ -1,77 +1,93 @@
-# darkmap.tinyland.dev
+# darkmap
 
-Ad-free, fast, fully reverse-engineered reimplementation of
-[lightpollutionmap.info](https://www.lightpollutionmap.info), served
-tailnet-only from the `blahaj` cluster.
+Dark-sky planning map for astronomy, field sensing, bike/hike planning, and
+night-work logistics. The canonical hostname is
+<https://darkmap.phasi.space>.
 
-Phase 1 (this initiative — week of 2026-05-17): SvelteKit + Effect.ts
-reverse-proxy of the upstream `QueryRaster` endpoint with ads, Prebid,
-and analytics surfaces stripped. MapLibre GL JS renders VIIRS annual
-composites (2017 / 2020 / 2021), the VIIRS multi-year trend, the
-Falchi 2015 World Atlas overlay, and the SQM-user layer.
+The map combines public light-pollution datasets with terrain-aware astronomy
+tools: VIIRS DNB radiance, Falchi 2016 World Atlas, OSM search, terrain horizon
+raycasting, sun/moon ephemeris, and shareable map state.
 
-Phase 2+ (deferred): self-host VIIRS / Falchi tiles in rustfs, deck.gl
-custom raster overlay, public exposure, user SQM submissions write-path.
+## Launch Status
+
+`darkmap.phasi.space` is the public service hostname. The launch tracker is
+[GitHub issue #97](https://github.com/Jesssullivan/darkmap.phasi.space/issues/97).
+
+As of 2026-05-24, the Cloudflare Tunnel route and proxied Cloudflare DNS record
+are configured for `darkmap.phasi.space`. Some public resolvers may still return
+the older DreamHost-served CNAME to `darkmap.tinyland.dev`, which lands on the
+legacy tailnet ingress IP, until `phasi.space` authority fully converges.
+
+The SOPS-backed Cloudflare account has an active `phasi.space` zone. The zone
+used by this repo is assigned these nameservers:
+
+- `austin.ns.cloudflare.com`
+- `oaklyn.ns.cloudflare.com`
+
+See [`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md) for the DNS, TLS,
+Cloudflare Tunnel, legacy tailnet path, and public-repo readiness checklist.
+
+## Privacy
+
+This repo should be safe to make public:
+
+- no user accounts, payments, runtime database, or write APIs
+- no checked-in `.env` files or plaintext credentials
+- no analytics or ad-tech scripts
+- map APIs are proxied only to normalize responses and caching
+
+Operational secrets live outside the repo in the operator secret store and in
+GitHub Actions secrets.
+
+Before release-sensitive changes, run the public-readiness checks in
+[`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md).
 
 ## Stack
 
-- **Just** — sole authoritative DX/AX entrypoint (`Justfile`)
-- **Nix flake + direnv** — reproducible dev shell
-- **Bazel 8 + Bzlmod** — `tinyland-inc/bazel-registry` first, with optional GloriousFlywheel cache attachment (`--config=flywheel`)
-- **SvelteKit + adapter-static** — static frontend
-- **Effect.ts** — service layer (`RasterClient`, `Cache`, `AdStripper` layers)
-- **MapLibre GL JS** — interactive map (EPSG:3857)
-- **TypeScript** — pinned to `typescript@next` (tracking next-major; churn risk documented in `MODULE.bazel`)
-- **OpenTofu + rustfs S3** — IaC with on-prem state backend
-- **Kustomize → blahaj RKE2** — deploy target
-- **Tailscale operator** — tailnet-only exposure (`honey-sting-tailnet` ProxyClass)
+- SvelteKit + adapter-node
+- Svelte 5, TypeScript, Skeleton 4, Tailwind v4
+- MapLibre GL JS
+- Effect.ts service layers for raster, geocoder, elevation, and ephemeris work
+- astronomy-engine for sun/moon calculations
+- Just + Nix for local development
+- Bazel/Bzlmod for module graph and unit-test proofs
+- OpenTofu + Kustomize for the current deployment path
 
-## Quick start
+## Development
+
+Use the Justfile. It is the authoritative entrypoint for local and CI commands.
 
 ```bash
 direnv allow
-just setup          # pnpm install --frozen-lockfile
-just check          # lint + typecheck + Bazel unit tests
-just build          # static SvelteKit build
-just dev            # local Vite dev server
+just setup
+just check
+just build
+just dev
 ```
 
-Bazel smoke and unit tests:
+Useful targeted checks:
 
 ```bash
-bazelisk mod graph                                               # local graph proof
-bazelisk test //src/lib/server/raster:raster_test                # local Bazel test
-GF_BAZEL_CONFIG=flywheel just test-unit                          # GloriousFlywheel runner
-bazelisk --config=flywheel build //:node_modules                 # in-cluster cache runner
+just test-local
+just test-unit
+just format-check
 ```
 
-`--config=flywheel` uses the in-cluster GloriousFlywheel Bazel cache endpoint
-(`grpc://bazel-cache.nix-cache.svc.cluster.local:9092`). It is cache-backed
-Bazel execution, not proof that this repo is using a Bazel `--remote_executor`.
-The CI Bazel jobs use `BAZEL_LINUX_RUNNER_LABELS_JSON` when set, falling back to
-`PRIMARY_LINUX_RUNNER_LABELS_JSON` and then `ubuntu-latest`. CI sets
-`GF_BAZEL_CONFIG=flywheel` only when the selected runner labels include a
-cache-reachable ARC label (`glorious-flywheel`, `jesssullivan-nix`, or
-`tinyland-nix`); otherwise the same Bazel test target runs without the
-in-cluster cache profile. Tofu plan/apply uses `TOFU_LINUX_RUNNER_LABELS_JSON`
-so RustFS-backed state remains on a cluster-DNS-capable runner. Use
-`just test-local` for direct Vitest fallback.
+## Project Work
 
-## Planning
+GitHub issues are the public work tracker for this repo. Linear may still hold
+Tinyland-wide planning records, but repo-local implementation work should have a
+matching GitHub issue. The launch/follow-up issue map lives in
+[`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md#tracker-gate).
 
-- Linear project: [darkmap.tinyland.dev — Week 1 launch](https://linear.app/tinyland/project/darkmaptinylanddev-week-1-launch-0571e880990b)
-- GitHub issues: [#1–#8](https://github.com/Jesssullivan/darkmap.tinyland.dev/issues)
-- Operator contract: [`AGENTS.md`](./AGENTS.md)
+## Data Sources
 
-## Network exposure
+- NASA/NOAA VIIRS Day/Night Band composites
+- Falchi et al. 2016, *The new world atlas of artificial night sky brightness*
+- OpenStreetMap data through Photon
+- AWS Mapzen Terrarium elevation tiles
+- Current public WMS transport for selected light-pollution rasters
 
-Tailnet-only. nginx ingress with `100.64.0.0/10, 10.0.0.0/8` source
-whitelist. Off-tailnet traffic gets 403 / connection refused. There is
-no public DNS for this hostname outside the Tailscale magicdns suffix
-during Phase 1.
-
-## Attribution
-
-Data © Jurij Stare, [lightpollutionmap.info](https://www.lightpollutionmap.info) —
-NASA VIIRS DNB · Falchi et al. 2016 *World Atlas of Artificial Night
-Sky Brightness*.
+lightpollutionmap.info is an inspiration and comparison point, not an
+affiliation or primary attribution. See [`/docs`](./src/routes/docs/+page.svelte)
+for source notes.

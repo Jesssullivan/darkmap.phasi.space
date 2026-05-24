@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest a new feature or improvement for the darkmap.tinyland.dev site
+about: Suggest a new feature or improvement for the darkmap.phasi.space site
 title: ''
 labels: ['enhancement']
 assignees: ''

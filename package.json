@@ -3,11 +3,11 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"description": "Ad-free reverse-engineered reimplementation of lightpollutionmap.info (SvelteKit + Effect.ts + MapLibre on blahaj, tailnet-only)",
-	"homepage": "https://github.com/Jesssullivan/darkmap.tinyland.dev",
+	"description": "Dark-sky planning map with VIIRS, Falchi, terrain horizon, geocoder, and ephemeris tools",
+	"homepage": "https://darkmap.phasi.space",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Jesssullivan/darkmap.tinyland.dev.git"
+		"url": "https://github.com/Jesssullivan/darkmap.phasi.space.git"
 	},
 	"license": "MIT",
 	"packageManager": "pnpm@10.13.1",

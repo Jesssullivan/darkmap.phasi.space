@@ -16,9 +16,20 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
+        - darkmap.phasi.space
         - darkmap.tinyland.dev
       secretName: darkmap-tls
   rules:
+    - host: darkmap.phasi.space
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: darkmap
+                port:
+                  name: http
     - host: darkmap.tinyland.dev
       http:
         paths:
