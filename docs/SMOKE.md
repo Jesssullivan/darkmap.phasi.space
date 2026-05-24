@@ -42,13 +42,12 @@ Current acceptable public-edge state:
 <Cloudflare edge addresses, no 100.64.0.0/10 address>
 ```
 
-Authority may still be served by DreamHost while the zone handoff finishes.
 Audit `dig +short NS phasi.space @a.nic.space` separately from the A/AAAA
-answers. The intended registrar-side Cloudflare nameservers are:
+answers. The registrar-side Cloudflare nameservers are:
 
 ```text
-izabella.ns.cloudflare.com.
-sullivan.ns.cloudflare.com.
+austin.ns.cloudflare.com.
+oaklyn.ns.cloudflare.com.
 ```
 
 Then verify the public edge:
@@ -64,7 +63,7 @@ Expected:
 - homepage status is `200`
 - `ad_prebid` count is `0`
 - the final header scan exits with no matches
-- once recursive DNS reaches Cloudflare, headers include `server: cloudflare`
+- headers include `server: cloudflare`
 
 ## Hosted Public Smoke
 

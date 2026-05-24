@@ -10,13 +10,13 @@ raycasting, sun/moon ephemeris, and shareable map state.
 
 ## Launch Status
 
-`darkmap.phasi.space` is the public service hostname. The launch tracker is
-[GitHub issue #97](https://github.com/Jesssullivan/darkmap.phasi.space/issues/97).
+`darkmap.phasi.space` is the public service hostname. The launch cutover is
+complete; [GitHub issue #97](https://github.com/Jesssullivan/darkmap.phasi.space/issues/97)
+has the closing evidence.
 
-As of 2026-05-24, the Cloudflare Tunnel route and proxied Cloudflare DNS record
-are configured for `darkmap.phasi.space`. Some public resolvers may still return
-the older DreamHost-served CNAME to `darkmap.tinyland.dev`, which lands on the
-legacy tailnet ingress IP, until `phasi.space` authority fully converges.
+As of 2026-05-24, `phasi.space` delegates to Cloudflare and
+`darkmap.phasi.space` resolves to Cloudflare edge A/AAAA answers. The legacy
+`darkmap.tinyland.dev` hostname remains available as a separate Tinyland path.
 
 The SOPS-backed Cloudflare account has an active `phasi.space` zone. The zone
 used by this repo is assigned these nameservers:
@@ -33,7 +33,7 @@ This repo should be safe to make public:
 
 - no user accounts, payments, runtime database, or write APIs
 - no checked-in `.env` files or plaintext credentials
-- no analytics or ad-tech scripts
+- no repo-owned analytics or ad-tech scripts
 - map APIs are proxied only to normalize responses and caching
 
 Operational secrets live outside the repo in the operator secret store and in
