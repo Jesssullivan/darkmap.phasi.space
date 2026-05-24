@@ -69,6 +69,10 @@
 		"vitest": "^4.1.6"
 	},
 	"pnpm": {
+		"overrides": {
+			"cookie": "0.7.2",
+			"fast-uri": "3.1.2"
+		},
 		"onlyBuiltDependencies": [
 			"@tailwindcss/oxide",
 			"esbuild"
