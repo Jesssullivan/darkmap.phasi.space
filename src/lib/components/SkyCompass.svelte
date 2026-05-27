@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { Effect, Layer } from 'effect';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import {
+		makeOrientationServiceLive,
+		OrientationService,
+		orientationCapabilityFor,
+		type OrientationCapability,
+		type OrientationWatch,
+	} from '$lib/device/OrientationService';
 	import { airmassKastenYoung, formatAirmass } from '$lib/ephemeris/airmass';
 	import type { BodyPosition, EphemerisReadout, LatLon, SkyPositions } from '$lib/ephemeris/EphemerisClient';
 	import type { HorizonPolygon } from '$lib/ephemeris/HorizonProvider';
@@ -12,6 +19,104 @@
 	}
 
 	let { location, time }: Props = $props();
+
+	// Device-orientation compass overlay (#102). Status machine:
+	//   unknown      — pre-mount / SSR
+	//   unsupported  — no DeviceOrientationEvent
+	//   needs-permission — iOS Safari path; show "Enable compass" button
+	//   granted      — desktop/Android path; start watch immediately
+	//   active       — watch running, heading flowing
+	//   denied       — user denied the permission prompt
+	//   error        — watch start failed for another reason
+	type CompassStatus = 'unknown' | 'unsupported' | 'needs-permission' | 'granted' | 'active' | 'denied' | 'error';
+	let compassStatus = $state<CompassStatus>('unknown');
+	let headingDeg = $state<number | null>(null);
+	let compassWatch: OrientationWatch | undefined;
+	let lastHeadingTs = 0;
+
+	onMount(() => {
+		const capability = orientationCapabilityFor({
+			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
+				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
+			},
+		});
+		compassStatus =
+			capability === 'unsupported' ? 'unsupported' : capability === 'needs-permission' ? 'needs-permission' : 'granted';
+		// Desktop/Android: no gesture required — start the watch on mount.
+		if (compassStatus === 'granted') void startCompassWatch();
+	});
+
+	onDestroy(() => {
+		compassWatch?.stop();
+		compassWatch = undefined;
+	});
+
+	async function startCompassWatch(): Promise<void> {
+		const layer = makeOrientationServiceLive({
+			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
+				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
+			},
+			addEventListener: (type, listener) => window.addEventListener(type, listener),
+			removeEventListener: (type, listener) => window.removeEventListener(type, listener),
+		});
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OrientationService;
+				return yield* svc.watch((reading) => {
+					// 8 Hz cap — DeviceOrientationEvent fires up to ~60 Hz on some
+					// devices; the on-screen needle doesn't need that resolution.
+					const now = Date.now();
+					if (now - lastHeadingTs < 125) return;
+					lastHeadingTs = now;
+					headingDeg = reading.headingDeg;
+				});
+			}).pipe(Effect.provide(layer)),
+		);
+		if (exit._tag === 'Failure') {
+			const err = (exit.cause as unknown as { error?: { reason?: string } }).error;
+			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
+			return;
+		}
+		compassWatch = exit.value;
+		compassStatus = 'active';
+	}
+
+	async function enableCompass(): Promise<void> {
+		const layer = makeOrientationServiceLive({
+			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
+				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
+			},
+			addEventListener: (type, listener) => window.addEventListener(type, listener),
+			removeEventListener: (type, listener) => window.removeEventListener(type, listener),
+		});
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OrientationService;
+				return yield* svc.requestPermission();
+			}).pipe(Effect.provide(layer)),
+		);
+		if (exit._tag === 'Failure') {
+			const err = (exit.cause as unknown as { error?: { reason?: string } }).error;
+			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
+			return;
+		}
+		await startCompassWatch();
+	}
+
+	function compassButtonLabel(): string {
+		switch (compassStatus) {
+			case 'needs-permission':
+				return 'Enable compass';
+			case 'denied':
+				return 'Compass denied';
+			case 'error':
+				return 'Compass error';
+			case 'active':
+				return `Compass on${headingDeg !== null ? ` (${Math.round(headingDeg)}°)` : ''}`;
+			default:
+				return '';
+		}
+	}
 
 	let readout = $state<EphemerisReadout | null>(null);
 	let trajectory = $state<{ frac: number; sun: BodyPosition }[]>([]);
@@ -240,6 +345,18 @@
 			<path d={horizonPath} fill="rgba(110, 78, 48, 0.35)" stroke="rgba(180, 130, 80, 0.75)" stroke-width="0.9" />
 		{/if}
 
+		{#if compassStatus === 'active' && headingDeg !== null}
+			<!-- Device heading needle. Triangle from compass center pointing toward
+			     the bearing the phone is facing. heading=0 → up (toward N). -->
+			<g transform="rotate({headingDeg} {CX} {CY})" class="heading-needle">
+				<line x1={CX} y1={CY} x2={CX} y2={CY - R + 4} stroke="rgba(255, 209, 102, 0.85)" stroke-width="2" />
+				<polygon
+					points="{CX},{CY - R - 2} {CX - 4},{CY - R + 8} {CX + 4},{CY - R + 8}"
+					fill="rgba(255, 209, 102, 0.95)"
+				/>
+			</g>
+		{/if}
+
 		{#if trajectoryPath}
 			<path
 				d={trajectoryPath}
@@ -313,6 +430,19 @@
 		</div>
 		{#if horizonError}
 			<div class="row note">terrain horizon unavailable — flat horizon assumed</div>
+		{/if}
+		{#if compassStatus === 'needs-permission'}
+			<div class="row compass-row">
+				<button type="button" class="compass-btn" onclick={enableCompass}>
+					🧭 {compassButtonLabel()}
+				</button>
+			</div>
+		{:else if compassStatus === 'active'}
+			<div class="row compass-row" aria-live="polite">
+				<span class="compass-status">🧭 {compassButtonLabel()}</span>
+			</div>
+		{:else if compassStatus === 'denied' || compassStatus === 'error'}
+			<div class="row note">🧭 {compassButtonLabel()}</div>
 		{/if}
 	</div>
 </div>
@@ -395,5 +525,35 @@
 	.note {
 		opacity: 0.55;
 		font-style: italic;
+	}
+	.compass-row {
+		gap: 0.4rem;
+		margin-top: 0.25rem;
+	}
+	.compass-btn {
+		background: rgba(8, 10, 16, 0.85);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 209, 102, 0.45);
+		border-radius: 999px;
+		padding: 0.3rem 0.65rem;
+		font: inherit;
+		font-size: 0.75rem;
+		cursor: pointer;
+		min-height: 2.25rem;
+	}
+	.compass-btn:hover,
+	.compass-btn:focus-visible {
+		color: #ffd166;
+		border-color: rgba(255, 209, 102, 0.85);
+		outline: none;
+	}
+	.compass-status {
+		color: rgba(255, 209, 102, 0.9);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.heading-needle {
+		transition: transform 0.12s linear;
+		transform-origin: center;
 	}
 </style>
