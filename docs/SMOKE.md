@@ -101,6 +101,11 @@ Cluster jobs normalize the checked-in kubeconfig secret to the in-cluster API
 endpoint before running OpenTofu or `kubectl`, then fail fast if that API is not
 reachable.
 
+When `GitOps drift` fails on OpenTofu state symptoms, capture the run URL and
+the uploaded drift evidence before any platform recovery. The public-safe
+evidence path and RustFS recovery boundary are in
+[`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
+
 ## Browser Smoke
 
 Open <https://darkmap.phasi.space/> and verify:

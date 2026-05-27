@@ -163,7 +163,7 @@ jobs:
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/kustomize/honey/darkmap
         run: |
           TAG="${GITHUB_SHA:0:7}"
-          kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.phasi.space:${TAG}
+          kustomize edit set image "darkmap=ghcr.io/jesssullivan/darkmap.phasi.space:${TAG}"
           echo "Kustomize desired image: ghcr.io/jesssullivan/darkmap.phasi.space:${TAG}" >> "$GITHUB_STEP_SUMMARY"
 
           kustomize build . > /tmp/kustomize-rendered.yaml
@@ -195,3 +195,16 @@ jobs:
             echo "- OpenTofu/RustFS state: clean"
             echo "- Kustomize live state: clean"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload drift evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitops-drift-${{ github.run_id }}
+          path: |
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-init.log
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-state-list.log
+            /tmp/tofu-drift.txt
+            /tmp/kustomize-drift.txt
+          if-no-files-found: ignore
+          retention-days: 30
