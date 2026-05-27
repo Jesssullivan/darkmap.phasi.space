@@ -5,6 +5,7 @@
 		{ id: 'attribution', title: 'Sources, attribution, inspiration' },
 		{ id: 'science', title: 'Scientific notes (what we measure)' },
 		{ id: 'tech', title: 'Tech stack + deployment' },
+		{ id: 'contact', title: 'Contact' },
 	];
 </script>
 
@@ -164,6 +165,37 @@
 			See <a href="https://github.com/Jesssullivan/darkmap.phasi.space" class="underline">the repo</a> for source, issues,
 			and contribution context.
 		</p>
+	</section>
+
+	<section id="contact" class="mt-12">
+		<h2 class="mb-3 font-mono text-lg font-bold">Contact</h2>
+		<p>
+			darkmap is a personal project. The fastest paths to reach a human are GitHub for code and feature work, and the
+			coordinated disclosure flow for anything security-shaped.
+		</p>
+		<ul class="mt-3 list-disc space-y-2 pl-6">
+			<li>
+				<strong>Bugs, requests, questions</strong>:
+				<a href="https://github.com/Jesssullivan/darkmap.phasi.space/issues" class="underline">open an issue</a> on GitHub.
+			</li>
+			<li>
+				<strong>Security disclosures</strong>:
+				<a
+					href="https://github.com/Jesssullivan/darkmap.phasi.space/security/advisories/new"
+					class="underline"
+					rel="noopener">file a private advisory</a
+				>
+				— do not file public issues for vulnerabilities. See
+				<a href="https://github.com/Jesssullivan/darkmap.phasi.space/blob/main/SECURITY.md" class="underline">
+					SECURITY.md</a
+				> for the response window and PGP key.
+			</li>
+			<li>
+				<strong>Tinyland context</strong>: this repo is one of several static spokes under
+				<a href="https://tinyland.dev" class="underline">tinyland.dev</a>; cross-repo coordination happens on the
+				tinyland-inc org.
+			</li>
+		</ul>
 	</section>
 </article>
 
