@@ -131,6 +131,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
         run: tofu init -backend-config=backend.hcl
 
+      - name: tofu state backend check
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+        run: ../../scripts/ci-tofu-state-check.sh
+
       - name: tofu plan
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
         env:
@@ -145,7 +152,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: tofu apply -auto-approve darkmap.tfplan
+        run: ../../scripts/ci-tofu-apply-retry.sh darkmap.tfplan
 
       - name: Upload applied plan + state-version reference
         if: always()
@@ -155,4 +162,6 @@ jobs:
           path: |
             ${{ env.CHECKOUT_PATH }}/infra/tofu/darkmap.tfplan
             ${{ env.CHECKOUT_PATH }}/infra/tofu/.terraform.lock.hcl
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-apply.log
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-state-list.log
           retention-days: 90
