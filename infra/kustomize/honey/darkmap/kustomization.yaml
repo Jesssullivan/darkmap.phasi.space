@@ -10,9 +10,9 @@ labels:
     pairs:
       app.kubernetes.io/name: darkmap
       app.kubernetes.io/instance: darkmap-honey
-      app.kubernetes.io/part-of: darkmap.tinyland.dev
+      app.kubernetes.io/part-of: darkmap.phasi.space
       app.kubernetes.io/managed-by: kustomize
-      tinyland.dev/site: darkmap.tinyland.dev
+      tinyland.dev/site: darkmap.phasi.space
 
 resources:
   - deployment.yaml
@@ -26,5 +26,5 @@ resources:
 # the default for ad-hoc operator applies.
 images:
   - name: darkmap
-    newName: ghcr.io/jesssullivan/darkmap.tinyland.dev
+    newName: ghcr.io/jesssullivan/darkmap.phasi.space
     newTag: main

@@ -356,7 +356,7 @@
     "@@aspect_rules_js+//npm:extensions.bzl%pnpm": {
       "general": {
         "bzlTransitiveDigest": "8Fn1V6ojA2oD887lYsnqxAWs3gaYzxWM3Wxi0UmA5tI=",
-        "usagesDigest": "hAo9mRH0a9Eu4aJ1qZlWr4ukd21VkGJquxt5GbpnN8I=",
+        "usagesDigest": "Oe/bylo0/OIWsfjFa/Rq8qhtJp5gHQFYsFTKuHJ22Sw=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -510,7 +510,7 @@
     "@@aspect_rules_swc+//swc:extensions.bzl%swc": {
       "general": {
         "bzlTransitiveDigest": "Qx9HF9IyA7ELCK8heZlGHEirIa5eLZEuHK+vISNgjx8=",
-        "usagesDigest": "EYLP2NrHy8DhscwcUNoEF+ZH1O0A5tpF/88G123dlHk=",
+        "usagesDigest": "jNyxK94ikGgkoLuo7nk2VBPcbv9jHYud9MnVoLgnnlc=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -622,7 +622,7 @@
     "@@aspect_rules_ts+//ts:extensions.bzl%ext": {
       "general": {
         "bzlTransitiveDigest": "kpFi+ae3stSvLHgS7Fiwn/tb3J3dDqMOi1EP3tJ/TKY=",
-        "usagesDigest": "voyGClEqPH9k3mAbpkdLFpY4cxyp0OtvJU0xTsTywS4=",
+        "usagesDigest": "iDo8HbuxhcxLpupMCae94v2qe7xWT6QRaGh/ALUt4F8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -870,7 +870,7 @@
     "@@rules_nodejs+//nodejs:extensions.bzl%node": {
       "general": {
         "bzlTransitiveDigest": "4pUxCNc22K4I+6+4Nxu52Hur12tFRfa1JMsN5mdDv60=",
-        "usagesDigest": "SlqDKU2215zLaLLZmrsLSmxnM8LoYjlBhxAq995sHWY=",
+        "usagesDigest": "mPjdx8rnKcSbnjcXMOeUyQ0xslTbIJ5q3AQv6CVcZ7o=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},

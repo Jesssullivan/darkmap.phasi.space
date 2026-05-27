@@ -1,31 +1,19 @@
 # darkmap
 
-Dark-sky planning map for astronomy, field sensing, bike/hike planning, and
-night-work logistics. The canonical hostname is
-<https://darkmap.phasi.space>.
+Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and
+low-light logistics: <https://darkmap.phasi.space>.
 
-The map combines public light-pollution datasets with terrain-aware astronomy
-tools: VIIRS DNB radiance, Falchi 2016 World Atlas, OSM search, terrain horizon
-raycasting, sun/moon ephemeris, and shareable map state.
+The map combines VIIRS DNB radiance, Falchi 2016 World Atlas, OSM search,
+terrain horizon raycasting, sun/moon ephemeris, and shareable map state.
 
 ## Launch Status
 
-`darkmap.phasi.space` is the public service hostname. The launch cutover is
-complete; [GitHub issue #97](https://github.com/Jesssullivan/darkmap.phasi.space/issues/97)
-has the closing evidence.
+The public cutover is complete; [issue #97](https://github.com/Jesssullivan/darkmap.phasi.space/issues/97)
+has the closing evidence. `darkmap.tinyland.dev` remains an intentional legacy
+Tinyland path for current infrastructure and should not be renamed casually.
 
-As of 2026-05-24, `phasi.space` delegates to Cloudflare and
-`darkmap.phasi.space` resolves to Cloudflare edge A/AAAA answers. The legacy
-`darkmap.tinyland.dev` hostname remains available as a separate Tinyland path.
-
-The SOPS-backed Cloudflare account has an active `phasi.space` zone. The zone
-used by this repo is assigned these nameservers:
-
-- `austin.ns.cloudflare.com`
-- `oaklyn.ns.cloudflare.com`
-
-See [`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md) for the DNS, TLS,
-Cloudflare Tunnel, legacy tailnet path, and public-repo readiness checklist.
+See [`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md) for DNS, TLS,
+Cloudflare Tunnel, legacy tailnet path, and public-repo readiness notes.
 
 ## Privacy
 
@@ -36,11 +24,13 @@ This repo should be safe to make public:
 - no repo-owned analytics or ad-tech scripts
 - map APIs are proxied only to normalize responses and caching
 
-Operational secrets live outside the repo in the operator secret store and in
-GitHub Actions secrets.
+Operational secrets live outside the repo in the operator SOPS store and in
+GitHub Actions secrets. This repo should only document secret boundaries, not
+copy secret values or operator-only material.
 
 Before release-sensitive changes, run the public-readiness checks in
-[`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md).
+[`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md). The latest local audit
+summary is in [`docs/PUBLIC_READINESS_AUDIT.md`](./docs/PUBLIC_READINESS_AUDIT.md).
 
 ## Stack
 
@@ -76,9 +66,11 @@ just format-check
 ## Project Work
 
 GitHub issues are the public work tracker for this repo. Linear may still hold
-Tinyland-wide planning records, but repo-local implementation work should have a
-matching GitHub issue. The launch/follow-up issue map lives in
+Tinyland-wide planning records, but repo-local implementation work lives in
+GitHub first. The launch/follow-up issue map lives in
 [`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md#tracker-gate).
+
+Current public-readiness follow-up: [#122](https://github.com/Jesssullivan/darkmap.phasi.space/issues/122).
 
 ## Data Sources
 

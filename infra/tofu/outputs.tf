@@ -11,3 +11,12 @@ output "dns_record" {
     proxied  = cloudflare_dns_record.darkmap_a.proxied
   }
 }
+
+output "public_dns_record" {
+  description = "Managed public Cloudflare record for darkmap.phasi.space, when adopted by this stack."
+  value = var.public_dns_enabled ? {
+    hostname = var.brand_domain
+    content  = cloudflare_dns_record.darkmap_public_cname[0].content
+    proxied  = cloudflare_dns_record.darkmap_public_cname[0].proxied
+  } : null
+}

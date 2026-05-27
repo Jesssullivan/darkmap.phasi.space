@@ -402,14 +402,15 @@
 			left: 0;
 			max-width: 100vw;
 			width: 88vw;
-			max-height: 100vh;
-			height: 100vh;
+			max-height: calc(100dvh - env(safe-area-inset-bottom, 0px));
+			height: calc(100dvh - env(safe-area-inset-bottom, 0px));
 			border-radius: 0;
 			border-right: 1px solid rgba(255, 255, 255, 0.08);
 			border-top: 0;
 			border-bottom: 0;
 			border-left: 0;
 			padding-top: 4rem;
+			padding-bottom: calc(var(--field-bottom-reserve, 7.75rem) + 1rem);
 			transform: translateX(-100%);
 			transition: transform 0.2s ease-out;
 			animation: none;

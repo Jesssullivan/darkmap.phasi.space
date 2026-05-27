@@ -1,5 +1,5 @@
 """
-darkmap.tinyland.dev - Bazel Module Configuration
+darkmap.phasi.space - Bazel Module Configuration
 
 Static-first SvelteKit consumer of the @tummycrypt/* npm packages
 produced by tinyland-inc/bazel-registry. The canonical site build is
@@ -20,7 +20,7 @@ After cloning from this template:
 """
 
 module(
-    name = "darkmap_tinyland_dev",
+    name = "darkmap_phasi_space",
     version = "0.0.1",
     compatibility_level = 1,
 )

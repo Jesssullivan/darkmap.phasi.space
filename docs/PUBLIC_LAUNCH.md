@@ -7,7 +7,7 @@ operator credential paths belong here.
 
 ## Current State
 
-Last refreshed: 2026-05-24.
+Last refreshed: 2026-05-27.
 
 - Canonical hostname: `darkmap.phasi.space`
 - GitHub repo: <https://github.com/Jesssullivan/darkmap.phasi.space>
@@ -15,6 +15,8 @@ Last refreshed: 2026-05-24.
 - Cloudflare Tunnel route is configured for `darkmap.phasi.space`
 - Cloudflare DNS has `darkmap.phasi.space` as a proxied CNAME to the
   `honey-ingress` tunnel
+- `infra/tofu` now has a default-off `public_dns_enabled` adoption gate for
+  managing that existing record once the `phasi.space` zone id is supplied
 - Blahaj source-truth follow-up for the live tunnel route is tracked in
   [tinyland-inc/blahaj#714](https://github.com/tinyland-inc/blahaj/issues/714)
 - Legacy `darkmap.tinyland.dev` remains a tailnet ingress path
@@ -101,6 +103,9 @@ without `server: cloudflare` proves only that alternate ingress path.
 
 ## Public-Readiness Gate
 
+Latest local audit summary:
+[`PUBLIC_READINESS_AUDIT.md`](./PUBLIC_READINESS_AUDIT.md).
+
 Run from the repository root:
 
 ```bash
@@ -186,3 +191,8 @@ Public launch and follow-up issues:
 - Route smoke: [#108](https://github.com/Jesssullivan/darkmap.phasi.space/issues/108)
 - Stale Linear cleanup: [#109](https://github.com/Jesssullivan/darkmap.phasi.space/issues/109)
 - Tofu / RustFS / GitOps CI/CD proof: [#110](https://github.com/Jesssullivan/darkmap.phasi.space/issues/110)
+- Mobile twilight rail: [#121](https://github.com/Jesssullivan/darkmap.phasi.space/issues/121)
+- Public-readiness follow-up: [#122](https://github.com/Jesssullivan/darkmap.phasi.space/issues/122)
+- Mobile regression suite: [#123](https://github.com/Jesssullivan/darkmap.phasi.space/issues/123)
+- GPS follow mode: [#124](https://github.com/Jesssullivan/darkmap.phasi.space/issues/124)
+- Mobile point readout sheet: [#125](https://github.com/Jesssullivan/darkmap.phasi.space/issues/125)

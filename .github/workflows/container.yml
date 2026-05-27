@@ -2,7 +2,7 @@
 # GitHub Actions: build and push container image to GHCR.
 #
 # Builds the `production` stage of Containerfile and pushes to
-# ghcr.io/jesssullivan/darkmap.tinyland.dev:<tag> (sha, branch, semver).
+# ghcr.io/jesssullivan/darkmap.phasi.space:<tag> (sha, branch, semver).
 #
 # Triggers:
 #   - push to main (build + push: sha + latest)
@@ -36,7 +36,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: jesssullivan/darkmap.tinyland.dev
+  IMAGE_NAME: jesssullivan/darkmap.phasi.space
 
 jobs:
   build-and-push:

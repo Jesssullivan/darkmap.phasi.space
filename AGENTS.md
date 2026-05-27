@@ -148,7 +148,7 @@ After creating a new sister site from this scaffold:
   provisioned via the `tinyland-inc/blahaj` GitHub App
   (`repository_dispatch` payload schema:
   `docs/schemas/blahaj-dispatch.schema.json`).
-- DNS naming: `pr-{PR_NUMBER}-{LANE}.darkmap.tinyland.dev`.
+- DNS naming: `pr-{PR_NUMBER}-{LANE}.darkmap.phasi.space`.
 - Image tag template: `pr-{PR_NUMBER}-sha-{COMMIT_SHA}`.
 - TTL: default 72h. Per-PR raise via labels `lane-ttl/7d`,
   `lane-ttl/30d`, `lane-ttl/keep` (capped at 720h). Reap on PR close
@@ -186,7 +186,7 @@ After creating a new sister site from this scaffold:
   when M4 lands; current key is per `infra/tofu/backend.hcl`.
 - Modules to be composed (post-M4):
   - `spoke-state-namespace` — S3 prefix + reaper IAM.
-  - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.tinyland.dev`.
+  - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.phasi.space`.
   - `spoke-cache-quota` — Attic + Bazel cache allocation.
   - `spoke-runner-binding` — runner-class ACL (hard-deny).
   - `spoke-blahaj-app-install` — only if Blahaj is to be installed.

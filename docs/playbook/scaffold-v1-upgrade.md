@@ -5,7 +5,7 @@
 > CI-SCHEMA + ci-templates@v2 + spoke-tofu-modules-v1.0.0 surface.
 >
 > **Source of truth**: this playbook captures what actually happened
-> during darkmap.tinyland.dev's adoption — the first spoke through the
+> during darkmap.phasi.space's adoption — the first spoke through the
 > upgrade. Subsequent spokes should expect *most* of these steps but
 > use the friction notes to anticipate where they'll diverge.
 >
@@ -448,7 +448,7 @@ After darkmap (lead pilot), the planning session ranked:
 
 1. **omux ancestral spoke** — site.scaffold was extracted from omux.
    90% schema-compliant already. Cleanest fit.
-2. **darkmap.tinyland.dev** — done (this playbook).
+2. **darkmap.phasi.space** — done (this playbook).
 3. **MassageIthaca** — defer until payment-mode (TIN-992) and Modal
    decom (TIN-981) settle. Will be the multi-lane stress test.
 4. **jesssullivan.github.io** — defer further. Not a spoke shape;
@@ -467,5 +467,5 @@ After darkmap (lead pilot), the planning session ranked:
 - **Tofu modules**: `tinyland-inc/GloriousFlywheel@spoke-tofu-modules-v1.0.0`
   ([release](https://github.com/tinyland-inc/GloriousFlywheel/releases/tag/spoke-tofu-modules-v1.0.0))
 - **Org ruleset**: `tinyland-inc/.github/.github/rulesets/tinyland-spoke-default.json`
-- **Lead pilot PR**: [darkmap #77](https://github.com/Jesssullivan/darkmap.tinyland.dev/pull/77)
+- **Lead pilot PR**: [darkmap #77](https://github.com/Jesssullivan/darkmap.phasi.space/pull/77)
 - **Linear parent**: [TIN-1381](https://linear.app/tinyland/issue/TIN-1381)
