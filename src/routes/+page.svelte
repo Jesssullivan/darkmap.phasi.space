@@ -10,6 +10,19 @@
 		type DevicePosition,
 		type GeolocationWatch,
 	} from '$lib/device/GeolocationService';
+	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
+
+	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
+	// minimal Feature/FeatureCollection structure that MapLibre consumes.
+	type RouteGeoJsonGeometry =
+		| { type: 'LineString'; coordinates: number[][] }
+		| { type: 'Point'; coordinates: number[] };
+	type RouteGeoJsonFeature = {
+		type: 'Feature';
+		properties: Record<string, unknown>;
+		geometry: RouteGeoJsonGeometry;
+	};
+	type RouteGeoJsonFC = { type: 'FeatureCollection'; features: RouteGeoJsonFeature[] };
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
@@ -241,6 +254,150 @@
 		else stopFollow();
 	}
 
+	// Route import (#104) — accepts KML / GPX / GeoJSON via file picker or drop
+	// zone, parses with RouteImportService (all local, no upload), and renders
+	// the resulting ImportedRoute as a MapLibre source + 2 layers (line for
+	// segments, circle for waypoints).
+	const ROUTE_SOURCE_ID = 'darkmap-route-import-src';
+	const ROUTE_LINE_LAYER_ID = 'darkmap-route-import-line';
+	const ROUTE_POINTS_LAYER_ID = 'darkmap-route-import-points';
+	let currentRoute = $state<ImportedRoute | null>(null);
+	let routeFileInput: HTMLInputElement | undefined;
+	let dragOver = $state(false);
+
+	function importedRouteToGeoJson(route: ImportedRoute): RouteGeoJsonFC {
+		const features: RouteGeoJsonFeature[] = [];
+		for (const segment of route.segments) {
+			if (segment.points.length < 2) continue;
+			features.push({
+				type: 'Feature',
+				properties: { kind: 'segment', name: segment.name ?? route.name },
+				geometry: {
+					type: 'LineString',
+					coordinates: segment.points.map((p) => (p.eleM !== undefined ? [p.lon, p.lat, p.eleM] : [p.lon, p.lat])),
+				},
+			});
+		}
+		for (const waypoint of route.waypoints) {
+			features.push({
+				type: 'Feature',
+				properties: { kind: 'waypoint', name: waypoint.name ?? null },
+				geometry: {
+					type: 'Point',
+					coordinates:
+						waypoint.eleM !== undefined ? [waypoint.lon, waypoint.lat, waypoint.eleM] : [waypoint.lon, waypoint.lat],
+				},
+			});
+		}
+		return { type: 'FeatureCollection', features };
+	}
+
+	function mountRoute(route: ImportedRoute): void {
+		if (!mapInstance) return;
+		const data = importedRouteToGeoJson(route);
+		const existing = mapInstance.getSource(ROUTE_SOURCE_ID) as import('maplibre-gl').GeoJSONSource | undefined;
+		if (existing) {
+			existing.setData(data);
+		} else {
+			mapInstance.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data });
+			mapInstance.addLayer({
+				id: ROUTE_LINE_LAYER_ID,
+				type: 'line',
+				source: ROUTE_SOURCE_ID,
+				filter: ['==', ['get', 'kind'], 'segment'],
+				layout: { 'line-join': 'round', 'line-cap': 'round' },
+				paint: {
+					'line-color': '#5ee2d0',
+					'line-width': 3,
+					'line-opacity': 0.85,
+				},
+			});
+			mapInstance.addLayer({
+				id: ROUTE_POINTS_LAYER_ID,
+				type: 'circle',
+				source: ROUTE_SOURCE_ID,
+				filter: ['==', ['get', 'kind'], 'waypoint'],
+				paint: {
+					'circle-radius': 5,
+					'circle-color': '#5ee2d0',
+					'circle-stroke-color': '#06080d',
+					'circle-stroke-width': 1.5,
+				},
+			});
+		}
+		// Fit the map to the imported bounds, with padding for the rail/toolbar.
+		mapInstance.fitBounds(
+			[
+				[route.bounds.minLon, route.bounds.minLat],
+				[route.bounds.maxLon, route.bounds.maxLat],
+			],
+			{ padding: { top: 60, bottom: 160, left: 40, right: 80 }, duration: 800, maxZoom: 14 },
+		);
+	}
+
+	function clearRoute(): void {
+		currentRoute = null;
+		if (!mapInstance) return;
+		if (mapInstance.getLayer(ROUTE_POINTS_LAYER_ID)) mapInstance.removeLayer(ROUTE_POINTS_LAYER_ID);
+		if (mapInstance.getLayer(ROUTE_LINE_LAYER_ID)) mapInstance.removeLayer(ROUTE_LINE_LAYER_ID);
+		if (mapInstance.getSource(ROUTE_SOURCE_ID)) mapInstance.removeSource(ROUTE_SOURCE_ID);
+		if (routeFileInput) routeFileInput.value = '';
+	}
+
+	async function ingestRouteFile(file: File): Promise<void> {
+		const body = await file.text();
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* RouteImportService;
+				return yield* svc.parse({ body, sourceName: file.name, contentType: file.type || undefined });
+			}).pipe(Effect.provide(RouteImportServiceLive)),
+		);
+		if (exit._tag === 'Failure') {
+			const err = (exit.cause as unknown as { error?: { reason?: string; message?: string } }).error;
+			pushToast(err?.message ?? 'Route import failed', 'route');
+			return;
+		}
+		currentRoute = exit.value;
+		mountRoute(exit.value);
+		const km = exit.value.distanceM / 1000;
+		const kmStr = km >= 1 ? `${km.toFixed(1)} km` : `${exit.value.distanceM.toFixed(0)} m`;
+		pushToast(`Loaded ${exit.value.name} — ${exit.value.pointCount} points, ${kmStr}`, 'route');
+	}
+
+	function onRouteFileChange(ev: Event): void {
+		const input = ev.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) void ingestRouteFile(file);
+	}
+
+	function triggerRoutePicker(): void {
+		if (currentRoute) {
+			clearRoute();
+			return;
+		}
+		routeFileInput?.click();
+	}
+
+	function onMapDragOver(ev: DragEvent): void {
+		// Only react when dragging files. Without this the browser's default
+		// open-in-tab behavior fires on drop.
+		if (!ev.dataTransfer?.types.includes('Files')) return;
+		ev.preventDefault();
+		dragOver = true;
+	}
+
+	function onMapDragLeave(): void {
+		dragOver = false;
+	}
+
+	function onMapDrop(ev: DragEvent): void {
+		if (!ev.dataTransfer?.files.length) return;
+		ev.preventDefault();
+		dragOver = false;
+		const file = ev.dataTransfer.files[0];
+		void ingestRouteFile(file);
+	}
+
 	async function queryAt(lat: number, lon: number): Promise<void> {
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
@@ -444,6 +601,7 @@
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
 		stopFollow();
+		clearRoute();
 		mapInstance?.remove();
 		mapInstance = undefined;
 		controllerLayer = undefined;
@@ -460,7 +618,20 @@
 	<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
 </svelte:head>
 
-<div bind:this={mapEl} class="map" aria-label="Light pollution map"></div>
+<div
+	bind:this={mapEl}
+	class="map"
+	class:drag-over={dragOver}
+	role="application"
+	aria-label="Light pollution map"
+	ondragover={onMapDragOver}
+	ondragleave={onMapDragLeave}
+	ondrop={onMapDrop}
+></div>
+
+{#if dragOver}
+	<div class="drop-hint" aria-hidden="true">Drop a KML, GPX, or GeoJSON file to import</div>
+{/if}
 
 <MapErrorToast errors={toastErrors} onDismiss={dismissToast} />
 
@@ -516,7 +687,23 @@
 			pressed: followStatus !== 'off',
 			onclick: toggleFollow,
 		},
+		{
+			id: 'route',
+			label: currentRoute ? `Clear imported route (${currentRoute.name})` : 'Import KML / GPX / GeoJSON route',
+			glyph: currentRoute ? '✕' : '⤓',
+			title: currentRoute ? `Clear ${currentRoute.name}` : 'Import KML / GPX / GeoJSON route',
+			pressed: currentRoute !== null,
+			onclick: triggerRoutePicker,
+		},
 	]}
+/>
+
+<input
+	bind:this={routeFileInput}
+	type="file"
+	accept=".kml,.gpx,.geojson,.json,application/gpx+xml,application/vnd.google-earth.kml+xml,application/geo+json,application/json"
+	style="display: none"
+	onchange={onRouteFileChange}
 />
 
 {#if readout}
@@ -548,6 +735,25 @@
 	.map {
 		position: fixed;
 		inset: 0;
+	}
+	.map.drag-over {
+		outline: 3px dashed rgba(94, 226, 208, 0.7);
+		outline-offset: -6px;
+	}
+	.drop-hint {
+		position: fixed;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		padding: 1rem 1.5rem;
+		background: rgba(8, 10, 16, 0.92);
+		color: #5ee2d0;
+		border: 1px solid rgba(94, 226, 208, 0.5);
+		border-radius: 8px;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.95rem;
+		z-index: 100;
+		pointer-events: none;
 	}
 	.attribution {
 		position: absolute;
