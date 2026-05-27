@@ -1,0 +1,44 @@
+{
+	"name": "managed-ha-opentofu-state",
+	"posture": "primary_proof_target",
+	"candidate_class": "managed or appliance HA S3-compatible state service",
+	"s3_endpoint_shape": "tailnet-only or provider-private S3-compatible HTTPS endpoint dedicated to OpenTofu state proofs; actual URL is supplied by a non-secret endpoint package and may only be overridden when the override matches that package",
+	"audience": "Tinyland infrastructure operators and repo-managed OpenTofu workflows only",
+	"credential_source": "dedicated state-only secret authority, not Attic cache, Bazel cache, BCR mirror, or RBE CAS/action-cache credentials",
+	"rotation_owner": "Tinyland infrastructure operators",
+	"read_write_scope": "candidate scratch buckets and later state-only buckets; no access to the active tofu-state bucket during proof",
+	"bucket_recovery": {
+		"versioning": "bucket versioning or equivalent object-generation history is enabled before any protected migration",
+		"retention_or_backup": "daily retained backup or managed retention covers the state-only bucket independently from Attic and Bazel cache storage",
+		"restore_test": "scratch object restore and disposable OpenTofu state restore are required before protected migration"
+	},
+	"state_locking": "OpenTofu S3 native lockfile mode must be enabled and observed with the repo OpenTofu version before protected migration",
+	"failure_behavior": {
+		"endpoint_loss": "two ready endpoints, multi-node quorum, or a managed HA equivalent must keep S3 head/list/read/write available through one endpoint loss",
+		"node_or_failure_domain_loss": "managed multi-zone semantics, appliance multi-node quorum, or equivalent managed HA must keep the candidate available through one node maintenance event"
+	},
+	"observability": [
+		"S3 API health",
+		"bucket metadata health",
+		"object availability",
+		"OpenTofu lockfile failures",
+		"backup or object-version replication status"
+	],
+	"bucket_index_divergence_response": "backend-managed recovery removes the current RustFS bucket-index failure class, or the appliance proof must document and exercise non-destructive admin/heal/index repair before migration",
+	"authority_separation": [
+		"Attic cache is not OpenTofu state authority",
+		"Bazel cache is not OpenTofu state authority",
+		"BCR and Bzlmod mirrors are not OpenTofu state authority",
+		"RBE CAS and action-cache are separate future authorities and are not backed by this state bucket"
+	],
+	"proof_plan": [
+		"scratch S3 proof uses the non-state bucket from just ha-state-candidate-proof --endpoint-package <endpoint-package.json>",
+		"disposable OpenTofu proof uses just ha-state-candidate-proof --endpoint-package <endpoint-package.json> --run-disposable-tofu before protected state",
+		"restart verification is captured through the checkpoint flow or a managed maintenance equivalent",
+		"node maintenance verification is captured through one node or failure-domain event or a managed HA equivalent"
+	],
+	"protected_state_migration": "blocked until scratch and disposable proofs pass; protected migration then proceeds one stack at a time",
+	"selected_by": "TIN-1016",
+	"selected_on": "2026-05-07",
+	"non_secret": true
+}
