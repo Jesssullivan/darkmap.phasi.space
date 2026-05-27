@@ -6,7 +6,6 @@
 		makeOrientationServiceLive,
 		OrientationService,
 		orientationCapabilityFor,
-		type OrientationCapability,
 		type OrientationWatch,
 	} from '$lib/device/OrientationService';
 	import { airmassKastenYoung, formatAirmass } from '$lib/ephemeris/airmass';
