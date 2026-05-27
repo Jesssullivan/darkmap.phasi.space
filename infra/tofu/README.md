@@ -31,11 +31,13 @@ read repository runners. Default-branch apply/drift may dispatch the configured
 self-hosted ARC labels even when the workflow token cannot list runners or the
 scale set is at zero warm runners.
 
-After backend init, CI runs `scripts/ci-tofu-state-check.sh` to prove the remote
-state can be listed before planning. Production apply uses
-`scripts/ci-tofu-apply-retry.sh`, which retries once after reinitializing the
-backend when OpenTofu hits the observed RustFS/S3 apply-time state reopen error
-(`NoSuchBucket` / `ListObjectsV2`) after a successful plan.
+CI wraps backend init with `scripts/ci-tofu-init-retry.sh` so observed transient
+RustFS/S3 workspace-list failures (`NoSuchBucket` / `ListObjectsV2`) get a
+bounded reconfigure retry before the job gives up. After backend init, CI runs
+`scripts/ci-tofu-state-check.sh` to prove the remote state can be listed before
+planning. Production apply uses `scripts/ci-tofu-apply-retry.sh`, which retries
+once after reinitializing the backend when OpenTofu hits the same state reopen
+error after a successful plan.
 
 Cluster jobs call `scripts/ci-normalize-kubeconfig.sh` after decoding
 `KUBE_CONFIG_HONEY`; inside ARC runner pods it rewrites the kubeconfig server to

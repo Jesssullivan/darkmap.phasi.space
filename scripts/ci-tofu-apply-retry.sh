@@ -3,6 +3,7 @@ set -euo pipefail
 
 planfile="${1:-darkmap.tfplan}"
 log_path="${TOFU_APPLY_LOG:-tofu-apply.log}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 rm -f "$log_path"
 
 run_apply() {
@@ -22,7 +23,8 @@ fi
 
 if grep -Eq 'NoSuchBucket|ListObjectsV2|error loading state: S3 bucket does not exist' "$log_path"; then
 	echo "::warning::OpenTofu apply hit a RustFS/S3 state reopen error; reinitializing backend and retrying once."
-	tofu init -backend-config=backend.hcl -reconfigure
+	TOFU_INIT_LOG="${TOFU_APPLY_REINIT_LOG:-tofu-apply-reinit.log}" \
+		"$script_dir/ci-tofu-init-retry.sh" -backend-config=backend.hcl -reconfigure
 	echo "OpenTofu apply attempt 2 after backend reinitialize" | tee -a "$log_path"
 	run_apply
 	exit "$?"

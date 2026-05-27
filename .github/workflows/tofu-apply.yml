@@ -129,7 +129,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-        run: tofu init -backend-config=backend.hcl
+        run: ../../scripts/ci-tofu-init-retry.sh -backend-config=backend.hcl
 
       - name: tofu state backend check
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
@@ -162,6 +162,8 @@ jobs:
           path: |
             ${{ env.CHECKOUT_PATH }}/infra/tofu/darkmap.tfplan
             ${{ env.CHECKOUT_PATH }}/infra/tofu/.terraform.lock.hcl
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-init.log
             ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-apply.log
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-apply-reinit.log
             ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-state-list.log
           retention-days: 90
