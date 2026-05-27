@@ -37,7 +37,8 @@ bounded reconfigure retry before the job gives up. After backend init, CI runs
 `scripts/ci-tofu-state-check.sh` to prove the remote state can be listed before
 planning. Production apply uses `scripts/ci-tofu-apply-retry.sh`, which retries
 once after reinitializing the backend when OpenTofu hits the same state reopen
-error after a successful plan.
+error after a successful plan. The public-safe evidence and recovery boundary
+are documented in [`docs/TOFU_STATE_GUARDRAILS.md`](../../docs/TOFU_STATE_GUARDRAILS.md).
 
 Cluster jobs call `scripts/ci-normalize-kubeconfig.sh` after decoding
 `KUBE_CONFIG_HONEY`; inside ARC runner pods it rewrites the kubeconfig server to

@@ -3,6 +3,9 @@ set -euo pipefail
 
 log_path="${TOFU_INIT_LOG:-tofu-init.log}"
 max_attempts="${TOFU_INIT_MAX_ATTEMPTS:-3}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci-tofu-guardrails.sh
+source "$script_dir/ci-tofu-guardrails.sh"
 rm -f "$log_path"
 
 if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
@@ -16,7 +19,7 @@ run_init() {
 }
 
 is_backend_state_error() {
-	grep -Eq 'NoSuchBucket|ListObjectsV2|S3 bucket does not exist|Failed to get existing workspaces' "$log_path"
+	tofu_guardrail_is_state_error "$log_path"
 }
 
 args=("$@")
@@ -46,6 +49,7 @@ while (( attempt <= max_attempts )); do
 	fi
 
 	if ! is_backend_state_error; then
+		tofu_guardrail_emit_failure "OpenTofu init failed" "$log_path"
 		exit "$init_status"
 	fi
 
@@ -55,4 +59,5 @@ while (( attempt <= max_attempts )); do
 	attempt=$((attempt + 1))
 done
 
+tofu_guardrail_emit_failure "OpenTofu init retry exhausted after ${max_attempts} attempt(s)" "$log_path"
 exit "$init_status"

@@ -169,6 +169,12 @@ public smoke separate from cluster/state proofs:
 - staging deploy proves Kustomize apply and rollout
 - GitOps drift proves Tofu state and live Kustomize shape agree
 
+OpenTofu state remains on the interim RustFS-backed path until the HA state
+migration tracked in
+[#139](https://github.com/Jesssullivan/darkmap.phasi.space/issues/139) is
+complete. State failure evidence and the repo/platform recovery boundary are
+documented in [`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
+
 ## Tracker Gate
 
 GitHub issues are the public tracker for repo-local work. Linear may remain the
