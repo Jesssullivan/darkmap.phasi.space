@@ -1,18 +1,23 @@
 <script lang="ts">
 	/**
 	 * MapToolbar — vertical stack of map-overlay toggles in the
-	 * bottom-right corner. Replaces the two standalone ⏱ / ☼/☾ buttons
-	 * that fought the EphemerisGantt + TimeDock for the same space.
+	 * bottom-right corner. Replaces the two standalone time / sun-moon
+	 * buttons that fought the EphemerisGantt + TimeDock for the same space.
 	 *
 	 * The toolbar publishes its width via the `--toolbar-w-rem` CSS
 	 * custom property on `:host`. The gantt + dock read that variable
 	 * and inset their `right` so they never overlap the toolbar.
+	 *
+	 * Items pass a Lucide icon Svelte component, not a glyph string —
+	 * see #136 (emoji → Lucide swap).
 	 */
+
+	import type { Component } from 'svelte';
 
 	interface Item {
 		readonly id: string;
 		readonly label: string; // for screen readers
-		readonly glyph: string;
+		readonly icon: Component;
 		readonly title: string;
 		readonly pressed: boolean;
 		readonly onclick: () => void;
@@ -27,14 +32,17 @@
 
 <aside class="toolbar" aria-label="Map overlay toggles">
 	{#each items as it (it.id)}
+		{@const Icon = it.icon}
 		<button
 			type="button"
 			class="tool"
 			aria-label={it.label}
 			aria-pressed={it.pressed}
 			title={it.title}
-			onclick={it.onclick}>{it.glyph}</button
+			onclick={it.onclick}
 		>
+			<Icon size={18} aria-hidden="true" />
+		</button>
 	{/each}
 </aside>
 
@@ -61,7 +69,9 @@
 		backdrop-filter: blur(6px);
 		min-width: 2.5rem;
 		min-height: 2.5rem;
-		text-align: center;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 	.tool:hover {
 		border-color: rgba(255, 209, 102, 0.65);

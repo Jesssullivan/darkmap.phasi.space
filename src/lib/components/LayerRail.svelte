@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Menu, X } from '@lucide/svelte';
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
@@ -69,7 +70,11 @@
 	aria-expanded={drawerOpen}
 	onclick={() => (drawerOpen = !drawerOpen)}
 >
-	{#if drawerOpen}✕{:else}☰{/if}
+	{#if drawerOpen}
+		<X size={16} aria-hidden="true" />
+	{:else}
+		<Menu size={16} aria-hidden="true" />
+	{/if}
 	<span class="rail-toggle-label">Layers</span>
 </button>
 

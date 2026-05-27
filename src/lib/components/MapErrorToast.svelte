@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { X } from '@lucide/svelte';
+
 	/**
 	 * MapErrorToast — surfaces transient MapLibre / fetch failures so the
 	 * user sees something when a tile or featureinfo call fails, instead
@@ -70,7 +72,9 @@
 					{/if}
 					{e.text}
 				</span>
-				<button type="button" class="dismiss" aria-label="Dismiss error" onclick={() => onDismiss(e.id)}>✕</button>
+				<button type="button" class="dismiss" aria-label="Dismiss error" onclick={() => onDismiss(e.id)}>
+					<X size={14} aria-hidden="true" />
+				</button>
 			</div>
 		{/each}
 	</aside>
