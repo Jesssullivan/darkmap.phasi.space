@@ -1,14 +1,33 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+	import { browser, dev } from '$app/environment';
 	import { page } from '$app/state';
+	import { Effect } from 'effect';
 	import { Menu, X } from '@lucide/svelte';
 	import SaturnMark from '$lib/components/SaturnMark.svelte';
 	import { AppBar, Dialog, Navigation } from '@skeletonlabs/skeleton-svelte';
 	import { TinyVectors } from '@tummycrypt/tinyvectors';
 	import '../app.css';
 	import ThemeSwitcher from '$lib/components/ThemeSwitcher.svelte';
+	import { OfflineCacheService } from '$lib/effect/services/OfflineCacheService';
+	import { OfflineCacheServiceBrowserLive } from '$lib/effect/services/OfflineCacheServiceBrowser';
 
 	let { children } = $props();
+
+	onMount(() => {
+		// Register the service worker for offline field use. Production-only +
+		// secure-context guard so `just dev` never caches stale builds and so
+		// HTTP previews degrade gracefully (SW registration is HTTPS-gated).
+		if (dev || !window.isSecureContext) return;
+		void Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const cache = yield* OfflineCacheService;
+				yield* cache.register();
+			}).pipe(Effect.provide(OfflineCacheServiceBrowserLive)),
+		).then((exit) => {
+			if (exit._tag === 'Failure') console.warn('OfflineCache register failed', exit.cause);
+		});
+	});
 
 	// The map at `/` is the application surface — full viewport, no chrome.
 	// Every other route (e.g. /docs) gets the full AppBar + footer shell.
