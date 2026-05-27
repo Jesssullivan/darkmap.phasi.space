@@ -1,10 +1,11 @@
-import { Effect, Exit, Layer } from 'effect';
+import { Effect, Exit } from 'effect';
+import { RouteImportServiceLive } from '$lib/routes/RouteImportService';
 
 /**
- * Empty placeholder layer. Real services land in M3+ when build-time
- * data ingestion and provider-matrix loading need typed dependencies.
+ * Base application service layer for pure, shareable Effect services.
+ * Browser hardware services stay opt-in so SSR and tests remain deterministic.
  */
-export const AppLayer = Layer.empty;
+export const AppLayer = RouteImportServiceLive;
 
 /**
  * Drain an Effect to its success value or throw the failure cause.

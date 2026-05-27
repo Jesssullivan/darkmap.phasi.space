@@ -1,4 +1,4 @@
-# darkmap.tinyland.dev — SvelteKit static site task runner
+# darkmap.phasi.space — SvelteKit static site task runner
 # Prerequisites: just, direnv (loads Nix devShell), Nix with flakes
 # Quick Start: direnv allow && just setup && just dev
 #
@@ -276,8 +276,8 @@ install-hooks:
 
 # Show environment info
 info:
-    @echo "Site:    darkmap.tinyland.dev"
-    @echo "Repo:    Jesssullivan/darkmap.tinyland.dev"
+    @echo "Site:    darkmap.phasi.space"
+    @echo "Repo:    Jesssullivan/darkmap.phasi.space"
     @echo "Node:    $(node --version 2>/dev/null || echo 'not available')"
     @echo "pnpm:    $(pnpm --version 2>/dev/null || echo 'not available')"
     @echo "Just:    $(just --version 2>/dev/null || echo 'not available')"
@@ -286,7 +286,7 @@ info:
 
 # View the GitHub repo (opens in browser)
 gh-repo:
-    gh repo view Jesssullivan/darkmap.tinyland.dev --web
+    gh repo view Jesssullivan/darkmap.phasi.space --web
 
 # ─────────────────────────────────────────────
 # CI-SCHEMA v1.0 (lanes, flywheel, conformance — see docs/CI-SCHEMA.md)
@@ -300,6 +300,10 @@ lanes-list:
 # Validate .github/lanes.json against docs/schemas/lanes.schema.json
 lanes-validate:
     cd {{ root }} && python3 scripts/validate-lanes.py
+
+# Validate tinyland.repo.json against docs/schemas/tinyland-repo-manifest.schema.json
+repo-manifest-validate:
+    cd {{ root }} && python3 scripts/validate-lanes.py --schema docs/schemas/tinyland-repo-manifest.schema.json --instance tinyland.repo.json
 
 # Dry-run construct the Blahaj provision payload for a PR
 lane-dispatch pr filter="all":

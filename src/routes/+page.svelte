@@ -374,7 +374,7 @@
 	}
 	.attribution {
 		position: absolute;
-		bottom: 0.5rem;
+		bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px));
 		left: 1rem;
 		font-size: 0.7rem;
 		color: rgba(233, 236, 243, 0.65);
@@ -385,5 +385,11 @@
 	}
 	.attribution a {
 		color: #ffd166;
+	}
+	@media (max-width: 820px) {
+		.attribution {
+			left: 0.75rem;
+			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+		}
 	}
 </style>

@@ -1,5 +1,5 @@
 {
-  description = "darkmap.tinyland.dev development shell";
+  description = "darkmap.phasi.space development shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -48,7 +48,7 @@
             # package.json once M0.2 lands) takes over from the nix-shipped pnpm.
             corepack enable >/dev/null 2>&1 || true
 
-            echo "darkmap.tinyland.dev dev shell"
+            echo "darkmap.phasi.space dev shell"
             echo "  node     $(node --version)"
             echo "  pnpm     $(pnpm --version 2>/dev/null || echo 'not available yet')"
             echo "  just     $(just --version)"

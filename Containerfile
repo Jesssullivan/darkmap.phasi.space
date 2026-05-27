@@ -1,4 +1,4 @@
-# Multi-stage Containerfile for darkmap.tinyland.dev (adapter-node).
+# Multi-stage Containerfile for darkmap.phasi.space (adapter-node).
 #
 # `production` stage is what CI pushes to ghcr.io and what the
 # Kustomize Deployment runs.

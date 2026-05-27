@@ -4,6 +4,12 @@ variable "namespace" {
   default     = "darkmap"
 }
 
+variable "brand_domain" {
+  description = "Canonical public hostname for this spoke."
+  type        = string
+  default     = "darkmap.phasi.space"
+}
+
 variable "kubeconfig" {
   description = "Path to the kubeconfig used by the provider."
   type        = string
@@ -18,7 +24,7 @@ variable "kube_context" {
 
 variable "cloudflare_api_token" {
   description = <<EOT
-Cloudflare API token with Zone:DNS:Edit on the tinyland.dev zone.
+Cloudflare API token with Zone:DNS:Edit on the tinyland.dev and phasi.space zones.
 Source via TF_VAR_cloudflare_api_token in apply environments.
 EOT
   type        = string
@@ -27,9 +33,32 @@ EOT
 }
 
 variable "cloudflare_zone_id" {
-  description = "Cloudflare zone id for tinyland.dev."
+  description = "Cloudflare zone id for tinyland.dev, used only for the legacy tailnet DNS record."
   type        = string
   default     = "3571abd7e73b551e97a3d95cacdb3e39"
+}
+
+variable "public_dns_enabled" {
+  description = "Manage darkmap.phasi.space public Cloudflare DNS in this stack. Default false until the operator is ready to adopt the existing record."
+  type        = bool
+  default     = false
+}
+
+variable "phasi_cloudflare_zone_id" {
+  description = "Cloudflare zone id for phasi.space. Required when public_dns_enabled is true."
+  type        = string
+  default     = ""
+}
+
+variable "cloudflare_tunnel_cname_target" {
+  description = "Cloudflare Tunnel CNAME target for the retained Blahaj honey-ingress tunnel."
+  type        = string
+  default     = "da3ffda2-68ee-46d1-aa55-ec8dae2bd471.cfargotunnel.com"
+
+  validation {
+    condition     = can(regex("^[0-9a-f-]+[.]cfargotunnel[.]com$", var.cloudflare_tunnel_cname_target))
+    error_message = "cloudflare_tunnel_cname_target must be a cfargotunnel.com hostname."
+  }
 }
 
 variable "darkmap_tailnet_ip" {
@@ -93,7 +122,7 @@ variable "spoke_runner_binding_enforcement_mode" {
 }
 
 variable "spoke_dns_pr_env_enabled" {
-  description = "Provision spoke-dns-pr-env module (wildcard *.pr.darkmap.tinyland.dev CNAME via external-dns). Requires external-dns deployment configured to watch the spoke namespace."
+  description = "Provision spoke-dns-pr-env module (wildcard *.pr.darkmap.phasi.space CNAME via external-dns). Requires external-dns deployment configured to watch the spoke namespace."
   type        = bool
   default     = false
 }
@@ -111,7 +140,7 @@ variable "spoke_ingress_target" {
 }
 
 variable "spoke_blahaj_installation_id" {
-  description = "Blahaj GitHub App installation ID on Jesssullivan/darkmap.tinyland.dev. Set to a positive integer once Blahaj is installed (gh api /app/installations). Module is skipped when 0."
+  description = "Blahaj GitHub App installation ID on Jesssullivan/darkmap.phasi.space. Set to a positive integer once Blahaj is installed (gh api /app/installations). Module is skipped when 0."
   type        = number
   default     = 0
 }

@@ -24,6 +24,8 @@
 	let readout = $state<EphemerisReadout | null>(null);
 	let loading = $state(false);
 	let bar: HTMLDivElement | undefined = $state();
+	let dragging = $state(false);
+	let now = $state(new Date());
 
 	// Per-event min..max range across a 4x4 grid sampled inside `bounds`.
 	// Populated asynchronously after the center readout, so the gantt
@@ -151,6 +153,13 @@
 		cancelGen++;
 	});
 
+	$effect(() => {
+		const id = setInterval(() => {
+			now = new Date();
+		}, 60_000);
+		return () => clearInterval(id);
+	});
+
 	// Strip covers a full UTC day for the date of `time`. Every twilight
 	// event for that day is guaranteed to land somewhere in [0, 1].
 	const dayStart = $derived(
@@ -203,6 +212,7 @@
 		const f = fracOf(time);
 		return f === null ? 0 : f;
 	});
+	const nowFrac = $derived(fracOf(now));
 
 	const events = $derived(readout?.events);
 	const noonAt: Date | null = $derived(events ? events.solarNoon : null);
@@ -212,11 +222,40 @@
 	const sunriseFrac = $derived(fracOf(sunriseAt));
 	const sunsetFrac = $derived(fracOf(sunsetAt));
 
-	const handleClick = (ev: MouseEvent): void => {
-		if (!bar || !onTimeChange) return;
+	const timeFromClientX = (clientX: number): Date | null => {
+		if (!bar || !onTimeChange) return null;
 		const rect = bar.getBoundingClientRect();
-		const x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-		onTimeChange(new Date(dayStart.getTime() + x * DAY_MS));
+		const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+		return new Date(dayStart.getTime() + x * DAY_MS);
+	};
+
+	const setTimeFromClientX = (clientX: number): void => {
+		const next = timeFromClientX(clientX);
+		if (next) onTimeChange?.(next);
+	};
+
+	const handleClick = (ev: MouseEvent): void => {
+		setTimeFromClientX(ev.clientX);
+	};
+
+	const handlePointerDown = (ev: PointerEvent): void => {
+		if (!bar || !onTimeChange) return;
+		ev.preventDefault();
+		dragging = true;
+		bar.setPointerCapture?.(ev.pointerId);
+		setTimeFromClientX(ev.clientX);
+	};
+
+	const handlePointerMove = (ev: PointerEvent): void => {
+		if (!dragging) return;
+		ev.preventDefault();
+		setTimeFromClientX(ev.clientX);
+	};
+
+	const handlePointerEnd = (ev: PointerEvent): void => {
+		if (!dragging) return;
+		dragging = false;
+		bar?.releasePointerCapture?.(ev.pointerId);
 	};
 
 	const handleKey = (ev: KeyboardEvent): void => {
@@ -352,6 +391,10 @@
 		class="bar"
 		bind:this={bar}
 		onclick={handleClick}
+		onpointerdown={handlePointerDown}
+		onpointermove={handlePointerMove}
+		onpointerup={handlePointerEnd}
+		onpointercancel={handlePointerEnd}
 		onkeydown={handleKey}
 		role="slider"
 		tabindex="0"
@@ -384,6 +427,9 @@
 			<span class="event sunset" style="left: {(sunsetFrac * 100).toFixed(2)}%;" title="Sunset {fmtClock(sunsetAt)} UTC"
 			></span>
 		{/if}
+		{#if nowFrac !== null}
+			<span class="staff" style="left: {(nowFrac * 100).toFixed(2)}%;" title="Current time {fmtClock(now)} UTC"></span>
+		{/if}
 		<span class="cursor" style="left: {(cursorFrac * 100).toFixed(2)}%;" aria-hidden="true"></span>
 	</div>
 	<div class="ticks" aria-hidden="true">
@@ -414,7 +460,7 @@
 		left: 1rem;
 		/* Leave room for the MapToolbar's column on the right. */
 		right: var(--map-toolbar-inset-rem, 5rem);
-		bottom: var(--gantt-bottom-rem, 1rem);
+		bottom: calc(var(--gantt-bottom-rem, 0.75rem) + env(safe-area-inset-bottom, 0px));
 		background: rgba(8, 10, 16, 0.85);
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 6px;
@@ -446,6 +492,7 @@
 		border-radius: 3px;
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		cursor: pointer;
+		touch-action: none;
 		outline: none;
 	}
 	.bar:focus-visible {
@@ -465,6 +512,28 @@
 		background: #ffd166;
 		transform: translateX(-50%);
 		box-shadow: 0 0 6px rgba(255, 209, 102, 0.7);
+	}
+	.staff {
+		position: absolute;
+		top: -0.28rem;
+		bottom: -0.28rem;
+		width: 3px;
+		background: #ffffff;
+		transform: translateX(-50%);
+		box-shadow:
+			0 0 0 1px rgba(6, 8, 13, 0.85),
+			0 0 8px rgba(255, 255, 255, 0.65);
+		pointer-events: none;
+	}
+	.staff::before {
+		content: 'now';
+		position: absolute;
+		top: -1rem;
+		left: 50%;
+		transform: translateX(-50%);
+		color: rgba(255, 255, 255, 0.82);
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.52rem;
 	}
 	.stripe {
 		position: absolute;
@@ -536,5 +605,19 @@
 	.pill .delta {
 		opacity: 0.7;
 		color: #e9ecf3;
+	}
+	@media (max-width: 820px) {
+		.gantt {
+			left: 0.75rem;
+			right: var(--map-toolbar-inset-rem, 5rem);
+			padding: 0.5rem 0.65rem;
+		}
+		.header {
+			flex-wrap: wrap;
+			gap: 0.35rem 0.6rem;
+		}
+		.events {
+			display: none;
+		}
 	}
 </style>

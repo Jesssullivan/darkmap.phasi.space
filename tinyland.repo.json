@@ -1,0 +1,51 @@
+{
+	"$schema": "./docs/schemas/tinyland-repo-manifest.schema.json",
+	"schema_version": 1,
+	"repo": {
+		"name": "darkmap.phasi.space",
+		"github": "Jesssullivan/darkmap.phasi.space",
+		"domain": "darkmap.phasi.space",
+		"description": "Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and low-light logistics.",
+		"linear": {
+			"issue": "TIN-1534"
+		}
+	},
+	"taxonomy": {
+		"primary_role": "static-spoke",
+		"layers": ["org-wide-repo-contract", "bazel-package-cache-rbe", "static-spoke"]
+	},
+	"contracts": {
+		"agent_contract": "AGENTS.md",
+		"just": "Justfile",
+		"nix": "flake.nix",
+		"github_actions": ".github/workflows",
+		"secrets_scan": "gitleaks",
+		"conformance": "just conformance"
+	},
+	"boundaries": {
+		"owns_runtime_backend": false,
+		"owns_auth": false,
+		"owns_payments": false,
+		"owns_activitypub_delivery": false,
+		"owns_live_broker_fetch": false,
+		"owns_static_projection_ingest": true,
+		"owns_gitops_apply": false,
+		"owns_cloudflare_mutation": false,
+		"owns_bazel_module_authority": false
+	},
+	"authorities": {
+		"content_authority": "tinyland.dev",
+		"gitops_receiver": "tinyland-inc/blahaj",
+		"ci_templates": "tinyland-inc/ci-templates",
+		"cache_rbe_authority": "tinyland-inc/GloriousFlywheel",
+		"tofu_module_authority": "tinyland-inc/GloriousFlywheel",
+		"package_registry": "tinyland-inc/bazel-registry"
+	},
+	"supply_chain": {
+		"sbom": {
+			"status": "planned",
+			"formats": ["CycloneDX JSON", "SPDX JSON"],
+			"notes": "SBOM publication should be standardized through ci-templates before this moves to generated."
+		}
+	}
+}

@@ -60,6 +60,7 @@
 		cursor: pointer;
 		backdrop-filter: blur(6px);
 		min-width: 2.5rem;
+		min-height: 2.5rem;
 		text-align: center;
 	}
 	.tool:hover {
@@ -73,5 +74,12 @@
 	.tool:focus-visible {
 		outline: 2px solid #ffd166;
 		outline-offset: 2px;
+	}
+	@media (pointer: coarse) {
+		.tool {
+			min-width: 3rem;
+			min-height: 3rem;
+			padding: 0.45rem 0.75rem;
+		}
 	}
 </style>

@@ -3,7 +3,7 @@
 	"schema_version": 1,
 	"spoke": {
 		"name": "darkmap",
-		"domain": "darkmap.tinyland.dev"
+		"domain": "darkmap.phasi.space"
 	},
 	"defaults": {
 		"runner_class": "tinyland-nix",

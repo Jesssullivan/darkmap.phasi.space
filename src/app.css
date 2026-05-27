@@ -53,6 +53,8 @@ html {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	text-rendering: optimizeLegibility;
+	--field-bottom-reserve: 7.75rem;
+	--map-toolbar-inset-rem: 5rem;
 }
 
 body {

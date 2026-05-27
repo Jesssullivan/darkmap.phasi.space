@@ -20,7 +20,7 @@
 	// non-home route the link navigates back to `/` and scrolls to the section.
 	const navLinks: { href: string; label: string }[] = [
 		{ href: '/', label: 'Overview' },
-		{ href: '/#contact', label: 'Contact' },
+		{ href: '/docs#contact', label: 'Contact' },
 	];
 
 	const SITE_NAME = 'darkmap';

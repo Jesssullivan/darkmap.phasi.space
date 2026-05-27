@@ -109,7 +109,7 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.image_tag }}"
           if [ -z "$TAG" ]; then TAG="${GITHUB_SHA:0:7}"; fi
-          kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${TAG}
+          kustomize edit set image darkmap=ghcr.io/jesssullivan/darkmap.phasi.space:${TAG}
           kustomize build .
 
       - name: Apply manifests

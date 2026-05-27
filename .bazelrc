@@ -1,4 +1,4 @@
-# darkmap.tinyland.dev Bazel Configuration
+# darkmap.phasi.space Bazel Configuration
 #
 # Bazel 8 + Bzlmod. Mirrors elders.tinyland.dev's two-registry chain:
 # tinyland-inc/bazel-registry first, then BCR. Site build remains

@@ -328,4 +328,25 @@
 		opacity: 0.65;
 		color: #e9ecf3;
 	}
+	@media (max-width: 820px) {
+		.readout {
+			left: 0.75rem;
+			right: 0.75rem;
+			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 0.75rem);
+			min-width: 0;
+			max-width: none;
+			max-height: calc(100dvh - var(--field-bottom-reserve, 7.75rem) - 2rem);
+			overflow-y: auto;
+			padding: 0.9rem 1rem 1rem;
+		}
+		.close {
+			top: 0.25rem;
+			right: 0.25rem;
+			min-width: 2.75rem;
+			min-height: 2.75rem;
+		}
+		.ephemeris-header {
+			min-height: 2.75rem;
+		}
+	}
 </style>

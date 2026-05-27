@@ -35,7 +35,7 @@ jobs:
     uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v2
     with:
       spoke: darkmap
-      image_repository: ghcr.io/jesssullivan/darkmap.tinyland.dev
+      image_repository: ghcr.io/jesssullivan/darkmap.phasi.space
       lanes_path: .github/lanes.json
       enable_tailnet_qa: false
       reap: ${{ inputs.reap || false }}

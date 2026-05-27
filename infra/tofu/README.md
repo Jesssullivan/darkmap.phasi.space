@@ -5,6 +5,7 @@ OpenTofu stack for the darkmap deployment. The public service hostname is
 the infrastructure cutover is completed. The stack manages:
 
 - Kubernetes `Namespace/darkmap`
+- optionally, the public Cloudflare DNS record for `darkmap.phasi.space`
 - the legacy Cloudflare DNS record for `darkmap.tinyland.dev`
 
 Everything else (`Deployment`, `Service`, `tailscale-svc`, `Ingress`)
@@ -50,4 +51,18 @@ just tofu-apply         # type yes
 Operationally, Kustomize-driven Deployment/Ingress lifecycle is
 faster to iterate (no providers, no state lock contention) for
 container-image rollouts. Tofu owns the slowly-changing primitives
-(namespace, legacy DNS, spoke modules); Kustomize owns the workload.
+(namespace, public/legacy DNS, spoke modules); Kustomize owns the workload.
+
+## Public DNS adoption
+
+`darkmap.phasi.space` is already live through the retained Blahaj
+`honey-ingress` Cloudflare Tunnel. This stack can adopt that DNS record once an
+operator supplies the `phasi.space` zone id and flips the gate:
+
+```hcl
+public_dns_enabled       = true
+phasi_cloudflare_zone_id = "<phasi.space zone id>"
+```
+
+The tunnel CNAME target is public routing metadata, not a secret; the default
+matches the Blahaj public-edge intent for `honey-ingress`.
