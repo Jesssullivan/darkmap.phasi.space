@@ -106,6 +106,9 @@ the uploaded drift evidence before any platform recovery. The public-safe
 evidence path and RustFS recovery boundary are in
 [`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
 
+The next non-RustFS state authority gate is the HA endpoint package documented
+in [`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
+
 ## Browser Smoke
 
 Open <https://darkmap.phasi.space/> and verify:

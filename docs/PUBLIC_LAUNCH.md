@@ -174,6 +174,8 @@ migration tracked in
 [#139](https://github.com/Jesssullivan/darkmap.phasi.space/issues/139) is
 complete. State failure evidence and the repo/platform recovery boundary are
 documented in [`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
+The next endpoint-package contract is documented in
+[`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
 
 ## Tracker Gate
 
@@ -202,3 +204,10 @@ Public launch and follow-up issues:
 - Mobile regression suite: [#123](https://github.com/Jesssullivan/darkmap.phasi.space/issues/123)
 - GPS follow mode: [#124](https://github.com/Jesssullivan/darkmap.phasi.space/issues/124)
 - Mobile point readout sheet: [#125](https://github.com/Jesssullivan/darkmap.phasi.space/issues/125)
+- HA OpenTofu state migration: [#139](https://github.com/Jesssullivan/darkmap.phasi.space/issues/139)
+- Interim Tofu state guardrails: [#140](https://github.com/Jesssullivan/darkmap.phasi.space/issues/140)
+- HA state endpoint package: [#141](https://github.com/Jesssullivan/darkmap.phasi.space/issues/141)
+- HA state scratch proof: [#142](https://github.com/Jesssullivan/darkmap.phasi.space/issues/142)
+- HA state scaffold/runbook cleanup: [#143](https://github.com/Jesssullivan/darkmap.phasi.space/issues/143)
+- HA state disposable OpenTofu proof: [#144](https://github.com/Jesssullivan/darkmap.phasi.space/issues/144)
+- Darkmap HA state migration: [#145](https://github.com/Jesssullivan/darkmap.phasi.space/issues/145)

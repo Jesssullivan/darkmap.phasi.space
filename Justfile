@@ -183,6 +183,18 @@ tofu-init-reconfigure:
 tofu-validate:
     cd {{ tofu_dir }} && tofu fmt -check -recursive && tofu validate
 
+# Validate a non-secret HA OpenTofu state endpoint package before scratch proof
+ha-state-endpoint-package-check package:
+    cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --package "{{ package }}"
+
+# Validate that the checked-in endpoint package template stays structurally aligned
+ha-state-endpoint-package-template-check:
+    cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --package docs/contracts/ha-opentofu-state-endpoint-package.template.json --allow-template
+
+# Run offline guard tests for the HA state endpoint package validator
+ha-state-endpoint-package-self-test:
+    cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --self-test
+
 # Print the planned diff (non-empty on first run; clean after apply)
 tofu-plan:
     cd {{ tofu_dir }} && tofu plan -out=darkmap.tfplan

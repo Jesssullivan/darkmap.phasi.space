@@ -13,6 +13,9 @@ move OpenTofu state to a dedicated HA S3-compatible authority with scoped
 state-only credentials, object history or backup/restore proof, locking proof,
 and one-stack-at-a-time migration.
 
+The HA endpoint package contract for that next step is documented in
+[`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
+
 The repo guardrails are intentionally narrower than that platform work. They
 make failures visible early, preserve evidence, and keep retries bounded. They
 do not repair RustFS, promote RustFS to HA, or hide persistent backend failure.
