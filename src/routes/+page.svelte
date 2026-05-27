@@ -3,6 +3,13 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
+	import {
+		classifyPositionFreshness,
+		GeolocationService,
+		makeGeolocationServiceLive,
+		type DevicePosition,
+		type GeolocationWatch,
+	} from '$lib/device/GeolocationService';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
@@ -74,6 +81,165 @@
 
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
 	let readout: Readout | undefined = $state();
+
+	// GPS follow-mode state (#124). Service stays in lib/device; this is just
+	// the page-side lifecycle: a toolbar toggle starts watchPosition, drops
+	// a marker on the map, recenters on first fix, and shows live/stale state.
+	type FollowStatus = 'off' | 'requesting' | 'live' | 'stale' | 'denied' | 'unavailable' | 'error';
+	let followStatus = $state<FollowStatus>('off');
+	let followPosition = $state<DevicePosition | null>(null);
+	let followWatch: GeolocationWatch | undefined;
+	let followMarker: import('maplibre-gl').Marker | undefined;
+	let followMarkerEl: HTMLDivElement | undefined;
+	let maplibreLib: typeof import('maplibre-gl') | undefined;
+	let followStaleTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function followButtonLabel(): string {
+		switch (followStatus) {
+			case 'off':
+				return 'Follow my location';
+			case 'requesting':
+				return 'Requesting location…';
+			case 'live':
+				return 'Following live location';
+			case 'stale':
+				return 'Following (stale fix)';
+			case 'denied':
+				return 'Location permission denied';
+			case 'unavailable':
+				return 'Location unavailable';
+			case 'error':
+				return 'Location error';
+		}
+	}
+
+	function applyFollowMarker(position: DevicePosition): void {
+		if (!mapInstance || !maplibreLib) return;
+		const lngLat: [number, number] = [position.lon, position.lat];
+		if (!followMarker || !followMarkerEl) {
+			followMarkerEl = document.createElement('div');
+			followMarkerEl.className = 'follow-marker';
+			followMarker = new maplibreLib.Marker({ element: followMarkerEl, anchor: 'center' })
+				.setLngLat(lngLat)
+				.addTo(mapInstance);
+		} else {
+			followMarker.setLngLat(lngLat);
+		}
+		const acc = Number.isFinite(position.accuracyM) ? Math.round(position.accuracyM) : null;
+		followMarkerEl.title = acc !== null ? `±${acc} m` : 'live position';
+		followMarkerEl.dataset.freshness = position.freshness;
+	}
+
+	function removeFollowMarker(): void {
+		followMarker?.remove();
+		followMarker = undefined;
+		followMarkerEl = undefined;
+	}
+
+	function scheduleStaleCheck(timestampMs: number): void {
+		clearTimeout(followStaleTimer);
+		// Re-run classifyPositionFreshness once the live → stale crossover hits.
+		// classifyPositionFreshness flips at DEFAULT_STALE_AFTER_MS; align here.
+		followStaleTimer = setTimeout(
+			() => {
+				if (followStatus !== 'live' || !followPosition) return;
+				if (classifyPositionFreshness(timestampMs, Date.now()) === 'stale') {
+					followStatus = 'stale';
+					followPosition = { ...followPosition, freshness: 'stale' };
+					if (followMarkerEl) followMarkerEl.dataset.freshness = 'stale';
+				}
+			},
+			2 * 60_000 + 1_000,
+		);
+	}
+
+	function stopFollow(): void {
+		clearTimeout(followStaleTimer);
+		followStaleTimer = undefined;
+		followWatch?.stop();
+		followWatch = undefined;
+		removeFollowMarker();
+		followPosition = null;
+		followStatus = 'off';
+	}
+
+	async function startFollow(): Promise<void> {
+		if (!mapInstance) return;
+		if (!('geolocation' in navigator)) {
+			followStatus = 'unavailable';
+			pushToast('Location unavailable on this device.', 'follow');
+			return;
+		}
+		followStatus = 'requesting';
+		const layer = makeGeolocationServiceLive(navigator as { geolocation?: Geolocation });
+		// One-shot getCurrentPosition gives the user immediate feedback while
+		// watch settles. We center on whichever lands first.
+		let centered = false;
+		const centerOnce = (p: DevicePosition): void => {
+			if (centered || !mapInstance) return;
+			centered = true;
+			mapInstance.easeTo({ center: [p.lon, p.lat], duration: 600 });
+		};
+		const watchExit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* GeolocationService;
+				return yield* svc.watch(
+					(update) => {
+						if (update.kind === 'position') {
+							followPosition = update.position;
+							followStatus = update.position.freshness === 'stale' ? 'stale' : 'live';
+							applyFollowMarker(update.position);
+							centerOnce(update.position);
+							scheduleStaleCheck(update.position.timestampMs);
+						} else {
+							handleFollowError(update.error);
+						}
+					},
+					{ enableHighAccuracy: true, maximumAge: 30_000, timeout: 20_000 },
+				);
+			}).pipe(Effect.provide(layer)),
+		);
+		if (watchExit._tag === 'Failure') {
+			// Watch failed to start — usually unsupported. Pull the typed error.
+			const err = (watchExit.cause as unknown as { error?: { reason?: string; message?: string } }).error;
+			handleFollowError({
+				reason: (err?.reason as 'unsupported') ?? 'failed',
+				message: err?.message ?? 'follow could not start',
+			});
+			return;
+		}
+		followWatch = watchExit.value;
+	}
+
+	function handleFollowError(err: { reason: string; message: string }): void {
+		switch (err.reason) {
+			case 'denied':
+				followStatus = 'denied';
+				pushToast('Location permission denied. Enable in your browser settings to use follow mode.', 'follow');
+				break;
+			case 'unavailable':
+				followStatus = 'unavailable';
+				pushToast('Location unavailable right now.', 'follow');
+				break;
+			case 'unsupported':
+				followStatus = 'unavailable';
+				pushToast('Location unsupported in this browser.', 'follow');
+				break;
+			case 'timeout':
+				followStatus = 'error';
+				pushToast('Location request timed out. Try again with a clear view of the sky.', 'follow');
+				break;
+			default:
+				followStatus = 'error';
+				pushToast(err.message || 'Location error.', 'follow');
+		}
+		stopFollow();
+	}
+
+	function toggleFollow(): void {
+		if (followStatus === 'off') void startFollow();
+		else stopFollow();
+	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
@@ -207,6 +373,7 @@
 	onMount(async () => {
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
+		maplibreLib = maplibre;
 		const { center, zoom } = await getInitialView();
 		const bm = basemapById(activeBasemap);
 		mapInstance = new maplibre.Map({
@@ -276,9 +443,11 @@
 
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
+		stopFollow();
 		mapInstance?.remove();
 		mapInstance = undefined;
 		controllerLayer = undefined;
+		maplibreLib = undefined;
 	});
 </script>
 
@@ -339,6 +508,14 @@
 				scheduleHashWrite();
 			},
 		},
+		{
+			id: 'follow',
+			label: followButtonLabel(),
+			glyph: '◎',
+			title: followButtonLabel(),
+			pressed: followStatus !== 'off',
+			onclick: toggleFollow,
+		},
 	]}
 />
 
@@ -390,6 +567,41 @@
 		.attribution {
 			left: 0.75rem;
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+		}
+	}
+	:global(.follow-marker) {
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		background: #ffd166;
+		border: 2px solid rgba(8, 10, 16, 0.85);
+		box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.18);
+		cursor: pointer;
+	}
+	:global(.follow-marker[data-freshness='stale']) {
+		background: rgba(255, 209, 102, 0.55);
+		box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.08);
+	}
+	:global(.follow-marker)::after {
+		content: '';
+		position: absolute;
+		inset: -4px;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 209, 102, 0.55);
+		animation: follow-pulse 2.4s ease-out infinite;
+	}
+	:global(.follow-marker[data-freshness='stale'])::after {
+		animation: none;
+		opacity: 0.4;
+	}
+	@keyframes follow-pulse {
+		0% {
+			transform: scale(0.9);
+			opacity: 0.8;
+		}
+		100% {
+			transform: scale(2.2);
+			opacity: 0;
 		}
 	}
 </style>
