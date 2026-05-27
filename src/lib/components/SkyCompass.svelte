@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Effect, Layer } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
+	import { Compass, Moon, Sun } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import {
 		makeOrientationServiceLive,
@@ -387,7 +388,7 @@
 	</svg>
 	<div class="readout">
 		<div class="row">
-			<span class="badge sun">☼</span>
+			<span class="badge sun" aria-label="Sun"><Sun size={14} aria-hidden="true" /></span>
 			<span>alt {fmtAlt(cursor?.sun.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.sun.azimuthDeg)}</span>
 			{#if cursor && cursor.sun.altitudeDeg > 0}
@@ -415,7 +416,7 @@
 			{/if}
 		</div>
 		<div class="row">
-			<span class="badge moon">☾</span>
+			<span class="badge moon" aria-label="Moon"><Moon size={14} aria-hidden="true" /></span>
 			<span>alt {fmtAlt(cursor?.moon.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.moon.azimuthDeg)}</span>
 			{#if moonHorizonDelta?.blocked}
@@ -433,15 +434,22 @@
 		{#if compassStatus === 'needs-permission'}
 			<div class="row compass-row">
 				<button type="button" class="compass-btn" onclick={enableCompass}>
-					🧭 {compassButtonLabel()}
+					<Compass size={14} aria-hidden="true" />
+					{compassButtonLabel()}
 				</button>
 			</div>
 		{:else if compassStatus === 'active'}
 			<div class="row compass-row" aria-live="polite">
-				<span class="compass-status">🧭 {compassButtonLabel()}</span>
+				<span class="compass-status">
+					<Compass size={14} aria-hidden="true" />
+					{compassButtonLabel()}
+				</span>
 			</div>
 		{:else if compassStatus === 'denied' || compassStatus === 'error'}
-			<div class="row note">🧭 {compassButtonLabel()}</div>
+			<div class="row note">
+				<Compass size={14} aria-hidden="true" />
+				{compassButtonLabel()}
+			</div>
 		{/if}
 	</div>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { X } from '@lucide/svelte';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 
 	export interface ReadoutData {
@@ -96,7 +97,9 @@
 </script>
 
 <div class="readout" role="dialog" aria-label="Point readout">
-	<button class="close" type="button" aria-label="Close readout" onclick={onclose}>✕</button>
+	<button class="close" type="button" aria-label="Close readout" onclick={onclose}>
+		<X size={16} aria-hidden="true" />
+	</button>
 	<header>
 		<h3>Point readout</h3>
 		<p>{fmtCoord(lat)}°, {fmtCoord(lon)}°</p>

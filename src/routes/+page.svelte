@@ -23,6 +23,7 @@
 		geometry: RouteGeoJsonGeometry;
 	};
 	type RouteGeoJsonFC = { type: 'FeatureCollection'; features: RouteGeoJsonFeature[] };
+	import { LocateFixed, SunMoon, Upload, X } from '@lucide/svelte';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
@@ -668,7 +669,7 @@
 		{
 			id: 'ephemeris',
 			label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
-			glyph: '☼/☾',
+			icon: SunMoon,
 			title: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
 			pressed: ephemerisOpen,
 			onclick: () => {
@@ -682,7 +683,7 @@
 		{
 			id: 'follow',
 			label: followButtonLabel(),
-			glyph: '◎',
+			icon: LocateFixed,
 			title: followButtonLabel(),
 			pressed: followStatus !== 'off',
 			onclick: toggleFollow,
@@ -690,7 +691,7 @@
 		{
 			id: 'route',
 			label: currentRoute ? `Clear imported route (${currentRoute.name})` : 'Import KML / GPX / GeoJSON route',
-			glyph: currentRoute ? '✕' : '⤓',
+			icon: currentRoute ? X : Upload,
 			title: currentRoute ? `Clear ${currentRoute.name}` : 'Import KML / GPX / GeoJSON route',
 			pressed: currentRoute !== null,
 			onclick: triggerRoutePicker,
