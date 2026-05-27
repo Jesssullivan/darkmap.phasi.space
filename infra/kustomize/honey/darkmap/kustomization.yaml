@@ -6,13 +6,18 @@ kind: Kustomization
 namespace: darkmap
 
 labels:
+  # These labels are part of the live Deployment/Service/PDB selectors.
+  # Kubernetes treats Deployment selectors as immutable, so keep this
+  # selector identity stable even while public-facing metadata moves to
+  # darkmap.phasi.space in docs, repo metadata, image names, and ingress
+  # hosts.
   - includeSelectors: true
     pairs:
       app.kubernetes.io/name: darkmap
       app.kubernetes.io/instance: darkmap-honey
-      app.kubernetes.io/part-of: darkmap.phasi.space
+      app.kubernetes.io/part-of: darkmap.tinyland.dev
       app.kubernetes.io/managed-by: kustomize
-      tinyland.dev/site: darkmap.phasi.space
+      tinyland.dev/site: darkmap.tinyland.dev
 
 resources:
   - deployment.yaml
