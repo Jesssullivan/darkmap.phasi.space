@@ -147,6 +147,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
         run: tofu init -backend-config=backend.hcl -lockfile=readonly
 
+      - name: tofu state backend check
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+        run: ../../scripts/ci-tofu-state-check.sh
+
       - name: tofu plan
         id: plan
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
