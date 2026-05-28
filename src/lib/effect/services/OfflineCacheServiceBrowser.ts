@@ -24,6 +24,7 @@ const SW_SCOPE = '/';
 const bucketForCacheName = (name: string): CacheEntryMeta['bucket'] => {
 	if (name.startsWith('darkmap-app-shell-')) return 'app-shell';
 	if (name === 'darkmap-raster-tile') return 'raster-tile';
+	if (name === 'darkmap-atmospheric-tile') return 'atmospheric-tile';
 	if (name === 'darkmap-ephemeris') return 'ephemeris';
 	if (name === 'darkmap-static-projection') return 'static-projection';
 	if (name === 'darkmap-route') return 'route';

@@ -176,7 +176,7 @@
 					<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
 				</div>
 				<p class="desc">{layer.description}</p>
-				{#if ls.on}
+				{#if ls.on && layer.upstreamLayer}
 					{@const ramp = rampFor(layer.upstreamLayer)}
 					{#if ramp}
 						<Legend

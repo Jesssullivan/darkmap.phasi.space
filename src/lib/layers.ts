@@ -13,11 +13,23 @@
  * Single-layer groups (Falchi, etc.) render as a plain toggle.
  */
 
-export type LayerGroup = 'viirs_annual' | 'world_atlas' | 'world_atlas_raw';
+export type LayerGroup = 'viirs_annual' | 'world_atlas' | 'world_atlas_raw' | 'atmospheric';
 
 export interface RasterLayerDef {
 	readonly id: string;
-	readonly upstreamLayer: string;
+	/**
+	 * GeoServer layer name for the QueryRaster proxy path. Mutually exclusive
+	 * with `upstreamUrlTemplate`. Required for VIIRS / World Atlas layers that
+	 * route through `RasterClient` → upstream GetMap.
+	 */
+	readonly upstreamLayer?: string;
+	/**
+	 * Direct WMTS / XYZ URL template (with `{z}`, `{x}`, `{y}`, optional
+	 * `{TIME}`) for layers that bypass the GeoServer proxy. Used by the
+	 * `atmospheric` group (NASA GIBS) — tiles fetched server-side and bucketed
+	 * to `darkmap-atmospheric-tile` in the service worker.
+	 */
+	readonly upstreamUrlTemplate?: string;
 	readonly label: string;
 	readonly description: string;
 	/** UI grouping: multi-layer groups (e.g. VIIRS annual / monthly) render as a single picker. */
@@ -69,9 +81,16 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 	},
 ];
 
-/** MapLibre raster source URL template targeting our proxy. */
-export const rasterUrlTemplate = (layerId: string): string =>
-	`/api/raster?layer=${encodeURIComponent(layerId)}&z={z}&x={x}&y={y}`;
+/**
+ * MapLibre raster source URL template targeting our proxy. Atmospheric layers
+ * carry `&kind=atmospheric` so the service worker can route the response to
+ * `darkmap-atmospheric-tile` without importing the layer catalog into the SW.
+ */
+export const rasterUrlTemplate = (layerId: string): string => {
+	const layer = LAYERS.find((l) => l.id === layerId);
+	const base = `/api/raster?layer=${encodeURIComponent(layerId)}&z={z}&x={x}&y={y}`;
+	return layer?.group === 'atmospheric' ? `${base}&kind=atmospheric` : base;
+};
 
 /** Default map center — Ithaca, NY (the lab fallback when geolocation is unavailable). */
 export const FALLBACK_CENTER: readonly [number, number] = [-76.5019, 42.4434];

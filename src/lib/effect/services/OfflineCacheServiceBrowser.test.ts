@@ -193,6 +193,10 @@ describe('makeBrowserAdapter — snapshot bucket attribution', () => {
 		shell.__seed('https://darkmap.example/_app/immutable/start.js', { bytes: 12_345 });
 		const raster = await deps.__caches.open('darkmap-raster-tile');
 		raster.__seed('https://darkmap.example/api/raster/viirs/9/137/197', { bytes: 64_000 });
+		const atmospheric = await deps.__caches.open('darkmap-atmospheric-tile');
+		atmospheric.__seed('https://darkmap.example/api/raster?layer=clouds-modis-terra&kind=atmospheric&z=4&x=5&y=6', {
+			bytes: 32_000,
+		});
 		const ephem = await deps.__caches.open('darkmap-ephemeris');
 		ephem.__seed('https://darkmap.example/api/featureinfo?x=1', { bytes: 1_024 });
 		const proj = await deps.__caches.open('darkmap-static-projection');
@@ -205,6 +209,7 @@ describe('makeBrowserAdapter — snapshot bucket attribution', () => {
 		const byBucket = new Map(snap.entries.map((e) => [e.bucket, e]));
 		expect(byBucket.get('app-shell')?.bytes).toBe(12_345);
 		expect(byBucket.get('raster-tile')?.bytes).toBe(64_000);
+		expect(byBucket.get('atmospheric-tile')?.bytes).toBe(32_000);
 		expect(byBucket.get('ephemeris')?.bytes).toBe(1_024);
 		expect(byBucket.get('static-projection')?.bytes).toBe(8_000);
 		expect(byBucket.get('route')?.bytes).toBe(4_096);

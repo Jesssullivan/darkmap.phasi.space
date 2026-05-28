@@ -11,7 +11,8 @@
  *
  * Cache shape:
  *   `darkmap-app-shell-v${version}`  → precached SvelteKit build/files/prerendered
- *   `darkmap-raster-tile`            → /api/raster query/path responses
+ *   `darkmap-raster-tile`            → /api/raster (QueryRaster GeoServer) responses
+ *   `darkmap-atmospheric-tile`       → /api/raster?kind=atmospheric (NASA GIBS) responses
  *   `darkmap-ephemeris`              → /api/featureinfo, /api/elevation
  *   `darkmap-static-projection`      → checked-in projection JSON
  *   `darkmap-route`                  → reserved for user-imported routes
@@ -34,10 +35,11 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 
 const APP_SHELL = `darkmap-app-shell-v${version}`;
 const RASTER_TILE = 'darkmap-raster-tile';
+const ATMOSPHERIC_TILE = 'darkmap-atmospheric-tile';
 const EPHEMERIS = 'darkmap-ephemeris';
 const STATIC_PROJECTION = 'darkmap-static-projection';
 
-const RUNTIME_BUCKETS = [RASTER_TILE, EPHEMERIS, STATIC_PROJECTION, 'darkmap-route'] as const;
+const RUNTIME_BUCKETS = [RASTER_TILE, ATMOSPHERIC_TILE, EPHEMERIS, STATIC_PROJECTION, 'darkmap-route'] as const;
 
 const ASSETS = [...build, ...files, ...prerendered];
 
@@ -77,9 +79,12 @@ sw.addEventListener('fetch', (event) => {
 	const url = new URL(request.url);
 	if (url.origin !== sw.location.origin) return;
 
-	// /api/raster?layer=... — opaque PNG tiles, cache-first, store in raster bucket.
+	// /api/raster?layer=... — opaque PNG tiles, cache-first. Atmospheric tiles
+	// carry `?kind=atmospheric` and bucket separately so eviction can drain
+	// GIBS cache without touching QueryRaster tiles the user explicitly enabled.
 	if (isRasterTileRequestPath(url.pathname)) {
-		event.respondWith(cacheFirst(request, RASTER_TILE));
+		const bucket = url.searchParams.get('kind') === 'atmospheric' ? ATMOSPHERIC_TILE : RASTER_TILE;
+		event.respondWith(cacheFirst(request, bucket));
 		return;
 	}
 
@@ -149,6 +154,7 @@ export const __test = {
 	APP_SHELL_PREFIX: 'darkmap-app-shell-',
 	RUNTIME_BUCKETS,
 	RASTER_TILE,
+	ATMOSPHERIC_TILE,
 	EPHEMERIS,
 	STATIC_PROJECTION,
 };
