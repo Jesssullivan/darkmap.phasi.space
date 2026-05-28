@@ -191,6 +191,7 @@
 				<!-- World Atlas + raw: one toggle + opacity each. -->
 				{#each lightExtras as layer (layer.id)}
 					{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+					{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
 					<li>
 						<label class="layer-toggle">
 							<input
@@ -199,7 +200,6 @@
 								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 							/>
 							<span class="label">{layer.label}</span>
-							{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
 							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
 								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
 									{healthLabel(h)}
@@ -259,6 +259,7 @@
 				<ul>
 					{#each atmosphericLayers as layer (layer.id)}
 						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+						{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
 						<li class:stale={atmosphericStale && ls.on}>
 							<div class="atmospheric-row-head">
 								<label class="layer-toggle">
@@ -268,7 +269,6 @@
 										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 									/>
 									<span class="label">{layer.label}</span>
-									{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
 									{#if h.tag !== 'idle' && h.tag !== 'rendered'}
 										<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
 											{healthLabel(h)}
