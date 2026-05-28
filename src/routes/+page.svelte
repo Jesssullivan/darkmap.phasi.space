@@ -20,6 +20,7 @@
 	} from '$lib/effect/services/TransmissionEstimator';
 	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
 	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
+	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -752,6 +753,7 @@
 		if (exit._tag !== 'Success') {
 			// Soft-fail — keep whatever the previous data was; the proxy returns
 			// degraded:true for missing keys so we won't normally enter here.
+			layerHealth.dispatch(l.id, { type: 'tile-error', reason: 'fetch failed' });
 			return;
 		}
 		const fc: OpenAQSensorCollection = exit.value;
@@ -765,6 +767,17 @@
 		const heatId = pointHeatmapId(l.id);
 		if (map.getLayer(heatId)) {
 			map.setLayoutProperty(heatId, 'visibility', fc.features.length >= 5 ? 'visible' : 'none');
+		}
+
+		// Health-state dispatch (#196). degraded:true means OPENAQ_API_KEY is
+		// unset upstream or returned 401/403 — surface as 'no data' so users
+		// know the overlay is intentionally blank rather than broken.
+		if (fc.degraded === true) {
+			layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'OpenAQ proxy degraded' });
+		} else if (fc.features.length === 0) {
+			layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no sensors in viewport' });
+		} else {
+			layerHealth.dispatch(l.id, { type: 'tile-ok' });
 		}
 	}
 
@@ -908,10 +921,38 @@
 
 		mapInstance.on('error', (ev) => {
 			const sourceId = (ev as { sourceId?: string }).sourceId ?? (ev as { source?: { id?: string } }).source?.id;
-			const err = (ev as { error?: { message?: string } }).error;
+			const err = (ev as { error?: { message?: string; status?: number } }).error;
 			if (!err) return;
 			if (sourceId === BASEMAP_SOURCE_ID) return;
 			pushToast(err.message ?? 'tile load failed', sourceId);
+			// #196 — map source id `darkmap-{layerId}-src` back to its LAYERS row
+			// and dispatch a tile-error health event.
+			if (sourceId?.startsWith('darkmap-') && sourceId.endsWith('-src')) {
+				const layerId = sourceId.slice('darkmap-'.length, -'-src'.length);
+				layerHealth.dispatch(layerId, {
+					type: 'tile-error',
+					reason: err.message ?? 'tile load failed',
+					status: err.status,
+				});
+			}
+		});
+
+		// First successful tile load per source flips loading → rendered. The
+		// `sourcedata` event fires repeatedly per tile; we just need one to
+		// confirm the layer is alive.
+		mapInstance.on('sourcedata', (ev) => {
+			const evt = ev as {
+				sourceId?: string;
+				isSourceLoaded?: boolean;
+				tile?: unknown;
+			};
+			if (!evt.sourceId || !evt.sourceId.startsWith('darkmap-') || !evt.sourceId.endsWith('-src')) return;
+			if (evt.tile === undefined) return; // Style or attribution event, not a tile load.
+			const layerId = evt.sourceId.slice('darkmap-'.length, -'-src'.length);
+			const current = layerHealth.getHealth(layerId);
+			if (current.tag === 'loading') {
+				layerHealth.dispatch(layerId, { type: 'tile-ok' });
+			}
 		});
 	});
 
