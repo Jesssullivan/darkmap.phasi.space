@@ -182,21 +182,28 @@
 			spans ~0.3 µm → 30 µm.
 		</p>
 		<p class="mt-2">
-			<strong>V1 LUT (this ship)</strong>: a closed-form analytical bake — Rayleigh λ<sup>−4.09</sup>, Ångström τ(λ) =
-			AOD<sub>550</sub> · (λ/0.55)<sup>−α</sup>, empirical water-vapor bands at 0.94 / 1.13 / 1.38 / 1.87 / 2.7 / 3.2 /
-			6.3 µm, Hartley + Huggins + Chappuis ozone bands, Kasten-Young airmass. This is an engineering estimate, not a
-			radiative-transfer model.
+			<strong>Current LUT — <code>smarts-analog-v1</code></strong>: improved engineering model in the spirit of SMARTS.
+			Bodhaine 1999 Rayleigh with depolarization factor; Pierluissi-Maragoudakis 1986 water-vapor band model with τ ∝ u<sup
+				>b</sup
+			>·profile (b ≈ 0.78) capturing the column-scaling saturation a pure Gaussian misses; Bass-Paur Hartley + Huggins +
+			Chappuis ozone; Kasten-Young airmass. Still an engineering estimate; expected error ~5-10 % in clean-sky cases.
 		</p>
 		<p class="mt-2">
-			<strong>V2 / V3 roadmap</strong>: the LUT JSON contract is stable across versions. V2 swaps in
+			<strong>V0 archive (PR-G)</strong>: simpler analytical bake — pure λ<sup>−4.09</sup> Rayleigh, Gaussian-only H₂O
+			bands. The V0 model shipped first to land the LUT contract; V3a-2 swapped it for <code>smarts-analog-v1</code>
+			without touching the service or widget code.
+		</p>
+		<p class="mt-2">
+			<strong>V3 roadmap</strong>: the LUT JSON contract stays stable across model swaps. A future drop-in replaces
+			<code>spectral-lut.json</code> with offline
 			<a href="https://www.nrel.gov/grid/solar-resource/smarts.html" class="underline" rel="noreferrer external"
 				>SMARTS</a
 			>
 			(0.3 – 4 µm) +
 			<a href="https://github.com/paulricchiazzi/SBDART" class="underline" rel="noreferrer external">SBDART</a>
-			(4 – 30 µm) output baked offline against the US Standard Atmosphere. V3 adds Py4CAtS / HITRAN line-by-line for named
-			astronomy bands (H₂O 940/1130/1380/1870 nm, O₂ A-band, telluric O₂-X, CO₂ 4.3 µm). The widget code does not change between
-			LUT generations.
+			(4 – 30 µm) output against the US Standard Atmosphere. V3b adds Py4CAtS / HITRAN line-by-line for the named astronomy
+			bands (H₂O 940/1130/1380/1870 nm, O₂ A-band, telluric O₂-X, CO₂ 4.3 µm) — selective high-resolution overlays loaded
+			on demand. Widget code stays unchanged across all generations.
 		</p>
 
 		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Caveats</h3>
