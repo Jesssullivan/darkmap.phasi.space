@@ -39,7 +39,7 @@ export default defineConfig({
 	webServer: {
 		command: 'pnpm run build && HOST=127.0.0.1 PORT=' + port + ' node build/index.js',
 		port,
-		timeout: 180_000,
+		timeout: 300_000,
 		reuseExistingServer: !process.env.CI,
 	},
 });

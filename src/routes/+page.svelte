@@ -557,6 +557,7 @@
 					id: l.id,
 					tileUrlTemplate: rasterUrlTemplate(l.id),
 					opacity: layerState[l.id]?.opacity ?? l.opacity,
+					...(l.maxNativeZoom !== undefined ? { maxZoom: l.maxNativeZoom } : {}),
 					...(l.attribution ? { attribution: l.attribution } : {}),
 				}),
 			),

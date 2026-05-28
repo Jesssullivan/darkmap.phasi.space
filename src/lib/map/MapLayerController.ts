@@ -23,6 +23,8 @@ export interface RasterMount {
 	readonly tileUrlTemplate: string;
 	readonly opacity: number;
 	readonly tileSize?: number;
+	/** Highest native source zoom. MapLibre overzooms instead of requesting above it. */
+	readonly maxZoom?: number;
 	/** When set, the new layer is inserted below this id (default: above all). */
 	readonly beforeId?: string;
 	/** Source attribution surfaced in MapLibre's attribution control (e.g. "Imagery courtesy NASA EOSDIS GIBS"). */
@@ -73,6 +75,7 @@ export const makeMapLayerControllerLive = (map: MapLibreMap): Layer.Layer<MapLay
 								type: 'raster',
 								tiles: [m.tileUrlTemplate],
 								tileSize: m.tileSize ?? 256,
+								...(m.maxZoom !== undefined ? { maxzoom: m.maxZoom } : {}),
 								...(m.attribution ? { attribution: m.attribution } : {}),
 							});
 						}

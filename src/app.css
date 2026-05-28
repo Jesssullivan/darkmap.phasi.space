@@ -57,6 +57,12 @@ html {
 	--map-toolbar-inset-rem: 5rem;
 }
 
+@media (max-width: 820px) {
+	html {
+		--field-bottom-reserve: 8.75rem;
+	}
+}
+
 body {
 	font-family: var(--typo-base--font-family);
 	font-feature-settings:
