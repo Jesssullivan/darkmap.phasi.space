@@ -95,7 +95,7 @@ jobs:
           tofu_wrapper: false
 
       - name: Install kubectl + kustomize
-        uses: yokawasa/action-setup-kube-tools@v0.11.2
+        uses: yokawasa/action-setup-kube-tools@v0.13.5
         with:
           kubectl: '1.31.0'
           kustomize: '5.4.3'
