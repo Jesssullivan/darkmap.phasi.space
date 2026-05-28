@@ -75,6 +75,13 @@ describe('AtmosphericPointService — getReading', () => {
 		expect(exit.value.matchedTime).toBe('2026-05-27T22:00');
 	});
 
+	it('allows PWV to be unavailable while preserving the rest of the reading', async () => {
+		const exit = await runWith(fakeOk({ ...sampleReading, pwv: null }));
+		if (exit._tag !== 'Success') throw new Error(`expected Success, got ${JSON.stringify(exit)}`);
+		expect(exit.value.pwv).toBeNull();
+		expect(exit.value.rh).toBe(78);
+	});
+
 	it('reports fetch-failed on a non-2xx status', async () => {
 		const exit = await runWith(fakeStatus(503));
 		expect(failReason(exit)).toBe('fetch-failed');
@@ -87,6 +94,11 @@ describe('AtmosphericPointService — getReading', () => {
 
 	it('reports parse-failed when a required numeric field is missing', async () => {
 		const exit = await runWith(fakeOk({ ...sampleReading, rh: 'not-a-number' }));
+		expect(failReason(exit)).toBe('parse-failed');
+	});
+
+	it('reports parse-failed when PWV is neither numeric nor null', async () => {
+		const exit = await runWith(fakeOk({ ...sampleReading, pwv: 'not-a-number' }));
 		expect(failReason(exit)).toBe('parse-failed');
 	});
 

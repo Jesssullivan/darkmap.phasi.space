@@ -9,7 +9,7 @@ import {
 	type RasterResponse,
 	type RasterTileRequest,
 } from './RasterClient';
-import { bboxParam, parseTileCoord, tileBBox3857 } from './TileMath';
+import { bboxParam, clampTileToMaxNativeZoom, parseTileCoord, tileBBox3857 } from './TileMath';
 
 describe('sanitizeHeaders', () => {
 	it('strips Set-Cookie and ad headers', () => {
@@ -71,6 +71,17 @@ describe('TileMath', () => {
 	it('parseTileCoord accepts valid coords', () => {
 		const t = parseTileCoord('8', '74', '96');
 		expect(t).toEqual({ z: 8, x: 74, y: 96 });
+	});
+
+	it('clampTileToMaxNativeZoom folds overzoomed requests to their native parent tile', () => {
+		expect(clampTileToMaxNativeZoom({ z: 7, x: 38, y: 45 }, 6)).toEqual({ z: 6, x: 19, y: 22 });
+		expect(clampTileToMaxNativeZoom({ z: 11, x: 623, y: 743 }, 9)).toEqual({ z: 9, x: 155, y: 185 });
+	});
+
+	it('clampTileToMaxNativeZoom preserves native and unclamped tiles', () => {
+		const tile = { z: 5, x: 9, y: 11 };
+		expect(clampTileToMaxNativeZoom(tile, 6)).toBe(tile);
+		expect(clampTileToMaxNativeZoom(tile, undefined)).toBe(tile);
 	});
 });
 

@@ -16,7 +16,6 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 interface OpenMeteoHourly {
 	readonly time?: string[];
 	readonly relative_humidity_2m?: number[];
-	readonly precipitable_water?: number[];
 	readonly cloud_cover_low?: number[];
 	readonly cloud_cover_mid?: number[];
 	readonly cloud_cover_high?: number[];
@@ -47,7 +46,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const upstreamParams = new URLSearchParams({
 		latitude: lat.toFixed(4),
 		longitude: lon.toFixed(4),
-		hourly: 'relative_humidity_2m,precipitable_water,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility',
+		hourly: 'relative_humidity_2m,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility',
 		timezone: 'UTC',
 		past_days: '1',
 		forecast_days: '2',
@@ -75,13 +74,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const hourly = body.hourly;
-	if (
-		!hourly?.time ||
-		!hourly.precipitable_water ||
-		!hourly.relative_humidity_2m ||
-		!hourly.visibility ||
-		hourly.time.length === 0
-	) {
+	if (!hourly?.time || !hourly.relative_humidity_2m || !hourly.visibility || hourly.time.length === 0) {
 		error(502, 'open-meteo response missing required hourly fields');
 	}
 
@@ -99,14 +92,20 @@ export const GET: RequestHandler = async ({ url }) => {
 		}
 	}
 
+	const rh = numberAt(hourly.relative_humidity_2m, bestIdx);
+	const visibility = numberAt(hourly.visibility, bestIdx);
+	if (rh === undefined || visibility === undefined) {
+		error(502, 'open-meteo response missing required hourly values');
+	}
+
 	const reading = {
 		matchedTime: hourly.time[bestIdx],
-		pwv: hourly.precipitable_water[bestIdx],
-		rh: hourly.relative_humidity_2m[bestIdx],
-		cloudLow: hourly.cloud_cover_low?.[bestIdx] ?? 0,
-		cloudMid: hourly.cloud_cover_mid?.[bestIdx] ?? 0,
-		cloudHigh: hourly.cloud_cover_high?.[bestIdx] ?? 0,
-		visibility: hourly.visibility[bestIdx],
+		pwv: null,
+		rh,
+		cloudLow: numberAt(hourly.cloud_cover_low, bestIdx) ?? 0,
+		cloudMid: numberAt(hourly.cloud_cover_mid, bestIdx) ?? 0,
+		cloudHigh: numberAt(hourly.cloud_cover_high, bestIdx) ?? 0,
+		visibility,
 	};
 
 	return new Response(JSON.stringify(reading), {
@@ -116,4 +115,9 @@ export const GET: RequestHandler = async ({ url }) => {
 			'cache-control': 'public, max-age=3600, s-maxage=3600',
 		},
 	});
+};
+
+const numberAt = (values: readonly number[] | undefined, index: number): number | undefined => {
+	const value = values?.[index];
+	return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 };

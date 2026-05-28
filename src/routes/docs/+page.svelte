@@ -153,7 +153,9 @@
 		<h2 class="mb-3 font-mono text-lg font-bold">Atmospheric overlays + transmission</h2>
 		<p>
 			The Atmosphere section of the Layer rail surfaces four NASA GIBS raster overlays plus an OpenAQ ground-station
-			PM2.5 heatmap. Drop a pin to see point-source PWV / RH / cloud cover via Open-Meteo, and tap the <code>i</code>
+			PM2.5 heatmap. Drop a pin to see point-source RH / cloud cover / visibility via Open-Meteo, and tap the <code
+				>i</code
+			>
 			chevron on any atmospheric row to open the <em>transmission widget</em>, which renders the spectral transmission
 			curve T(λ) for the active inputs.
 		</p>
@@ -161,12 +163,13 @@
 		<ul class="mt-2 list-disc space-y-2 pl-6">
 			<li>
 				<strong>NASA GIBS WMTS</strong> — clouds (MODIS Terra AM, VIIRS NOAA-20 PM), aerosol (MODIS Combined AOD @ 550 nm),
-				water vapor (AIRS Precipitable Water Day). Public domain; "Imagery courtesy NASA EOSDIS GIBS" surfaces in the MapLibre
+				water vapor (MODIS Terra infrared, 5 km). Public domain; "Imagery courtesy NASA EOSDIS GIBS" surfaces in the MapLibre
 				attribution control when any GIBS layer is on.
 			</li>
 			<li>
-				<strong>Open-Meteo /v1/forecast</strong> — point PWV, RH, layered cloud cover, visibility. CC-BY 4.0, no key
-				required; proxied through <code>/api/atmospheric/point</code>.
+				<strong>Open-Meteo /v1/forecast</strong> — point RH, layered cloud cover, visibility. CC-BY 4.0, no key
+				required; proxied through <code>/api/atmospheric/point</code>. PWV is treated as unavailable until a supported
+				point source is wired.
 			</li>
 			<li>
 				<strong>OpenAQ v3</strong> — PM2.5 ground stations in the viewport bbox, CC-BY 4.0. Requires an

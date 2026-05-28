@@ -135,13 +135,13 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 	{
 		id: 'water-vapor-airs',
 		upstreamUrlTemplate:
-			'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/AIRS_Precipitable_Water_Day/default/{TIME}/GoogleMapsCompatible_Level5/{z}/{y}/{x}.png',
-		label: 'Water vapor (AIRS)',
-		description: 'NASA GIBS AIRS daytime precipitable water column, ~45 km, daily — total atmospheric H₂O burden.',
+			'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_Water_Vapor_5km_Day/default/{TIME}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png',
+		label: 'Water vapor (MODIS Terra)',
+		description: 'NASA GIBS MODIS Terra infrared water vapor, 5 km, daily daytime pass.',
 		group: 'atmospheric',
 		defaultEnabled: false,
 		opacity: 0.55,
-		maxNativeZoom: 5,
+		maxNativeZoom: 6,
 		attribution: GIBS_ATTRIBUTION,
 	},
 	{
