@@ -1,6 +1,12 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { LAYERS, type RasterLayerDef } from '$lib/layers';
+import {
+	AtmosphericTileError,
+	AtmosphericTileService,
+	AtmosphericTileServiceLive,
+	type AtmosphericTileOutcome,
+} from '$lib/effect/services/AtmosphericTileService';
 import { sanitizeHeaders } from '$lib/server/raster/AdStripper';
 import { RasterCache, RasterCacheLive, rasterCacheKey } from '$lib/server/raster/Cache';
 import {
@@ -10,7 +16,7 @@ import {
 	type RasterResponse,
 	type RasterTileRequest,
 } from '$lib/server/raster/RasterClient';
-import { clampTileToMaxNativeZoom, parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
+import { parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
 
 const RasterLayer = Layer.merge(RasterClientLive, RasterCacheLive);
 
@@ -94,7 +100,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (!layerDef.upstreamUrlTemplate || layerDef.group !== 'atmospheric') {
 			error(400, `layer ${layer} is not an atmospheric layer`);
 		}
-		return fetchAtmosphericTile(layerDef, tile, url.searchParams.get('time') ?? undefined);
+		return atmosphericResponse(layerDef, tile, url.searchParams.get('time') ?? undefined);
 	}
 
 	if (!layerDef.upstreamLayer) {
@@ -121,68 +127,45 @@ export const GET: RequestHandler = async ({ url }) => {
 	return new Response(response.body as BodyInit, { headers });
 };
 
-const fetchAtmosphericTile = async (
+/**
+ * Translate an AtmosphericTileService outcome into a SvelteKit `Response`.
+ * The service handles capability + classification; we only shape headers.
+ */
+const atmosphericResponse = async (
 	layerDef: RasterLayerDef,
 	tile: TileCoord,
 	time: string | undefined,
 ): Promise<Response> => {
-	const effectiveTime = time ?? defaultAtmosphericTime();
-	const template = layerDef.upstreamUrlTemplate;
-	if (!template) {
-		error(500, `atmospheric layer ${layerDef.id} missing upstreamUrlTemplate`);
-	}
-	const nativeTile = clampTileToMaxNativeZoom(tile, layerDef.maxNativeZoom);
-	const upstreamUrl = template
-		.replace('{z}', String(nativeTile.z))
-		.replace('{x}', String(nativeTile.x))
-		.replace('{y}', String(nativeTile.y))
-		.replace('{TIME}', effectiveTime);
-
-	let upstream: Response;
-	try {
-		upstream = await fetch(upstreamUrl, { headers: { accept: 'image/*' } });
-	} catch (e) {
-		error(502, `atmospheric upstream fetch failed: ${e instanceof Error ? e.message : 'unknown'}`);
-	}
-
-	if (!upstream.ok) {
-		const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
-		error(status, `atmospheric upstream returned ${upstream.status}`);
-	}
-
-	const headers = sanitizeHeaders(
-		new Headers({ 'content-type': upstream.headers.get('content-type') ?? 'image/jpeg' }),
+	const exit = await Effect.runPromiseExit(
+		Effect.gen(function* () {
+			const svc = yield* AtmosphericTileService;
+			return yield* svc.fetchTile({ layerDef, tile, time });
+		}).pipe(Effect.provide(AtmosphericTileServiceLive)),
 	);
-	headers.set(
-		'cache-control',
-		isImmutableTime(effectiveTime) ? 'public, max-age=31536000, immutable' : 'public, max-age=3600, s-maxage=86400',
-	);
-	headers.set('x-darkmap-atmospheric-request-tile', `${tile.z}/${tile.x}/${tile.y}`);
-	headers.set('x-darkmap-atmospheric-native-tile', `${nativeTile.z}/${nativeTile.x}/${nativeTile.y}`);
-	headers.set('x-darkmap-atmospheric-time', effectiveTime);
-	return new Response(upstream.body as BodyInit | null, { status: 200, headers });
+	if (Exit.isFailure(exit)) {
+		const failure = Cause.failureOption(exit.cause);
+		if (Option.isSome(failure) && failure.value instanceof AtmosphericTileError) {
+			const err = failure.value;
+			if (err.reason === 'upstream-error' && err.status !== undefined) {
+				const status = err.status >= 400 && err.status < 600 ? err.status : 502;
+				error(status, `atmospheric upstream returned ${err.status}`);
+			}
+			if (err.reason === 'fetch-failed') {
+				error(502, `atmospheric upstream fetch failed`);
+			}
+			error(500, `atmospheric tile error: ${err.reason}`);
+		}
+		error(500, Cause.pretty(exit.cause));
+	}
+	return shapeAtmosphericResponse(exit.value);
 };
 
-/**
- * Default time for atmospheric tiles when the client doesn't supply one.
- * GIBS publishes near-real-time imagery at T+3h SLA, so before ~06:00 UTC
- * today's tile may still be propagating — fall back to yesterday's date
- * to avoid 404s on the first paint of the day.
- */
-const defaultAtmosphericTime = (): string => {
-	const now = new Date();
-	const ref = now.getUTCHours() < 6 ? new Date(now.getTime() - 24 * 3600 * 1000) : now;
-	return ref.toISOString().slice(0, 10);
-};
-
-/**
- * GIBS WMTS tiles dated more than 48 h ago are frozen upstream — once a date
- * is past the science-quality reprocessing window the raster never changes.
- * Freeze them in our CDN + browser cache forever; fresher tiles get the
- * standard 1 h fresh / 24 h CDN window.
- */
-const isImmutableTime = (time: string): boolean => {
-	const parsed = Date.parse(time);
-	if (!Number.isFinite(parsed)) return false;
-	return Date.now() - parsed > 48 * 3600 * 1000;
+const shapeAtmosphericResponse = (outcome: AtmosphericTileOutcome): Response => {
+	const headers = sanitizeHeaders(new Headers(outcome.tag === 'ok' ? { 'content-type': outcome.contentType } : {}));
+	headers.set('cache-control', outcome.cacheControl);
+	for (const [k, v] of Object.entries(outcome.debugHeaders)) headers.set(k, v);
+	if (outcome.tag === 'no-data') {
+		return new Response(null, { status: 204, headers });
+	}
+	return new Response(outcome.body as BodyInit | null, { status: 200, headers });
 };
