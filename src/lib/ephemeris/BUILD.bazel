@@ -41,6 +41,8 @@ vitest.vitest_test(
         "--config",
         "vitest.bazel.config.ts",
         "src/lib/ephemeris/EphemerisClient.test.ts",
+        "src/lib/ephemeris/viewportSummaryCache.test.ts",
+        "src/lib/ephemeris/viewportSummary.test.ts",
     ],
     log_level = "info",
     tags = [

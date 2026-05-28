@@ -84,6 +84,7 @@
 		lon: FALLBACK_CENTER[0],
 	});
 	let viewBounds: { north: number; south: number; east: number; west: number } | undefined = $state();
+	let viewZoom = $state(FALLBACK_ZOOM);
 
 	let toastErrors = $state<ToastErr[]>([]);
 	let toastIdSeed = 0;
@@ -763,6 +764,7 @@
 			if (!mapInstance) return;
 			const c = mapInstance.getCenter();
 			viewCenter = { lat: c.lat, lon: c.lng };
+			viewZoom = mapInstance.getZoom();
 			const b = mapInstance.getBounds();
 			viewBounds = {
 				north: b.getNorth(),
@@ -778,6 +780,7 @@
 			schedulePointRefresh();
 		});
 		mapInstance.on('zoomend', () => {
+			syncCenter();
 			scheduleHashWrite();
 			schedulePointRefresh();
 		});
@@ -858,6 +861,7 @@
 		location={viewCenter}
 		time={ephemerisTime}
 		bounds={viewBounds}
+		zoom={viewZoom}
 		onTimeChange={(t) => {
 			ephemerisTime = t;
 			scheduleHashWrite();
