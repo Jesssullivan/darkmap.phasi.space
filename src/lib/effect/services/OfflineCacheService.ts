@@ -35,7 +35,7 @@ export interface CacheEntryMeta {
 	readonly bytes: number;
 	readonly storedAt: string;
 	/** Logical bucket so eviction can drain a single layer or basemap. */
-	readonly bucket: 'app-shell' | 'raster-tile' | 'route' | 'ephemeris' | 'static-projection';
+	readonly bucket: 'app-shell' | 'raster-tile' | 'atmospheric-tile' | 'route' | 'ephemeris' | 'static-projection';
 }
 
 export interface EvictionRequest {
