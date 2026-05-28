@@ -228,7 +228,7 @@
 			and fast enough for in-bake per-line per-wavelength evaluation.
 		</p>
 		<p class="mt-2">
-			Per-band JSONs ship at <code>/spectral-lbl/{'{'}band-id{'}'}.json</code> and load lazily on first zoom. Total payload
+			Per-band JSONs ship at <code>/spectral-lbl/&#123;band-id&#125;.json</code> and load lazily on first zoom. Total payload
 			across all 7 bands is ~1.2 MB; only the bands the user actually clicks get fetched.
 		</p>
 
