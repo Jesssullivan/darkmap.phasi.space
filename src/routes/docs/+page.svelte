@@ -193,6 +193,21 @@
 			bands. The V0 model shipped first to land the LUT contract; V3a-2 swapped it for <code>smarts-analog-v1</code>
 			without touching the service or widget code.
 		</p>
+
+		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">V2: live aerosol recompute</h3>
+		<p>
+			The transmission widget surfaces an aerosol-type picker (Smoke / Dust / Urban / Pollen / Mixed). When a type is
+			selected, the LUT-baked aerosol cell is bypassed and replaced with a live Bohren-Huffman 1983 Mie computation in
+			the browser — `mie(x, n+ik)` integrated over the type's log-normal size distribution against published
+			refractive-index data. The user-supplied AOD<sub>550</sub> calibrates the magnitude; the spectral shape comes
+			from the Mie integration. Sources: <a href="https://doi.org/10.5194/acp-5-799-2005" class="underline">Reid 2005</a>
+			(smoke), d'Almeida 1991 / OPAC (dust, mixed), Hess 1998 OPAC (urban), Griffiths 2012 (pollen). The pure-TS Mie
+			core is validated against the geometric optics and Rayleigh limits.
+		</p>
+		<p class="mt-2">
+			Source-chip in the widget reads <code>smarts-analog-v1+live-mie:&lt;type&gt;</code> when the live aerosol path
+			is active — making the model lineage explicit alongside the engineering-estimate disclaimer.
+		</p>
 		<p class="mt-2">
 			<strong>V3 roadmap</strong>: the LUT JSON contract stays stable across model swaps. A future drop-in replaces
 			<code>spectral-lut.json</code> with offline
