@@ -1,7 +1,7 @@
 import { Effect, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { sanitizeHeaders } from './AdStripper';
-import { RasterCache, RasterCacheLive } from './Cache';
+import { RasterCache, RasterCacheLive, makeRasterCacheLayer } from './Cache';
 import {
 	RasterClient,
 	RasterError,
@@ -110,6 +110,57 @@ describe('RasterCache', () => {
 		const { a, b } = await Effect.runPromise(program);
 		expect(Option.isSome(a)).toBe(true);
 		expect(Option.isNone(b)).toBe(true);
+	});
+
+	it('keeps the live in-process cache across separate layer provisions', async () => {
+		const processWideReq: RasterTileRequest = {
+			upstreamLayer: 'PostGIS:PROCESS_WIDE_TEST',
+			tile: { z: 8, x: 76, y: 96 },
+		};
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const cache = yield* RasterCache;
+				yield* cache.set(processWideReq, sample);
+			}).pipe(Effect.provide(RasterCacheLive)),
+		);
+
+		const hit = await Effect.runPromise(
+			Effect.gen(function* () {
+				const cache = yield* RasterCache;
+				return yield* cache.get(processWideReq);
+			}).pipe(Effect.provide(RasterCacheLive)),
+		);
+
+		expect(Option.isSome(hit)).toBe(true);
+	});
+
+	it('distinguishes fresh hits from stale fallback candidates', async () => {
+		let now = 0;
+		const layer = makeRasterCacheLayer({
+			freshMs: 100,
+			staleMs: 500,
+			now: () => now,
+			store: new Map(),
+		});
+
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const cache = yield* RasterCache;
+				yield* cache.set(req, sample);
+				const fresh = yield* cache.get(req);
+				now = 150;
+				const staleFreshLookup = yield* cache.get(req);
+				const staleFallback = yield* cache.getStale(req);
+				now = 700;
+				const expiredFallback = yield* cache.getStale(req);
+				return { expiredFallback, fresh, staleFallback, staleFreshLookup };
+			}).pipe(Effect.provide(layer)),
+		);
+
+		expect(Option.isSome(result.fresh)).toBe(true);
+		expect(Option.isNone(result.staleFreshLookup)).toBe(true);
+		expect(Option.isSome(result.staleFallback)).toBe(true);
+		expect(Option.isNone(result.expiredFallback)).toBe(true);
 	});
 });
 
