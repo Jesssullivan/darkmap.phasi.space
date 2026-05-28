@@ -10,6 +10,13 @@
 		type EventRange,
 		type EventRangeMap,
 	} from '$lib/ephemeris/viewportSummary';
+	import {
+		buildPhaseGradient,
+		buildPhaseSegments,
+		phaseAt,
+		PHASE_DEFINITIONS,
+		type TwilightPhaseSegment,
+	} from '$lib/ephemeris/twilight-phases';
 
 	export interface ViewportBounds {
 		readonly north: number;
@@ -192,39 +199,12 @@
 		return dt / DAY_MS;
 	};
 
-	// Twilight-strip color palette (Photographer's Ephemeris-ish).
-	const COLOR = {
-		night: '#06080d',
-		astro: '#0c1633',
-		nautical: '#1f3a73',
-		civil: '#d18b3a',
-		day: '#7fbbff',
-	};
-
-	type Stop = { frac: number; color: string };
-
-	const bandGradient = $derived.by((): string => {
-		if (!readout) return COLOR.night;
-		const e = readout.events;
-		// Build the gradient as a sequence of hard color stops. Missing
-		// events (polar day/night) hold the surrounding color.
-		const stops: Stop[] = [{ frac: 0, color: COLOR.night }];
-		const push = (f: number | null, before: string, after: string) => {
-			if (f === null) return;
-			stops.push({ frac: f, color: before });
-			stops.push({ frac: f, color: after });
-		};
-		push(fracOf(e.astronomicalDawn), COLOR.night, COLOR.astro);
-		push(fracOf(e.nauticalDawn), COLOR.astro, COLOR.nautical);
-		push(fracOf(e.civilDawn), COLOR.nautical, COLOR.civil);
-		push(fracOf(e.sunrise), COLOR.civil, COLOR.day);
-		push(fracOf(e.sunset), COLOR.day, COLOR.civil);
-		push(fracOf(e.civilDusk), COLOR.civil, COLOR.nautical);
-		push(fracOf(e.nauticalDusk), COLOR.nautical, COLOR.astro);
-		push(fracOf(e.astronomicalDusk), COLOR.astro, COLOR.night);
-		stops.push({ frac: 1, color: stops[stops.length - 1]?.color ?? COLOR.night });
-		return 'linear-gradient(to right, ' + stops.map((s) => `${s.color} ${(s.frac * 100).toFixed(2)}%`).join(', ') + ')';
-	});
+	// Twilight-phase segments (#197). The segment list is the contract;
+	// the gradient and the per-phase popover hitboxes both derive from it.
+	const phaseSegments = $derived<readonly TwilightPhaseSegment[]>(
+		readout ? buildPhaseSegments(readout.events, fracOf) : [],
+	);
+	const bandGradient = $derived(buildPhaseGradient(phaseSegments));
 
 	const cursorFrac = $derived.by(() => {
 		const f = fracOf(time);
@@ -239,6 +219,12 @@
 	const noonFrac = $derived(fracOf(noonAt));
 	const sunriseFrac = $derived(fracOf(sunriseAt));
 	const sunsetFrac = $derived(fracOf(sunsetAt));
+
+	// Phase under the cursor + current time (the "now" staff). Drive the
+	// header chip and any per-event narration that needs to know which
+	// twilight band a marker falls inside.
+	const cursorPhase = $derived(phaseAt(phaseSegments, cursorFrac));
+	const nowPhase = $derived(nowFrac === null ? undefined : phaseAt(phaseSegments, nowFrac));
 
 	const timeFromClientX = (clientX: number): Date | null => {
 		if (!bar || !onTimeChange) return null;
@@ -338,6 +324,72 @@
 		return best;
 	});
 
+	type EventTipLabel = {
+		readonly short: string;
+		readonly long: string;
+		readonly description: string;
+	};
+
+	const eventTipFor = (k: EphemerisEventKey): EventTipLabel => {
+		switch (k) {
+			case 'astronomicalDawn':
+				return {
+					short: 'astro',
+					long: 'Astronomical dawn',
+					description: 'Sun reaches −18° below the horizon. Astronomical twilight begins.',
+				};
+			case 'nauticalDawn':
+				return {
+					short: 'naut',
+					long: 'Nautical dawn',
+					description: 'Sun reaches −12° below the horizon. Horizon visible at sea.',
+				};
+			case 'civilDawn':
+				return {
+					short: 'civil',
+					long: 'Civil dawn',
+					description:
+						'Sun reaches −6° below the horizon. Outdoor activities without artificial light become possible.',
+				};
+			case 'sunrise':
+				return {
+					short: '↑',
+					long: 'Sunrise',
+					description: 'Sun crosses the horizon. Civil twilight ends, daylight begins.',
+				};
+			case 'solarNoon':
+				return {
+					short: 'noon',
+					long: 'Solar noon',
+					description: 'Sun is at its highest altitude for the day at the viewport center.',
+				};
+			case 'sunset':
+				return {
+					short: '↓',
+					long: 'Sunset',
+					description: 'Sun crosses the horizon. Daylight ends, civil twilight begins.',
+				};
+			case 'civilDusk':
+				return {
+					short: 'civil',
+					long: 'Civil dusk',
+					description: 'Sun reaches −6° below the horizon. Nautical twilight begins.',
+				};
+			case 'nauticalDusk':
+				return {
+					short: 'naut',
+					long: 'Nautical dusk',
+					description: 'Sun reaches −12° below the horizon. Astronomical twilight begins.',
+				};
+			case 'astronomicalDusk':
+				return {
+					short: 'astro',
+					long: 'Astronomical dusk',
+					description: 'Sun reaches −18° below the horizon. Full astronomical darkness begins.',
+				};
+		}
+	};
+
 	const labelFor = (k: EphemerisEventKey): string => {
 		switch (k) {
 			case 'astronomicalDawn':
@@ -433,7 +485,31 @@
 <div class="gantt" aria-label="Twilight strip for viewport center">
 	<div class="header">
 		<span class="date">{fmtDate(dayStart)} UTC</span>
-		<span class="cursor-label">cursor {fmtClock(time)}</span>
+		<HelpTooltip
+			text={cursorPhase
+				? `Cursor sits in ${cursorPhase.label.toLowerCase()} — ${cursorPhase.description}`
+				: 'Time cursor across the UTC day. Drag the rail or use arrow keys to scrub.'}
+		>
+			{#snippet trigger()}
+				<span class="cursor-label">
+					cursor {fmtClock(time)}
+					{#if cursorPhase}
+						<span class="phase-dot" style="background: {cursorPhase.color};" aria-hidden="true"></span>
+						<span class="phase-name">{cursorPhase.label.toLowerCase()}</span>
+					{/if}
+				</span>
+			{/snippet}
+		</HelpTooltip>
+		{#if nowPhase}
+			<HelpTooltip text="Right now ({fmtClock(now)} UTC) is {nowPhase.label.toLowerCase()} — {nowPhase.description}">
+				{#snippet trigger()}
+					<span class="now-chip">
+						<span class="phase-dot" style="background: {nowPhase.color};" aria-hidden="true"></span>
+						now {fmtClock(now)}
+					</span>
+				{/snippet}
+			</HelpTooltip>
+		{/if}
 		{#if rangeBadge}
 			<HelpTooltip text={rangeBadge.detail}>
 				{#snippet trigger()}
@@ -536,17 +612,36 @@
 	</div>
 	{#if readout}
 		<div class="events" aria-label="Twilight events for the day in UTC">
-			<span>astro {fmtClock(readout.events.astronomicalDawn)}</span>
-			<span>naut {fmtClock(readout.events.nauticalDawn)}</span>
-			<span>civil {fmtClock(readout.events.civilDawn)}</span>
-			<span class="sep">·</span>
-			<span class="sun-up">↑ {fmtClock(readout.events.sunrise)}</span>
-			<span>noon {fmtClock(readout.events.solarNoon)}</span>
-			<span class="sun-down">↓ {fmtClock(readout.events.sunset)}</span>
-			<span class="sep">·</span>
-			<span>civil {fmtClock(readout.events.civilDusk)}</span>
-			<span>naut {fmtClock(readout.events.nauticalDusk)}</span>
-			<span>astro {fmtClock(readout.events.astronomicalDusk)}</span>
+			{#each ['astronomicalDawn', 'nauticalDawn', 'civilDawn', 'sunrise', 'solarNoon', 'sunset', 'civilDusk', 'nauticalDusk', 'astronomicalDusk'] as evKey, i (evKey)}
+				{@const tip = eventTipFor(evKey as EphemerisEventKey)}
+				{@const at = readout.events[evKey as EphemerisEventKey]}
+				{#if i === 3 || i === 6}
+					<span class="sep">·</span>
+				{/if}
+				<HelpTooltip text="{tip.long} {fmtClock(at)} UTC — {tip.description}">
+					{#snippet trigger()}
+						<span
+							class="event-chip"
+							class:sun-up={evKey === 'sunrise'}
+							class:sun-down={evKey === 'sunset'}
+							aria-label="{tip.long} {fmtClock(at)} UTC">{tip.short} {fmtClock(at)}</span
+						>
+					{/snippet}
+				</HelpTooltip>
+			{/each}
+		</div>
+		<div class="phase-legend" aria-label="Twilight phase legend">
+			{#each Array.from(new Set(phaseSegments.map((s) => s.name))) as phaseName (phaseName)}
+				{@const def = PHASE_DEFINITIONS[phaseName]}
+				<HelpTooltip text="{def.label} — {def.description} ({def.altitudeRange})">
+					{#snippet trigger()}
+						<span class="phase-chip">
+							<span class="phase-dot" style="background: {def.color};" aria-hidden="true"></span>
+							{def.label.toLowerCase()}
+						</span>
+					{/snippet}
+				</HelpTooltip>
+			{/each}
 		</div>
 	{/if}
 </div>
@@ -580,6 +675,33 @@
 	}
 	.cursor-label {
 		font-variant-numeric: tabular-nums;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.now-chip {
+		font-variant-numeric: tabular-nums;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.05rem 0.35rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		background: rgba(255, 255, 255, 0.06);
+		color: rgba(233, 236, 243, 0.86);
+		font-size: 0.6rem;
+	}
+	.phase-dot {
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.35);
+		display: inline-block;
+		flex: 0 0 auto;
+	}
+	.phase-name {
+		opacity: 0.85;
+		text-transform: lowercase;
 	}
 	.bar {
 		position: relative;
@@ -680,9 +802,39 @@
 	.events .sep {
 		opacity: 0.4;
 	}
-	.events .sun-up,
-	.events .sun-down {
+	.event-chip {
+		font-variant-numeric: tabular-nums;
+		min-height: 1.1rem;
+		padding: 0.05rem 0.3rem;
+		border-radius: 4px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.04);
+		color: rgba(233, 236, 243, 0.85);
+		display: inline-block;
+	}
+	.event-chip.sun-up,
+	.event-chip.sun-down {
 		color: #ffd166;
+		border-color: rgba(255, 209, 102, 0.32);
+		background: rgba(255, 209, 102, 0.08);
+	}
+	.phase-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-top: 0.35rem;
+		font-size: 0.6rem;
+		opacity: 0.85;
+	}
+	.phase-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		background: rgba(255, 255, 255, 0.05);
+		color: rgba(233, 236, 243, 0.86);
 	}
 	.phase {
 		opacity: 0.7;
@@ -753,7 +905,18 @@
 			gap: 0.35rem 0.6rem;
 		}
 		.events {
+			/* The 9-event clock row would wrap onto two lines and crowd the
+			   safe-area inset on phones. The phase-legend row below stays
+			   visible and carries the popovers a mobile user actually needs. */
 			display: none;
+		}
+		.phase-legend {
+			/* Compact dots-only on phones; tap still opens the popover. */
+			font-size: 0.58rem;
+		}
+		.now-chip,
+		.cursor-label {
+			font-size: 0.62rem;
 		}
 	}
 </style>
