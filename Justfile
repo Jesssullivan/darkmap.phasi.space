@@ -199,11 +199,15 @@ ha-state-endpoint-package-self-test:
 ha-state-scratch-proof endpoint_package *args:
     cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
 
-# Contract-stable candidate proof entrypoint; #144 will extend this for disposable OpenTofu
+# Run the guarded #144 disposable OpenTofu proof with a filled endpoint package
+ha-state-disposable-tofu-proof endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" --run-disposable-tofu --use-lockfile {{ args }}
+
+# Contract-stable candidate proof entrypoint for scratch and disposable phases
 ha-state-candidate-proof *args:
     cd {{ root }} && node scripts/ha-state-scratch-proof.mjs {{ args }}
 
-# Offline guard tests for the scratch S3 proof harness
+# Offline guard tests for the scratch S3 and disposable OpenTofu proof harness
 ha-state-scratch-proof-self-test:
     cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --self-test
 
