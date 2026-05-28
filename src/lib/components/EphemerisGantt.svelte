@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Effect } from 'effect';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
-	import { viewportRangesFor } from '$lib/ephemeris/viewportSummaryCache';
+	import { viewportRangesFor, type ViewportRangeSummarySource } from '$lib/ephemeris/viewportSummaryCache';
 	import {
 		makeEphemerisViewportSummaryRequest,
 		type EphemerisEventKey,
@@ -33,6 +33,7 @@
 	let bar: HTMLDivElement | undefined = $state();
 	let dragging = $state(false);
 	let now = $state(new Date());
+	let online = $state(typeof navigator === 'undefined' ? true : navigator.onLine);
 
 	// Per-event min..max range across a 4x4 grid sampled inside the
 	// tile-cover summary for the current bounds.
@@ -40,6 +41,18 @@
 	// renders the cursor + bands immediately and the uncertainty stripes
 	// fade in once the corner samples settle.
 	let ranges = $state<EventRangeMap>({});
+
+	type RangeStatus =
+		| { kind: 'idle' }
+		| { kind: 'loading'; key: string }
+		| { kind: 'refreshing'; key: string; previousKey: string }
+		| { kind: 'ready'; computedAtMs: number; key: string; source: ViewportRangeSummarySource }
+		| { kind: 'stale'; key: string; previousKey?: string }
+		| { kind: 'error'; key: string };
+
+	let rangeStatus = $state<RangeStatus>({ kind: 'idle' });
+	let activeRangeKey = '';
+	let hasDisplayedRanges = false;
 
 	// Lazy-load astronomy-engine + EphemerisClient. The ~116 KB chunk only
 	// ships once the overlay actually mounts.
@@ -101,18 +114,40 @@
 		const key = boundsKey;
 		if (!key) {
 			ranges = {};
+			rangeStatus = { kind: 'idle' };
+			activeRangeKey = '';
+			hasDisplayedRanges = false;
 			return;
 		}
-		const req = summaryRequest;
+		const req = untrack(() => summaryRequest);
 		if (!req) return;
+		const reqTime = untrack(() => time);
 		const myGen = ++rangeGen;
+		const previousKey = activeRangeKey;
+		rangeStatus =
+			hasDisplayedRanges && previousKey && previousKey !== key
+				? { kind: 'refreshing', key, previousKey }
+				: { kind: 'loading', key };
 		(async () => {
 			const c = await loadClient();
-			const next = await viewportRangesFor(req, c, time);
+			const summary = await viewportRangesFor(req, c, reqTime);
 			if (myGen !== rangeGen) return;
-			ranges = next;
+			ranges = summary.ranges;
+			activeRangeKey = summary.key;
+			hasDisplayedRanges = Object.keys(summary.ranges).length > 0;
+			rangeStatus = {
+				kind: 'ready',
+				key: summary.key,
+				source: summary.source,
+				computedAtMs: summary.computedAtMs,
+			};
 		})().catch((e) => {
-			if (myGen === rangeGen) console.warn('EphemerisGantt: viewport sampling failed', e);
+			if (myGen === rangeGen) {
+				rangeStatus = hasDisplayedRanges
+					? { kind: 'stale', key, previousKey: activeRangeKey || undefined }
+					: { kind: 'error', key };
+				console.warn('EphemerisGantt: viewport sampling failed', e);
+			}
 		});
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		key;
@@ -121,6 +156,19 @@
 	onDestroy(() => {
 		readoutGen++;
 		rangeGen++;
+	});
+
+	$effect(() => {
+		if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
+		const updateOnline = () => {
+			online = navigator.onLine;
+		};
+		window.addEventListener('online', updateOnline);
+		window.addEventListener('offline', updateOnline);
+		return () => {
+			window.removeEventListener('online', updateOnline);
+			window.removeEventListener('offline', updateOnline);
+		};
 	});
 
 	$effect(() => {
@@ -315,12 +363,91 @@
 
 	const fmtDelta = (deltaMin: number): string =>
 		deltaMin < 60 ? `Δ ${Math.round(deltaMin)} min` : `Δ ${(deltaMin / 60).toFixed(1)} h`;
+
+	type RangeBadge = {
+		readonly detail: string;
+		readonly label: string;
+		readonly tone: 'cached' | 'error' | 'live' | 'loading' | 'stale';
+	};
+
+	const fmtAge = (computedAtMs: number): string => {
+		const ageMin = Math.max(0, Math.round((now.getTime() - computedAtMs) / 60_000));
+		if (ageMin < 1) return 'just now';
+		if (ageMin < 60) return `${ageMin}m ago`;
+		return `${Math.round(ageMin / 60)}h ago`;
+	};
+
+	const rangeBadge = $derived.by((): RangeBadge | null => {
+		switch (rangeStatus.kind) {
+			case 'idle':
+				return null;
+			case 'loading':
+				return {
+					label: online ? 'loading' : 'offline',
+					tone: 'loading',
+					detail: online
+						? 'Computing the tile-cover summary for this viewport.'
+						: 'Browser reports offline while the tile-cover summary is loading.',
+				};
+			case 'refreshing':
+				return {
+					label: online ? 'updating' : 'offline stale',
+					tone: 'stale',
+					detail: 'Showing the previous tile-cover summary until the current viewport summary finishes.',
+				};
+			case 'ready':
+				if (!online) {
+					return {
+						label: 'offline cache',
+						tone: 'cached',
+						detail: `Browser reports offline; using the latest local tile-cover summary from ${fmtAge(rangeStatus.computedAtMs)}.`,
+					};
+				}
+				return rangeStatus.source === 'computed'
+					? {
+							label: 'live',
+							tone: 'live',
+							detail: 'Freshly computed tile-cover summary for the visible viewport.',
+						}
+					: {
+							label: 'cache',
+							tone: 'cached',
+							detail: `Reused a local tile-cover summary computed ${fmtAge(rangeStatus.computedAtMs)}.`,
+						};
+			case 'stale':
+				return {
+					label: online ? 'stale' : 'offline stale',
+					tone: 'stale',
+					detail: 'The current viewport summary failed; the rail is keeping the previous tile-cover summary visible.',
+				};
+			case 'error':
+				return {
+					label: 'no range',
+					tone: 'error',
+					detail: 'The viewport summary failed. Point-level ephemeris can still render independently.',
+				};
+		}
+	});
 </script>
 
 <div class="gantt" aria-label="Twilight strip for viewport center">
 	<div class="header">
 		<span class="date">{fmtDate(dayStart)} UTC</span>
 		<span class="cursor-label">cursor {fmtClock(time)}</span>
+		{#if rangeBadge}
+			<HelpTooltip text={rangeBadge.detail}>
+				{#snippet trigger()}
+					<span
+						class="cache-pill"
+						class:cached={rangeBadge.tone === 'cached'}
+						class:error={rangeBadge.tone === 'error'}
+						class:live={rangeBadge.tone === 'live'}
+						class:loading={rangeBadge.tone === 'loading'}
+						class:stale={rangeBadge.tone === 'stale'}>{rangeBadge.label}</span
+					>
+				{/snippet}
+			</HelpTooltip>
+		{/if}
 		{#if closestRange}
 			<HelpTooltip>
 				{#snippet trigger()}
@@ -559,6 +686,45 @@
 	}
 	.phase {
 		opacity: 0.7;
+	}
+	.cache-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 1.1rem;
+		padding: 0.05rem 0.35rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		background: rgba(255, 255, 255, 0.08);
+		color: rgba(233, 236, 243, 0.86);
+		font-size: 0.58rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.cache-pill.live {
+		border-color: rgba(97, 220, 163, 0.38);
+		background: rgba(97, 220, 163, 0.14);
+		color: #b8f4d7;
+	}
+	.cache-pill.cached {
+		border-color: rgba(127, 187, 255, 0.4);
+		background: rgba(127, 187, 255, 0.14);
+		color: #c7ddff;
+	}
+	.cache-pill.loading {
+		border-color: rgba(255, 255, 255, 0.2);
+		background: rgba(255, 255, 255, 0.09);
+		color: rgba(233, 236, 243, 0.72);
+	}
+	.cache-pill.stale {
+		border-color: rgba(255, 209, 102, 0.34);
+		background: rgba(255, 209, 102, 0.14);
+		color: #ffd166;
+	}
+	.cache-pill.error {
+		border-color: rgba(255, 118, 117, 0.42);
+		background: rgba(255, 118, 117, 0.14);
+		color: #ffb5b4;
 	}
 	.pill {
 		display: inline-flex;

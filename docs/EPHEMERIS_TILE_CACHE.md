@@ -45,3 +45,13 @@ Reusable primitives remain cacheable:
 The bottom rail may show a stable tile-cover summary for the visible area.
 Point readouts, GPS follow mode, and route waypoints must use precise
 point-level ephemeris and may display deltas against the rail summary.
+
+The rail must make cache state visible:
+
+- `live` means the current tile-cover summary was freshly computed.
+- `cache` means the current summary came from an in-flight or completed local
+  cache hit.
+- `offline cache` means the browser reports offline while showing the latest
+  local summary for the current key.
+- `stale` / `offline stale` means a new viewport key is pending or failed and
+  the rail is temporarily keeping the previous summary visible.
