@@ -1,4 +1,5 @@
 import { Context, Data, Effect, Layer } from 'effect';
+import { type AerosolType } from '$lib/spectral/aerosol-types';
 import {
 	SPECTRAL_LUT_URL,
 	SPECTRAL_LUT_VERSION,
@@ -6,6 +7,7 @@ import {
 	type TransmissionInput,
 	type TransmissionLutAxes,
 } from '$lib/spectral/transmission-axes';
+import { MieScatteringService } from './MieScatteringService';
 
 /**
  * TransmissionEstimator — atmospheric transmission curve T(λ) for an input
@@ -38,8 +40,31 @@ export class TransmissionEstimator extends Context.Tag('@darkmap/TransmissionEst
 	TransmissionEstimator,
 	{
 		readonly estimate: (input: TransmissionInput) => Effect.Effect<TransmissionCurve, TransmissionEstimatorError>;
+		/**
+		 * Compose the LUT-backed gas absorption with a live Mie-scattering
+		 * aerosol contribution (V2-C). When `aerosolType` is non-null, the
+		 * LUT aerosol axis is bypassed (AOD₅₅₀ = 0 query) and the user-
+		 * supplied aerosol type drives the spectral shape via Mie. The
+		 * `aod550` input still calibrates magnitude.
+		 *
+		 * Requires `MieScatteringService` in the Effect context.
+		 */
+		readonly estimateWithLiveAerosol: (
+			input: TransmissionInput,
+			aerosolType: AerosolType,
+		) => Effect.Effect<TransmissionCurve, TransmissionEstimatorError, MieScatteringService>;
 	}
 >() {}
+
+/**
+ * Kasten-Young 1989 airmass. Duplicated here from `smarts-analog.ts` to
+ * avoid a cross-package dependency for a one-liner.
+ */
+const airmass = (zenithDeg: number): number => {
+	const z = Math.max(0, Math.min(89.5, zenithDeg));
+	const cosZ = Math.cos((z * Math.PI) / 180);
+	return 1 / (cosZ + 0.50572 * Math.pow(96.07995 - z, -1.6364));
+};
 
 export interface TransmissionEstimatorFetcher {
 	readonly fetch: (
@@ -147,30 +172,62 @@ export const makeTransmissionEstimatorLive = (
 		return inflight;
 	};
 
+	const loadLutEffect = Effect.tryPromise({
+		try: loadLut,
+		catch: (cause): TransmissionEstimatorError => {
+			const message = cause instanceof Error ? cause.message : String(cause);
+			const reason = message.includes('version mismatch') ? 'version-mismatch' : 'load-failed';
+			return new TransmissionEstimatorError({ reason, cause });
+		},
+	});
+
+	const interpLut = (lut: SpectralLut, input: TransmissionInput): number[] => {
+		const brackets = [
+			bracket(lut.axes.pwvMm, input.pwvMm),
+			bracket(lut.axes.aod550, input.aod550),
+			bracket(lut.axes.angstrom, input.angstrom),
+			bracket(lut.axes.o3Du, input.o3Du),
+			bracket(lut.axes.zenithDeg, input.zenithDeg),
+		];
+		return lut.wavelengthsUm.map((_, wlIdx) => interpAt(lut, wlIdx, brackets));
+	};
+
 	return Layer.succeed(TransmissionEstimator, {
 		estimate: (input) =>
 			Effect.gen(function* () {
-				const lut = yield* Effect.tryPromise({
-					try: loadLut,
-					catch: (cause) => {
-						const message = cause instanceof Error ? cause.message : String(cause);
-						const reason = message.includes('version mismatch') ? 'version-mismatch' : 'load-failed';
-						return new TransmissionEstimatorError({ reason, cause });
-					},
-				});
-				const brackets = [
-					bracket(lut.axes.pwvMm, input.pwvMm),
-					bracket(lut.axes.aod550, input.aod550),
-					bracket(lut.axes.angstrom, input.angstrom),
-					bracket(lut.axes.o3Du, input.o3Du),
-					bracket(lut.axes.zenithDeg, input.zenithDeg),
-				];
-				const transmission = lut.wavelengthsUm.map((_, wlIdx) => interpAt(lut, wlIdx, brackets));
+				const lut = yield* loadLutEffect;
+				return {
+					wavelengthsUm: lut.wavelengthsUm,
+					transmission: interpLut(lut, input),
+					input,
+					source: lut.source,
+				};
+			}),
+
+		estimateWithLiveAerosol: (input, aerosolType) =>
+			Effect.gen(function* () {
+				const lut = yield* loadLutEffect;
+				const mie = yield* MieScatteringService;
+
+				// Bypass the LUT aerosol axis: query gas-only at AOD₅₅₀ = 0; the user-
+				// supplied AOD calibrates the live Mie contribution we add on top.
+				const gasOnly = interpLut(lut, { ...input, aod550: 0 });
+
+				const aerosol = yield* mie
+					.compute({ aerosolType, aod550: input.aod550 }, lut.wavelengthsUm)
+					.pipe(Effect.mapError((cause) => new TransmissionEstimatorError({ reason: 'load-failed', cause })));
+
+				// Blend gas-absorption transmission with live Mie aerosol extinction.
+				// Gas tau is already airmass-multiplied (baked into the LUT); aerosol
+				// tau is at airmass = 1, so apply Kasten-Young here.
+				const m = airmass(input.zenithDeg);
+				const transmission = gasOnly.map((tGas, i) => tGas * Math.exp(-aerosol.tau[i] * m));
+
 				return {
 					wavelengthsUm: lut.wavelengthsUm,
 					transmission,
 					input,
-					source: lut.source,
+					source: `${lut.source}+live-mie:${aerosolType}`,
 				};
 			}),
 	});
