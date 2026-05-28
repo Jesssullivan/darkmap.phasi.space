@@ -21,6 +21,13 @@ interface RasterFetchResult {
 	readonly response: RasterResponse;
 }
 
+const TRANSPARENT_PNG = Uint8Array.from([
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+	0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49,
+	0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00, 0xef, 0xbf, 0xa7, 0xdb, 0x00,
+	0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
 const inFlightTiles = new Map<string, Promise<Exit.Exit<RasterFetchResult, RasterError>>>();
 
 const fetchOrCache = (
@@ -126,41 +133,103 @@ const fetchAtmosphericTile = async (
 	tile: TileCoord,
 	time: string | undefined,
 ): Promise<Response> => {
-	const effectiveTime = time ?? defaultAtmosphericTime();
+	const candidateTimes = atmosphericTimeCandidates(time);
 	const template = layerDef.upstreamUrlTemplate;
 	if (!template) {
 		error(500, `atmospheric layer ${layerDef.id} missing upstreamUrlTemplate`);
 	}
 	const nativeTile = clampTileToMaxNativeZoom(tile, layerDef.maxNativeZoom);
-	const upstreamUrl = template
-		.replace('{z}', String(nativeTile.z))
-		.replace('{x}', String(nativeTile.x))
-		.replace('{y}', String(nativeTile.y))
-		.replace('{TIME}', effectiveTime);
 
-	let upstream: Response;
-	try {
-		upstream = await fetch(upstreamUrl, { headers: { accept: 'image/*' } });
-	} catch (e) {
-		error(502, `atmospheric upstream fetch failed: ${e instanceof Error ? e.message : 'unknown'}`);
+	let lastNoDataStatus: number | undefined;
+	for (const candidateTime of candidateTimes) {
+		const upstreamUrl = atmosphericUpstreamUrl(template, nativeTile, candidateTime);
+		let upstream: Response;
+		try {
+			upstream = await fetch(upstreamUrl, { headers: { accept: 'image/*' } });
+		} catch (e) {
+			error(502, `atmospheric upstream fetch failed: ${e instanceof Error ? e.message : 'unknown'}`);
+		}
+
+		if (isNoDataAtmosphericResponse(upstream)) {
+			lastNoDataStatus = upstream.status;
+			continue;
+		}
+
+		if (!upstream.ok) {
+			const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
+			error(status, `atmospheric upstream returned ${upstream.status}`);
+		}
+
+		const headers = atmosphericHeaders({
+			contentType: upstream.headers.get('content-type') ?? 'image/jpeg',
+			nativeTile,
+			requestedTime: candidateTimes[0],
+			sourceTime: candidateTime,
+			status: candidateTime === candidateTimes[0] ? 'ok' : 'ok-fallback',
+			tile,
+		});
+		headers.set(
+			'cache-control',
+			isImmutableTime(candidateTime) ? 'public, max-age=31536000, immutable' : 'public, max-age=3600, s-maxage=86400',
+		);
+		return new Response(upstream.body as BodyInit | null, { status: 200, headers });
 	}
 
-	if (!upstream.ok) {
-		const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
-		error(status, `atmospheric upstream returned ${upstream.status}`);
+	const headers = atmosphericHeaders({
+		contentType: 'image/png',
+		nativeTile,
+		requestedTime: candidateTimes[0],
+		sourceTime: candidateTimes[candidateTimes.length - 1],
+		status: 'no-data',
+		tile,
+	});
+	headers.set('cache-control', 'public, max-age=300, s-maxage=900, stale-if-error=3600');
+	if (lastNoDataStatus !== undefined) {
+		headers.set('x-darkmap-atmospheric-upstream-status', String(lastNoDataStatus));
 	}
+	return new Response(TRANSPARENT_PNG, { status: 200, headers });
+};
 
-	const headers = sanitizeHeaders(
-		new Headers({ 'content-type': upstream.headers.get('content-type') ?? 'image/jpeg' }),
-	);
-	headers.set(
-		'cache-control',
-		isImmutableTime(effectiveTime) ? 'public, max-age=31536000, immutable' : 'public, max-age=3600, s-maxage=86400',
-	);
+const atmosphericUpstreamUrl = (template: string, tile: TileCoord, time: string): string =>
+	template
+		.replace('{z}', String(tile.z))
+		.replace('{x}', String(tile.x))
+		.replace('{y}', String(tile.y))
+		.replace('{TIME}', time);
+
+const atmosphericHeaders = ({
+	contentType,
+	nativeTile,
+	requestedTime,
+	sourceTime,
+	status,
+	tile,
+}: {
+	readonly contentType: string;
+	readonly nativeTile: TileCoord;
+	readonly requestedTime: string;
+	readonly sourceTime: string;
+	readonly status: 'ok' | 'ok-fallback' | 'no-data';
+	readonly tile: TileCoord;
+}): Headers => {
+	const headers = sanitizeHeaders(new Headers({ 'content-type': contentType }));
 	headers.set('x-darkmap-atmospheric-request-tile', `${tile.z}/${tile.x}/${tile.y}`);
 	headers.set('x-darkmap-atmospheric-native-tile', `${nativeTile.z}/${nativeTile.x}/${nativeTile.y}`);
-	headers.set('x-darkmap-atmospheric-time', effectiveTime);
-	return new Response(upstream.body as BodyInit | null, { status: 200, headers });
+	headers.set('x-darkmap-atmospheric-time', requestedTime);
+	headers.set('x-darkmap-atmospheric-source-time', sourceTime);
+	headers.set('x-darkmap-atmospheric-status', status);
+	return headers;
+};
+
+const isNoDataAtmosphericResponse = (response: Response): boolean => {
+	if (response.status === 204 || response.status === 404) return true;
+	return response.headers.get('content-length') === '0';
+};
+
+const atmosphericTimeCandidates = (time: string | undefined): readonly string[] => {
+	if (time) return [time];
+	const todayCandidate = defaultAtmosphericTime();
+	return [todayCandidate, addDays(todayCandidate, -1), addDays(todayCandidate, -2)];
 };
 
 /**
@@ -173,6 +242,12 @@ const defaultAtmosphericTime = (): string => {
 	const now = new Date();
 	const ref = now.getUTCHours() < 6 ? new Date(now.getTime() - 24 * 3600 * 1000) : now;
 	return ref.toISOString().slice(0, 10);
+};
+
+const addDays = (date: string, days: number): string => {
+	const parsed = Date.parse(`${date}T00:00:00.000Z`);
+	if (!Number.isFinite(parsed)) return date;
+	return new Date(parsed + days * 24 * 3600 * 1000).toISOString().slice(0, 10);
 };
 
 /**
