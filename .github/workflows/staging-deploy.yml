@@ -155,6 +155,8 @@ jobs:
       - name: Smoke public edge
         run: |
           curl -fsSIL https://darkmap.phasi.space/ | tee /tmp/index.headers
+          curl -fsSIL 'https://darkmap.phasi.space/service-worker.js?smoke=${{ github.sha }}' | tee /tmp/service-worker.headers
           curl -fsSIL 'https://darkmap.phasi.space/api/raster?layer=viirs_2019&z=8&x=74&y=96' | tee /tmp/raster.headers
           grep -qi '^server: cloudflare' /tmp/index.headers
+          grep -Eqi '^cache-control: .*no-cache' /tmp/service-worker.headers
           grep -qi '^content-type: image/png' /tmp/raster.headers
