@@ -19,6 +19,7 @@
 		type TransmissionCurve,
 	} from '$lib/effect/services/TransmissionEstimator';
 	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
+	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -175,8 +176,39 @@
 		scheduleTransmissionRefresh();
 	}
 
+	// V3b-4 — selected-band state + lazy LBL fetch.
+	let transmissionBandId = $state<string | null>(null);
+	let transmissionBandCurve = $state<BandCurve | undefined>(undefined);
+	let transmissionBandLoading = $state(false);
+	let transmissionBandError = $state<string | undefined>(undefined);
+
+	async function onBandSelect(bandId: string | null): Promise<void> {
+		transmissionBandId = bandId;
+		transmissionBandError = undefined;
+		if (bandId === null) {
+			transmissionBandCurve = undefined;
+			return;
+		}
+		transmissionBandLoading = true;
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* LineByLineService;
+				return yield* svc.estimateInBand({ bandId, airmass: 1 });
+			}).pipe(Effect.provide(LineByLineServiceLive)),
+		);
+		transmissionBandLoading = false;
+		if (exit._tag === 'Success') {
+			transmissionBandCurve = exit.value;
+		} else {
+			transmissionBandError = 'Line-by-line bake unavailable for this band';
+			transmissionBandCurve = undefined;
+		}
+	}
+
 	function closeTransmission(): void {
 		transmissionOpen = false;
+		transmissionBandId = null;
+		transmissionBandCurve = undefined;
 	}
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
@@ -948,6 +980,11 @@
 		{onAerosolTypeChange}
 		{onAodChange}
 		{onAngstromChange}
+		selectedBandId={transmissionBandId}
+		bandCurve={transmissionBandCurve}
+		bandLoading={transmissionBandLoading}
+		bandError={transmissionBandError}
+		{onBandSelect}
 	/>
 {/if}
 
