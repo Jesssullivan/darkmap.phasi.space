@@ -211,8 +211,29 @@
 			Source-chip in the widget reads <code>smarts-analog-v1+live-mie:&lt;type&gt;</code> when the live aerosol path is active
 			— making the model lineage explicit alongside the engineering-estimate disclaimer.
 		</p>
+		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">
+			V3b: line-by-line for named bands
+		</h3>
+		<p>
+			Beyond the coarse LUT, seven named astronomy bands have a high-resolution line-by-line bake at 0.01 nm sampling:
+			the H₂O ρστ / Φ / ψ / Ω windows (940 / 1130 / 1380 / 1870 nm), the O₂ A-band (762 nm) and telluric O₂-X γ-band
+			(628 nm), and the CO₂ ν₃ asymmetric-stretch fundamental at 4.3 µm. Clicking a band chip in the transmission widget
+			opens an in-sheet detail panel showing the full Voigt profile across that window.
+		</p>
 		<p class="mt-2">
-			<strong>V3 roadmap</strong>: the LUT JSON contract stays stable across model swaps. A future drop-in replaces
+			Line data is curated from <a href="https://hitran.org/" class="underline" rel="noreferrer external">HITRAN2020</a>
+			(Gordon et al. 2022, JQSRT 277, 107949). The full catalog is gated behind free registration; we ship a representative
+			subset in <code>data/hitran/</code> with a documented regeneration workflow for users who want line-data refreshes.
+			Voigt profile evaluation uses Thompson 1987 pseudo-Voigt against the Olivero-Longbothum 1977 combined HWHM — ~1 % accurate
+			and fast enough for in-bake per-line per-wavelength evaluation.
+		</p>
+		<p class="mt-2">
+			Per-band JSONs ship at <code>/spectral-lbl/{'{'}band-id{'}'}.json</code> and load lazily on first zoom. Total payload
+			across all 7 bands is ~1.2 MB; only the bands the user actually clicks get fetched.
+		</p>
+
+		<p class="mt-2">
+			<strong>V3 next steps</strong>: the LUT JSON contract stays stable across model swaps. A future drop-in replaces
 			<code>spectral-lut.json</code> with offline
 			<a href="https://www.nrel.gov/grid/solar-resource/smarts.html" class="underline" rel="noreferrer external"
 				>SMARTS</a
