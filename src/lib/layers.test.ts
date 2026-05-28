@@ -69,4 +69,24 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 		// Atmospheric entries don't carry a GeoServer counterpart.
 		expect(modis?.upstreamLayer).toBeUndefined();
 	});
+
+	const PR_D_LAYERS: ReadonlyArray<{ id: string; tag: string }> = [
+		{ id: 'clouds-viirs-noaa20', tag: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor' },
+		{ id: 'aerosol-modis-aod', tag: 'MODIS_Combined_Value_Added_AOD' },
+		{ id: 'water-vapor-airs', tag: 'AIRS_Precipitable_Water_Day' },
+	];
+
+	for (const { id, tag } of PR_D_LAYERS) {
+		it(`${id} is registered with GIBS template + attribution`, () => {
+			const def = LAYERS.find((l) => l.id === id);
+			expect(def).toBeDefined();
+			expect(def?.group).toBe('atmospheric');
+			expect(def?.upstreamUrlTemplate).toContain(tag);
+			expect(def?.upstreamUrlTemplate).toMatch(/\{z\}.+\{y\}.+\{x\}|\{z\}.+\{x\}.+\{y\}/s);
+			expect(def?.upstreamUrlTemplate).toContain('{TIME}');
+			expect(def?.attribution).toMatch(/NASA EOSDIS GIBS/);
+			expect(def?.upstreamLayer).toBeUndefined();
+			expect(def?.defaultEnabled).toBe(false);
+		});
+	}
 });

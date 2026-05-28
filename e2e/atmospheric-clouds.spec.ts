@@ -7,6 +7,40 @@ import { expect, test } from '@playwright/test';
 // the proxy contract — if the network shape is right, both the MapLibre
 // `addSource` call and the SW bucket attribution follow for free.
 
+// Extended in PR-D to cover the rest of the GIBS overlays. Each row in
+// `EXTRA_LAYERS` re-runs the same proxy-contract check (the toggle fires a
+// `/api/raster?layer=...&kind=atmospheric` request) so the LayerRail + proxy
+// integration is exercised for every atmospheric layer.
+const EXTRA_LAYERS: ReadonlyArray<{ readonly id: string; readonly label: RegExp }> = [
+	{ id: 'clouds-viirs-noaa20', label: /Clouds \(VIIRS NOAA-20\)/i },
+	{ id: 'aerosol-modis-aod', label: /Aerosol AOD \(MODIS\)/i },
+	{ id: 'water-vapor-airs', label: /Water vapor \(AIRS\)/i },
+];
+
+for (const { id, label } of EXTRA_LAYERS) {
+	test(`Atmospheric layer ${id}: toggle fires the proxy with kind=atmospheric`, async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 800 });
+		const proxyRequest = page.waitForRequest(
+			(req) =>
+				req.url().includes('/api/raster') &&
+				req.url().includes(`layer=${id}`) &&
+				req.url().includes('kind=atmospheric'),
+			{ timeout: 15_000 },
+		);
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+
+		const toggle = page.getByRole('checkbox', { name: label });
+		await expect(toggle).toBeVisible();
+		await toggle.check();
+
+		const req = await proxyRequest;
+		const url = new URL(req.url());
+		expect(url.searchParams.get('layer')).toBe(id);
+		expect(url.searchParams.get('kind')).toBe('atmospheric');
+	});
+}
+
 test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 	test('toggling the layer triggers a proxied GIBS tile fetch with kind=atmospheric', async ({ page }) => {
 		await page.setViewportSize({ width: 1280, height: 800 });
