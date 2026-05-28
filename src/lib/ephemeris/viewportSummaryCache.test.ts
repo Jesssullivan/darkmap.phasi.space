@@ -45,10 +45,16 @@ describe('viewportRangesFor', () => {
 		};
 
 		const [a, b] = await Promise.all([viewportRangesFor(req!, client, DAY), viewportRangesFor(req!, client, DAY)]);
-		expect(a).toEqual(b);
+		expect(a.ranges).toEqual(b.ranges);
+		expect(a.key).toBe(req!.key);
+		expect(a.source).toBe('computed');
+		expect(b.source).toBe('in-flight-cache');
+		expect(b.computedAtMs).toBe(a.computedAtMs);
 		expect(calls).toBe(req!.samplePoints.length);
 
-		await viewportRangesFor(req!, client, DAY);
+		const cached = await viewportRangesFor(req!, client, DAY);
+		expect(cached.source).toBe('memory-cache');
+		expect(cached.computedAtMs).toBe(a.computedAtMs);
 		expect(calls).toBe(req!.samplePoints.length);
 	});
 
@@ -68,7 +74,7 @@ describe('viewportRangesFor', () => {
 		).rejects.toThrow('sample failure');
 
 		let calls = 0;
-		await viewportRangesFor(
+		const summary = await viewportRangesFor(
 			req!,
 			async (location, at) => {
 				calls += 1;
@@ -76,6 +82,7 @@ describe('viewportRangesFor', () => {
 			},
 			DAY,
 		);
+		expect(summary.source).toBe('computed');
 		expect(calls).toBe(req!.samplePoints.length);
 	});
 });
