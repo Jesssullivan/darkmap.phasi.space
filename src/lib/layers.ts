@@ -30,6 +30,13 @@ export interface RasterLayerDef {
 	 * to `darkmap-atmospheric-tile` in the service worker.
 	 */
 	readonly upstreamUrlTemplate?: string;
+	/**
+	 * Endpoint that returns a GeoJSON FeatureCollection (with a `bbox=` query
+	 * appended at fetch time). Indicates the layer is rendered as a
+	 * MapLibre GeoJSON source + heatmap/circle layers rather than raster
+	 * tiles. Used by `smog-openaq-pm25` (PR-F).
+	 */
+	readonly pointSourceUrl?: string;
 	readonly label: string;
 	readonly description: string;
 	/** UI grouping: multi-layer groups (e.g. VIIRS annual / monthly) render as a single picker. */
@@ -126,6 +133,17 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		defaultEnabled: false,
 		opacity: 0.55,
 		attribution: GIBS_ATTRIBUTION,
+	},
+	{
+		id: 'smog-openaq-pm25',
+		pointSourceUrl: '/api/atmospheric/openaq',
+		label: 'Smog (PM2.5)',
+		description:
+			'OpenAQ ground-station PM2.5, viewport-scoped. Heatmap when sensors are dense; markers in sparse areas.',
+		group: 'atmospheric',
+		defaultEnabled: false,
+		opacity: 0.7,
+		attribution: 'PM2.5 data by OpenAQ contributors (CC-BY)',
 	},
 ];
 

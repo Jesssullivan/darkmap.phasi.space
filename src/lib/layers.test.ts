@@ -89,4 +89,14 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 			expect(def?.defaultEnabled).toBe(false);
 		});
 	}
+
+	it('OpenAQ PM2.5 smog overlay (PR-F) is a point-source layer', () => {
+		const smog = LAYERS.find((l) => l.id === 'smog-openaq-pm25');
+		expect(smog).toBeDefined();
+		expect(smog?.group).toBe('atmospheric');
+		expect(smog?.pointSourceUrl).toBe('/api/atmospheric/openaq');
+		expect(smog?.upstreamUrlTemplate).toBeUndefined();
+		expect(smog?.upstreamLayer).toBeUndefined();
+		expect(smog?.attribution).toMatch(/OpenAQ/i);
+	});
 });
