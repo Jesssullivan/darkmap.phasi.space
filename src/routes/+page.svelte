@@ -12,6 +12,7 @@
 	} from '$lib/device/GeolocationService';
 	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
 	import { AtmosphericPointService, AtmosphericPointServiceLive } from '$lib/effect/services/AtmosphericPointService';
+	import { OpenAQService, OpenAQServiceLive, type OpenAQSensorCollection } from '$lib/effect/services/OpenAQService';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
 	// minimal Feature/FeatureCollection structure that MapLibre consumes.
@@ -465,6 +466,10 @@
 	}
 
 	function mountLayer(l: RasterLayerDef): void {
+		if (l.pointSourceUrl) {
+			void mountPointLayer(l);
+			return;
+		}
 		void runController(
 			Effect.flatMap(MapLayerController, (c) =>
 				c.mount({
@@ -478,11 +483,186 @@
 	}
 
 	function unmountLayer(l: RasterLayerDef): void {
+		if (l.pointSourceUrl) {
+			unmountPointLayer(l);
+			return;
+		}
 		void runController(Effect.flatMap(MapLayerController, (c) => c.unmount(l.id)));
 	}
 
 	function setLayerOpacity(l: RasterLayerDef, op: number): void {
+		if (l.pointSourceUrl) {
+			setPointLayerOpacity(l, op);
+			return;
+		}
 		void runController(Effect.flatMap(MapLayerController, (c) => c.setOpacity(l.id, op)));
+	}
+
+	// ----- Point-source overlays (OpenAQ smog, future PurpleAir / AirNow) -----
+	//
+	// MapLibre's heatmap layer does GPU-side KDE; we feed it a GeoJSON source
+	// that re-fetches on viewport change. Below a 5-feature density threshold,
+	// the heatmap looks empty, so we render circle markers alongside for the
+	// sparse-coverage UX (PR-F). All point overlays bucket through
+	// `darkmap-atmospheric-tile` via the SW route.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping for the moveend handler, not reactive state
+	const POINT_SOURCE_IDS = new Set<string>();
+	let pointFetchInflight: AbortController | undefined;
+	let pointMoveendDebounce: ReturnType<typeof setTimeout> | undefined;
+
+	const pointSourceId = (id: string) => `darkmap-${id}-pt-src`;
+	const pointHeatmapId = (id: string) => `darkmap-${id}-pt-heat`;
+	const pointCircleId = (id: string) => `darkmap-${id}-pt-circ`;
+
+	async function mountPointLayer(l: RasterLayerDef): Promise<void> {
+		if (!mapInstance || !l.pointSourceUrl) return;
+		const map = mapInstance;
+		if (!map.isStyleLoaded()) {
+			await new Promise<void>((resolve) => map.once('style.load', () => resolve()));
+		}
+
+		const srcId = pointSourceId(l.id);
+		const heatId = pointHeatmapId(l.id);
+		const circId = pointCircleId(l.id);
+		const opacity = layerState[l.id]?.opacity ?? l.opacity;
+
+		if (!map.getSource(srcId)) {
+			map.addSource(srcId, {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] },
+				...(l.attribution ? { attribution: l.attribution } : {}),
+			});
+		}
+		if (!map.getLayer(heatId)) {
+			map.addLayer({
+				id: heatId,
+				type: 'heatmap',
+				source: srcId,
+				paint: {
+					'heatmap-weight': ['interpolate', ['linear'], ['coalesce', ['get', 'value'], 0], 0, 0, 100, 1],
+					'heatmap-intensity': 1,
+					'heatmap-radius': 30,
+					'heatmap-opacity': opacity,
+					'heatmap-color': [
+						'interpolate',
+						['linear'],
+						['heatmap-density'],
+						0,
+						'rgba(0, 228, 0, 0)',
+						0.12,
+						'rgba(0, 228, 0, 0.55)',
+						0.35,
+						'rgba(255, 255, 0, 0.7)',
+						0.55,
+						'rgba(255, 126, 0, 0.78)',
+						0.75,
+						'rgba(255, 0, 0, 0.85)',
+						1,
+						'rgba(143, 63, 151, 0.9)',
+					],
+				},
+			});
+		}
+		if (!map.getLayer(circId)) {
+			map.addLayer({
+				id: circId,
+				type: 'circle',
+				source: srcId,
+				paint: {
+					'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 3, 12, 7],
+					'circle-color': [
+						'interpolate',
+						['linear'],
+						['coalesce', ['get', 'value'], 0],
+						0,
+						'#00e400',
+						12,
+						'#ffff00',
+						35,
+						'#ff7e00',
+						55,
+						'#ff0000',
+						150,
+						'#8f3f97',
+					],
+					'circle-opacity': opacity,
+					'circle-stroke-width': 1,
+					'circle-stroke-color': 'rgba(8, 10, 16, 0.85)',
+				},
+			});
+		}
+
+		POINT_SOURCE_IDS.add(l.id);
+		await refreshPointLayer(l);
+	}
+
+	function unmountPointLayer(l: RasterLayerDef): void {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const srcId = pointSourceId(l.id);
+		const heatId = pointHeatmapId(l.id);
+		const circId = pointCircleId(l.id);
+		if (map.getLayer(heatId)) map.removeLayer(heatId);
+		if (map.getLayer(circId)) map.removeLayer(circId);
+		if (map.getSource(srcId)) map.removeSource(srcId);
+		POINT_SOURCE_IDS.delete(l.id);
+	}
+
+	function setPointLayerOpacity(l: RasterLayerDef, op: number): void {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const heatId = pointHeatmapId(l.id);
+		const circId = pointCircleId(l.id);
+		if (map.getLayer(heatId)) map.setPaintProperty(heatId, 'heatmap-opacity', op);
+		if (map.getLayer(circId)) map.setPaintProperty(circId, 'circle-opacity', op);
+	}
+
+	async function refreshPointLayer(l: RasterLayerDef): Promise<void> {
+		if (!mapInstance || !l.pointSourceUrl) return;
+		const map = mapInstance;
+		const b = map.getBounds();
+		const bbox = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+
+		// Cancel any in-flight viewport fetch so we don't write stale data
+		// after a fast pan. The Effect service doesn't carry an abort surface
+		// (intentionally — we use this AbortController at the page seam).
+		pointFetchInflight?.abort();
+		pointFetchInflight = new AbortController();
+
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OpenAQService;
+				return yield* svc.getSensors(bbox);
+			}).pipe(Effect.provide(OpenAQServiceLive)),
+		);
+		if (exit._tag !== 'Success') {
+			// Soft-fail — keep whatever the previous data was; the proxy returns
+			// degraded:true for missing keys so we won't normally enter here.
+			return;
+		}
+		const fc: OpenAQSensorCollection = exit.value;
+		const src = map.getSource(pointSourceId(l.id));
+		if (src && 'setData' in src && typeof src.setData === 'function') {
+			(src as { setData: (data: OpenAQSensorCollection) => void }).setData(fc);
+		}
+
+		// Toggle heatmap visibility based on density — at < 5 features the
+		// heatmap is visually empty, so show only the circles for clarity.
+		const heatId = pointHeatmapId(l.id);
+		if (map.getLayer(heatId)) {
+			map.setLayoutProperty(heatId, 'visibility', fc.features.length >= 5 ? 'visible' : 'none');
+		}
+	}
+
+	function schedulePointRefresh(): void {
+		if (POINT_SOURCE_IDS.size === 0) return;
+		clearTimeout(pointMoveendDebounce);
+		pointMoveendDebounce = setTimeout(() => {
+			for (const id of POINT_SOURCE_IDS) {
+				const layer = LAYERS.find((l) => l.id === id);
+				if (layer) void refreshPointLayer(layer);
+			}
+		}, 500);
 	}
 
 	function onChange(id: string, partial: Partial<LayerState>): void {
@@ -595,8 +775,12 @@
 		mapInstance.on('moveend', () => {
 			syncCenter();
 			scheduleHashWrite();
+			schedulePointRefresh();
 		});
-		mapInstance.on('zoomend', scheduleHashWrite);
+		mapInstance.on('zoomend', () => {
+			scheduleHashWrite();
+			schedulePointRefresh();
+		});
 
 		// Default the twilight strip open in the browser, while keeping SSR
 		// stable so the client clock owns the initial ephemeris time.
