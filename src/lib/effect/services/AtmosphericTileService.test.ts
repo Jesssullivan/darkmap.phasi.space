@@ -25,12 +25,25 @@ const emptyPng = (): Response =>
 		headers: { 'content-type': 'image/png', 'content-length': '50' },
 	});
 
-const fakeFetcher = (response: Response, capture?: { url?: string }): AtmosphericTileFetcher => ({
+const fakeFetcher = (response: Response | (() => Response), capture?: { url?: string }): AtmosphericTileFetcher => ({
 	fetch: async (url) => {
 		if (capture) capture.url = url;
-		return response;
+		return typeof response === 'function' ? response() : response.clone();
 	},
 });
+
+const sequenceFetcher = (responses: readonly Response[], capture: { urls: string[] }): AtmosphericTileFetcher => {
+	let i = 0;
+	return {
+		fetch: async (url) => {
+			capture.urls.push(url);
+			const response = responses[i];
+			i += 1;
+			if (!response) throw new Error(`unexpected fetch: ${url}`);
+			return response;
+		},
+	};
+};
 
 const failReason = (exit: Exit.Exit<unknown, unknown>): string => {
 	const m = /"reason":"([^"]+)"/.exec(JSON.stringify(exit));
@@ -60,6 +73,7 @@ describe('AtmosphericTileService — happy path', () => {
 		expect(o.cacheControl).toMatch(/max-age=3600|immutable/);
 		expect(o.debugHeaders['x-darkmap-atmospheric-layer']).toBe('clouds-modis-terra');
 		expect(o.debugHeaders['x-darkmap-atmospheric-outcome']).toBe('ok');
+		expect(o.debugHeaders['x-darkmap-atmospheric-status']).toBe('ok');
 	});
 
 	it('clamps a high-zoom request to the layer native zoom', async () => {
@@ -103,13 +117,17 @@ describe('AtmosphericTileService — happy path', () => {
 });
 
 describe('AtmosphericTileService — no-data classification', () => {
-	it('upstream 404 → no-data (204), not 502', async () => {
+	it('upstream 404 → no-data transparent tile, not 502', async () => {
 		const exit = await runFetch(fakeFetcher(status404()));
 		if (exit._tag !== 'Success') throw new Error('expected Success');
 		expect(exit.value.tag).toBe('no-data');
 		if (exit.value.tag !== 'no-data') return;
-		expect(exit.value.status).toBe(204);
+		expect(exit.value.status).toBe(200);
+		expect(exit.value.contentType).toBe('image/png');
+		expect(exit.value.body.byteLength).toBeGreaterThan(0);
 		expect(exit.value.debugHeaders['x-darkmap-atmospheric-outcome']).toBe('no-data');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('no-data');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-upstream-status']).toBe('404');
 	});
 
 	it('upstream 204 → no-data, preserves debug headers', async () => {
@@ -128,6 +146,30 @@ describe('AtmosphericTileService — no-data classification', () => {
 		const exit = await runFetch(fakeFetcher(status404()));
 		if (exit._tag !== 'Success' || exit.value.tag !== 'no-data') throw new Error('expected no-data');
 		expect(exit.value.cacheControl).toContain('max-age=600');
+	});
+
+	it('falls back to previous dates when the default date has no tile yet', async () => {
+		const capture = { urls: [] as string[] };
+		const exit = await runFetch(sequenceFetcher([status404(), okJpeg()], capture));
+		if (exit._tag !== 'Success' || exit.value.tag !== 'ok') throw new Error('expected fallback ok');
+
+		expect(capture.urls).toHaveLength(2);
+		expect(capture.urls[0]).toContain('2026-05-28');
+		expect(capture.urls[1]).toContain('2026-05-27');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-time']).toBe('2026-05-28');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-source-time']).toBe('2026-05-27');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('ok-fallback');
+	});
+
+	it('does not fallback when the caller pins an explicit time', async () => {
+		const capture = { urls: [] as string[] };
+		const exit = await runFetch(sequenceFetcher([status404(), okJpeg()], capture), modisTerra, '2026-05-28');
+		if (exit._tag !== 'Success' || exit.value.tag !== 'no-data') throw new Error('expected pinned no-data');
+
+		expect(capture.urls).toHaveLength(1);
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-time']).toBe('2026-05-28');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-source-time']).toBe('2026-05-28');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('no-data');
 	});
 });
 
