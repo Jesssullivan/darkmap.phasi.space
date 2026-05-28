@@ -13,6 +13,12 @@
 	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
 	import { AtmosphericPointService, AtmosphericPointServiceLive } from '$lib/effect/services/AtmosphericPointService';
 	import { OpenAQService, OpenAQServiceLive, type OpenAQSensorCollection } from '$lib/effect/services/OpenAQService';
+	import {
+		TransmissionEstimator,
+		TransmissionEstimatorLive,
+		type TransmissionCurve,
+	} from '$lib/effect/services/TransmissionEstimator';
+	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
 	// minimal Feature/FeatureCollection structure that MapLibre consumes.
@@ -97,6 +103,50 @@
 
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
 	let readout: Readout | undefined = $state();
+
+	// Transmission widget state (PR-H). Opened via the (i) chevron on any
+	// atmospheric LayerRail row. Inputs derived from the most recent
+	// PointReadout (PWV) + defaults for AOD / Ångström / O₃ / zenith. AOD
+	// pixel sampling lands in a follow-up; PR-H uses a sensible default
+	// (0.15) and shows it in the readout so users know it's not measured.
+	let transmissionOpen = $state(false);
+	let transmissionCurve = $state<TransmissionCurve | undefined>(undefined);
+	let transmissionLoading = $state(false);
+	let transmissionError = $state<string | undefined>(undefined);
+
+	async function refreshTransmission(): Promise<void> {
+		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
+		const input = {
+			pwvMm: pwv,
+			aod550: 0.15,
+			angstrom: 1.4,
+			o3Du: 350,
+			zenithDeg: 30,
+		};
+		transmissionLoading = true;
+		transmissionError = undefined;
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* TransmissionEstimator;
+				return yield* svc.estimate(input);
+			}).pipe(Effect.provide(TransmissionEstimatorLive)),
+		);
+		transmissionLoading = false;
+		if (exit._tag === 'Success') {
+			transmissionCurve = exit.value;
+		} else {
+			transmissionError = 'Transmission LUT unavailable';
+		}
+	}
+
+	function onTransmissionInfo(_layerId: string): void {
+		transmissionOpen = true;
+		void refreshTransmission();
+	}
+
+	function closeTransmission(): void {
+		transmissionOpen = false;
+	}
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
 	// the page-side lifecycle: a toolbar toggle starts watchPosition, drops
@@ -850,7 +900,16 @@
 	basemap={activeBasemap}
 	onbasemapchange={onBasemapChange}
 	time={ephemerisTime}
+	oninfo={onTransmissionInfo}
 />
+{#if transmissionOpen}
+	<TransmissionSheet
+		curve={transmissionCurve}
+		loading={transmissionLoading}
+		error={transmissionError}
+		onclose={closeTransmission}
+	/>
+{/if}
 
 {#if ephemerisOpen}
 	<SkyCompass location={viewCenter} time={ephemerisTime} />
