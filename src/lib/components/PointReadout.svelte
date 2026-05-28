@@ -384,7 +384,7 @@
 	@media (max-width: 820px) {
 		.readout {
 			left: 0.75rem;
-			right: 0.75rem;
+			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem);
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 0.75rem);
 			min-width: 0;
 			max-width: none;

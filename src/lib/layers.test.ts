@@ -76,6 +76,22 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 		{ id: 'water-vapor-airs', tag: 'AIRS_Precipitable_Water_Day' },
 	];
 
+	it('records native GIBS matrix depth so MapLibre overzooms instead of requesting unsupported tiles', () => {
+		const caps = Object.fromEntries(
+			LAYERS.filter((l) => l.group === 'atmospheric' && l.upstreamUrlTemplate).map((l) => [l.id, l.maxNativeZoom]),
+		);
+		expect(caps).toEqual({
+			'aerosol-modis-aod': 6,
+			'clouds-modis-terra': 9,
+			'clouds-viirs-noaa20': 9,
+			'water-vapor-airs': 5,
+		});
+
+		for (const def of LAYERS.filter((l) => l.group === 'atmospheric' && l.upstreamUrlTemplate)) {
+			expect(def.upstreamUrlTemplate).toContain(`GoogleMapsCompatible_Level${def.maxNativeZoom}`);
+		}
+	});
+
 	for (const { id, tag } of PR_D_LAYERS) {
 		it(`${id} is registered with GIBS template + attribution`, () => {
 			const def = LAYERS.find((l) => l.id === id);
@@ -97,6 +113,7 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 		expect(smog?.pointSourceUrl).toBe('/api/atmospheric/openaq');
 		expect(smog?.upstreamUrlTemplate).toBeUndefined();
 		expect(smog?.upstreamLayer).toBeUndefined();
+		expect(smog?.maxNativeZoom).toBeUndefined();
 		expect(smog?.attribution).toMatch(/OpenAQ/i);
 	});
 });

@@ -46,6 +46,12 @@ export interface RasterLayerDef {
 	readonly defaultEnabled: boolean;
 	/** 0..1 opacity in the MapLibre raster source. */
 	readonly opacity: number;
+	/**
+	 * Highest native XYZ/WMTS tile zoom for this source. MapLibre can overzoom
+	 * beyond this level, but must not request higher upstream tile coordinates
+	 * for fixed-depth WMTS matrix sets such as NASA GIBS Level9/6/5.
+	 */
+	readonly maxNativeZoom?: number;
 	/** Attribution chip surfaced in MapLibre's attribution control (required for atmospheric layers). */
 	readonly attribution?: string;
 }
@@ -99,6 +105,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		group: 'atmospheric',
 		defaultEnabled: false,
 		opacity: 0.75,
+		maxNativeZoom: 9,
 		attribution: GIBS_ATTRIBUTION,
 	},
 	{
@@ -110,6 +117,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		group: 'atmospheric',
 		defaultEnabled: false,
 		opacity: 0.75,
+		maxNativeZoom: 9,
 		attribution: GIBS_ATTRIBUTION,
 	},
 	{
@@ -121,6 +129,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		group: 'atmospheric',
 		defaultEnabled: false,
 		opacity: 0.6,
+		maxNativeZoom: 6,
 		attribution: GIBS_ATTRIBUTION,
 	},
 	{
@@ -132,6 +141,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		group: 'atmospheric',
 		defaultEnabled: false,
 		opacity: 0.55,
+		maxNativeZoom: 5,
 		attribution: GIBS_ATTRIBUTION,
 	},
 	{

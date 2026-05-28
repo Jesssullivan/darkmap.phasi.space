@@ -15,10 +15,13 @@ test.describe('Atmospheric transmission widget — V2 live aerosol controls', ()
 		await atmosphereHeader.click();
 
 		const infoBtn = page.getByRole('button', { name: /Clouds \(MODIS Terra\).*transmission sheet/i });
+		const initialLutRequest = page.waitForRequest((req) => req.url().includes('/spectral-lut.json'), {
+			timeout: 10_000,
+		});
 		await infoBtn.click();
 
 		// Initial load — wait for first LUT fetch + dialog render.
-		await page.waitForRequest((req) => req.url().includes('/spectral-lut.json'), { timeout: 10_000 });
+		await initialLutRequest;
 		const dialog = page.getByRole('dialog', { name: /Atmospheric transmission/i });
 		await expect(dialog).toBeVisible();
 

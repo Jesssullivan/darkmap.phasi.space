@@ -28,7 +28,7 @@ test.describe('Atmospheric transmission widget', () => {
 		await expect(page.getByRole('dialog', { name: /Atmospheric transmission/i })).toBeVisible();
 		await expect(page.getByRole('img', { name: /Transmission curve from 0\.3 to 30 µm/i })).toBeVisible();
 		await expect(page.getByText(/Engineering estimate/i)).toBeVisible();
-		await expect(page.getByText(/NASA GIBS/i)).toBeVisible();
+		await expect(page.getByRole('link', { name: /NASA GIBS/i })).toBeVisible();
 
 		// Close button dismisses.
 		await page.getByRole('button', { name: /Close transmission sheet/i }).click();
