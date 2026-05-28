@@ -51,6 +51,7 @@
 		"RBE CAS and action-cache are separate"
 	],
 	"proof_commands": [
+		"just ha-state-candidate-proof --endpoint-package endpoint-package.json --phase baseline --checkpoint-file scratch-proof-baseline.json",
 		"just ha-state-candidate-proof --endpoint-package endpoint-package.json --run-disposable-tofu --use-lockfile",
 		"just ha-state-candidate-proof --endpoint-package endpoint-package.json --keep-scratch-bucket --checkpoint-file <path>"
 	],
