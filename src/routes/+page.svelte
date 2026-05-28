@@ -456,6 +456,7 @@
 					id: l.id,
 					tileUrlTemplate: rasterUrlTemplate(l.id),
 					opacity: layerState[l.id]?.opacity ?? l.opacity,
+					...(l.attribution ? { attribution: l.attribution } : {}),
 				}),
 			),
 		);

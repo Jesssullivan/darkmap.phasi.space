@@ -25,6 +25,8 @@ export interface RasterMount {
 	readonly tileSize?: number;
 	/** When set, the new layer is inserted below this id (default: above all). */
 	readonly beforeId?: string;
+	/** Source attribution surfaced in MapLibre's attribution control (e.g. "Imagery courtesy NASA EOSDIS GIBS"). */
+	readonly attribution?: string;
 }
 
 export class MapLayerError extends Data.TaggedError('MapLayerError')<{
@@ -71,6 +73,7 @@ export const makeMapLayerControllerLive = (map: MapLibreMap): Layer.Layer<MapLay
 								type: 'raster',
 								tiles: [m.tileUrlTemplate],
 								tileSize: m.tileSize ?? 256,
+								...(m.attribution ? { attribution: m.attribution } : {}),
 							});
 						}
 						if (!map.getLayer(lyrId)) {

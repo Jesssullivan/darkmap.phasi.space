@@ -39,7 +39,11 @@ export interface RasterLayerDef {
 	readonly defaultEnabled: boolean;
 	/** 0..1 opacity in the MapLibre raster source. */
 	readonly opacity: number;
+	/** Attribution chip surfaced in MapLibre's attribution control (required for atmospheric layers). */
+	readonly attribution?: string;
 }
+
+const GIBS_ATTRIBUTION = 'Imagery courtesy NASA EOSDIS GIBS';
 
 const viirs = (year: number, defaultEnabled = false): RasterLayerDef => ({
 	id: `viirs_${year}`,
@@ -78,6 +82,17 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		group: 'world_atlas_raw',
 		defaultEnabled: false,
 		opacity: 0.7,
+	},
+	{
+		id: 'clouds-modis-terra',
+		upstreamUrlTemplate:
+			'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{TIME}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg',
+		label: 'Clouds (MODIS Terra)',
+		description: 'NASA GIBS MODIS Terra true-color, 250 m, daily AM pass — clouds, snow, smoke.',
+		group: 'atmospheric',
+		defaultEnabled: false,
+		opacity: 0.75,
+		attribution: GIBS_ATTRIBUTION,
 	},
 ];
 

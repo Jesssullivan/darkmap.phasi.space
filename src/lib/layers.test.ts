@@ -14,8 +14,9 @@ describe('layer manifest — VIIRS annual', () => {
 });
 
 describe('layer manifest — composition', () => {
-	it('LAYERS contains exactly the union of annual + 2 world atlas', () => {
-		expect(LAYERS.length).toBe(VIIRS_YEARS.length + 2);
+	it('LAYERS contains the VIIRS annual union + world atlas pair + atmospheric overlays', () => {
+		const atmospheric = LAYERS.filter((l) => l.group === 'atmospheric').length;
+		expect(LAYERS.length).toBe(VIIRS_YEARS.length + 2 + atmospheric);
 	});
 
 	it('all ids are unique', () => {
@@ -46,10 +47,26 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 	});
 
 	it("rasterUrlTemplate appends '&kind=atmospheric' when the layer is atmospheric", () => {
-		// PR-A intentionally ships no atmospheric LAYERS entries; PR-B wires the
-		// first one (MODIS Terra). Until then, validate the template behaviour by
-		// asserting the existing entries do NOT get the kind hint.
-		const out = rasterUrlTemplate('viirs_2019');
-		expect(out).not.toContain('kind=atmospheric');
+		expect(rasterUrlTemplate('clouds-modis-terra')).toBe(
+			'/api/raster?layer=clouds-modis-terra&z={z}&x={x}&y={y}&kind=atmospheric',
+		);
+	});
+
+	it("rasterUrlTemplate omits the 'kind' hint for non-atmospheric layers", () => {
+		expect(rasterUrlTemplate('viirs_2019')).not.toContain('kind=atmospheric');
+	});
+
+	it('MODIS Terra clouds entry exists with GIBS WMTS template + NASA EOSDIS attribution', () => {
+		const modis = LAYERS.find((l) => l.id === 'clouds-modis-terra');
+		expect(modis).toBeDefined();
+		expect(modis?.group).toBe('atmospheric');
+		expect(modis?.upstreamUrlTemplate).toContain('MODIS_Terra_CorrectedReflectance_TrueColor');
+		expect(modis?.upstreamUrlTemplate).toContain('{TIME}');
+		expect(modis?.upstreamUrlTemplate).toContain('{z}');
+		expect(modis?.upstreamUrlTemplate).toContain('{x}');
+		expect(modis?.upstreamUrlTemplate).toContain('{y}');
+		expect(modis?.attribution).toMatch(/NASA EOSDIS GIBS/);
+		// Atmospheric entries don't carry a GeoServer counterpart.
+		expect(modis?.upstreamLayer).toBeUndefined();
 	});
 });
