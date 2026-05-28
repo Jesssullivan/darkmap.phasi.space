@@ -15,15 +15,34 @@
 	 */
 	import { X } from '@lucide/svelte';
 	import type { TransmissionCurve } from '$lib/effect/services/TransmissionEstimator';
+	import { AEROSOL_TYPES, aerosolEntry, type AerosolType } from '$lib/spectral/aerosol-types';
 
 	interface Props {
 		curve: TransmissionCurve | undefined;
 		loading: boolean;
 		error?: string;
 		onclose: () => void;
+		// V2-D — live-aerosol controls. Parent owns the state; widget emits.
+		aerosolType?: AerosolType | null;
+		aod?: number;
+		angstrom?: number;
+		onAerosolTypeChange?: (value: AerosolType | null) => void;
+		onAodChange?: (value: number) => void;
+		onAngstromChange?: (value: number) => void;
 	}
 
-	let { curve, loading, error, onclose }: Props = $props();
+	let {
+		curve,
+		loading,
+		error,
+		onclose,
+		aerosolType = null,
+		aod = 0.15,
+		angstrom = 1.4,
+		onAerosolTypeChange,
+		onAodChange,
+		onAngstromChange,
+	}: Props = $props();
 
 	const WIDTH = 360;
 	const HEIGHT = 200;
@@ -72,6 +91,61 @@
 	{:else if error}
 		<p class="error">Error: {error}</p>
 	{:else if curve}
+		<!-- V2-D: aerosol picker + live recompute controls. "Off" leaves the
+		LUT-only analytical path active; any other choice switches to live Mie. -->
+		<div class="aerosol-picker" role="radiogroup" aria-label="Aerosol type">
+			<button
+				type="button"
+				class="aerosol-chip"
+				class:active={aerosolType === null}
+				aria-pressed={aerosolType === null}
+				onclick={() => onAerosolTypeChange?.(null)}>Off</button
+			>
+			{#each AEROSOL_TYPES as type (type)}
+				<button
+					type="button"
+					class="aerosol-chip"
+					class:active={aerosolType === type}
+					aria-pressed={aerosolType === type}
+					title={aerosolEntry(type).description}
+					onclick={() => onAerosolTypeChange?.(type)}>{aerosolEntry(type).label.split(' ')[0]}</button
+				>
+			{/each}
+		</div>
+
+		<div class="slider-row">
+			<label>
+				<span class="slider-label">AOD<sub>550</sub></span>
+				<input
+					type="range"
+					min="0"
+					max="2"
+					step="0.05"
+					value={aod}
+					aria-label="AOD550 slider"
+					oninput={(e) => onAodChange?.(Number((e.target as HTMLInputElement).value))}
+				/>
+				<span class="slider-value">{aod.toFixed(2)}</span>
+			</label>
+		</div>
+		<div class="slider-row">
+			<label>
+				<span class="slider-label">Ångström α</span>
+				<input
+					type="range"
+					min="0.3"
+					max="2.5"
+					step="0.1"
+					value={angstrom}
+					disabled={aerosolType !== null}
+					title={aerosolType !== null ? 'Disabled in live-Mie mode (Ångström derived from Mie)' : ''}
+					aria-label="Ångström exponent slider"
+					oninput={(e) => onAngstromChange?.(Number((e.target as HTMLInputElement).value))}
+				/>
+				<span class="slider-value">{angstrom.toFixed(1)}</span>
+			</label>
+		</div>
+
 		<dl class="inputs">
 			<dt>PWV</dt>
 			<dd>{fmt(curve.input.pwvMm, 1)}<span class="unit"> mm</span></dd>
@@ -203,6 +277,71 @@
 		opacity: 0.6;
 		font-size: 0.65rem;
 		margin-left: 0.15rem;
+	}
+	.aerosol-picker {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		margin: 0 0 0.55rem;
+	}
+	.aerosol-chip {
+		font-family: inherit;
+		font-size: 0.66rem;
+		padding: 0.25rem 0.5rem;
+		background: rgba(255, 255, 255, 0.06);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 4px;
+		cursor: pointer;
+	}
+	.aerosol-chip:hover {
+		background: rgba(255, 255, 255, 0.12);
+	}
+	.aerosol-chip.active {
+		background: #ffd166;
+		color: #0a0e16;
+		border-color: #ffd166;
+		font-weight: 600;
+	}
+	.slider-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0 0 0.35rem;
+	}
+	.slider-row label {
+		display: grid;
+		grid-template-columns: 4.5rem 1fr auto;
+		gap: 0.5rem;
+		align-items: center;
+		width: 100%;
+	}
+	.slider-label {
+		font-size: 0.7rem;
+		opacity: 0.75;
+	}
+	.slider-row input[type='range'] {
+		width: 100%;
+		accent-color: #ffd166;
+	}
+	.slider-row input[type='range']:disabled {
+		opacity: 0.35;
+	}
+	.slider-value {
+		font-size: 0.72rem;
+		font-variant-numeric: tabular-nums;
+		color: #ffd166;
+		min-width: 2.5em;
+		text-align: right;
+	}
+	@media (pointer: coarse) {
+		.aerosol-chip {
+			min-height: 2.5rem;
+			padding: 0.4rem 0.6rem;
+		}
+		.slider-row input[type='range'] {
+			min-height: 2.75rem;
+		}
 	}
 	.chart {
 		width: 100%;
