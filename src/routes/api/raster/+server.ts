@@ -161,11 +161,8 @@ const atmosphericResponse = async (
 };
 
 const shapeAtmosphericResponse = (outcome: AtmosphericTileOutcome): Response => {
-	const headers = sanitizeHeaders(new Headers(outcome.tag === 'ok' ? { 'content-type': outcome.contentType } : {}));
+	const headers = sanitizeHeaders(new Headers({ 'content-type': outcome.contentType }));
 	headers.set('cache-control', outcome.cacheControl);
 	for (const [k, v] of Object.entries(outcome.debugHeaders)) headers.set(k, v);
-	if (outcome.tag === 'no-data') {
-		return new Response(null, { status: 204, headers });
-	}
-	return new Response(outcome.body as BodyInit | null, { status: 200, headers });
+	return new Response(outcome.body as BodyInit | null, { status: outcome.status, headers });
 };

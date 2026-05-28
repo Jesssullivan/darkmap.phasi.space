@@ -34,5 +34,34 @@ describe('/api/raster atmospheric proxy', () => {
 		expect(upstreamUrl).toContain('/GoogleMapsCompatible_Level6/6/22/19.png');
 		expect(res.headers.get('x-darkmap-atmospheric-request-tile')).toBe('7/38/45');
 		expect(res.headers.get('x-darkmap-atmospheric-native-tile')).toBe('6/19/22');
+		expect(res.headers.get('x-darkmap-atmospheric-status')).toBe('ok');
+		expect(res.headers.get('x-darkmap-atmospheric-source-time')).toBe('2026-05-27');
+	});
+
+	it('returns a transparent no-data tile for an explicitly missing atmospheric time', async () => {
+		const upstreamUrls: string[] = [];
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			upstreamUrls.push(String(input));
+			return new Response('<ExceptionReport />', {
+				status: 404,
+				headers: { 'content-type': 'text/xml' },
+			});
+		}) as typeof globalThis.fetch;
+
+		const res = await GET(
+			fakeEvent(
+				'https://darkmap.test/api/raster?layer=water-vapor-airs&z=7&x=38&y=45&kind=atmospheric&time=2026-01-01',
+			),
+		);
+
+		expect(res.status).toBe(200);
+		expect(upstreamUrls).toHaveLength(1);
+		expect(res.headers.get('content-type')).toBe('image/png');
+		expect(res.headers.get('cache-control')).toContain('max-age=600');
+		expect(res.headers.get('x-darkmap-atmospheric-time')).toBe('2026-01-01');
+		expect(res.headers.get('x-darkmap-atmospheric-source-time')).toBe('2026-01-01');
+		expect(res.headers.get('x-darkmap-atmospheric-status')).toBe('no-data');
+		expect(res.headers.get('x-darkmap-atmospheric-upstream-status')).toBe('404');
+		expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(0);
 	});
 });

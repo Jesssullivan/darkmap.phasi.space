@@ -19,7 +19,7 @@ import { clampTileToMaxNativeZoom, type TileCoord } from '$lib/server/raster/Til
  *   4. Fetch the upstream URL.
  *   5. Classify the response:
  *        - 200 with non-empty body → `ok`
- *        - 204 or empty body (< 200 bytes) → `no-data` (degraded, cacheable)
+ *        - 204 or empty body (< 200 bytes) → transparent `no-data` tile
  *        - 404 → `no-data` (the WMTS legitimately doesn't have this tile)
  *        - Other non-2xx → `AtmosphericTileError`
  *   6. Emit cache + debug headers so the route handler can shape the
@@ -41,7 +41,9 @@ export type AtmosphericTileOutcome =
 	  }
 	| {
 			readonly tag: 'no-data';
-			readonly status: 204;
+			readonly status: 200;
+			readonly body: Uint8Array;
+			readonly contentType: string;
 			readonly cacheControl: string;
 			readonly debugHeaders: Readonly<Record<string, string>>;
 	  };
@@ -74,52 +76,96 @@ const EMPTY_THRESHOLD_BYTES = 200; // GIBS empty-PNG tiles are <100 bytes; pad.
 const NO_DATA_CACHE = 'public, max-age=600, s-maxage=3600';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const FRESH_CACHE = 'public, max-age=3600, s-maxage=86400';
+const DAY_MS = 24 * 3600 * 1000;
+const TRANSPARENT_PNG = Uint8Array.from([
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+	0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49,
+	0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00, 0xef, 0xbf, 0xa7, 0xdb, 0x00,
+	0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+type AtmosphericTileStatus = 'ok' | 'ok-fallback' | 'no-data';
 
 const debugHeadersFor = (
 	layerDef: RasterLayerDef,
 	requestTile: TileCoord,
 	nativeTile: TileCoord,
-	effectiveTime: string,
+	requestedTime: string,
+	sourceTime: string,
 	outcome: 'ok' | 'no-data',
-): Record<string, string> => ({
-	'x-darkmap-atmospheric-layer': layerDef.id,
-	'x-darkmap-atmospheric-request-tile': `${requestTile.z}/${requestTile.x}/${requestTile.y}`,
-	'x-darkmap-atmospheric-native-tile': `${nativeTile.z}/${nativeTile.x}/${nativeTile.y}`,
-	'x-darkmap-atmospheric-time': effectiveTime,
-	'x-darkmap-atmospheric-outcome': outcome,
-});
+	status: AtmosphericTileStatus,
+	upstreamStatus?: number,
+): Record<string, string> => {
+	const headers: Record<string, string> = {
+		'x-darkmap-atmospheric-layer': layerDef.id,
+		'x-darkmap-atmospheric-request-tile': `${requestTile.z}/${requestTile.x}/${requestTile.y}`,
+		'x-darkmap-atmospheric-native-tile': `${nativeTile.z}/${nativeTile.x}/${nativeTile.y}`,
+		'x-darkmap-atmospheric-time': requestedTime,
+		'x-darkmap-atmospheric-source-time': sourceTime,
+		'x-darkmap-atmospheric-outcome': outcome,
+		'x-darkmap-atmospheric-status': status,
+	};
+	if (upstreamStatus !== undefined) {
+		headers['x-darkmap-atmospheric-upstream-status'] = String(upstreamStatus);
+	}
+	return headers;
+};
 
 const isEmptyImageResponse = async (
 	upstream: Response,
 ): Promise<{ readonly empty: boolean; readonly body: ReadableStream<Uint8Array> | null }> => {
 	if (upstream.status === 204) return { empty: true, body: null };
-	const contentLength = Number(upstream.headers.get('content-length'));
-	if (Number.isFinite(contentLength) && contentLength > 0 && contentLength < EMPTY_THRESHOLD_BYTES) {
-		// Drain so the upstream connection can close cleanly.
-		await upstream.arrayBuffer();
-		return { empty: true, body: null };
+	const contentLengthHeader = upstream.headers.get('content-length');
+	if (contentLengthHeader !== null) {
+		const contentLength = Number(contentLengthHeader);
+		if (Number.isFinite(contentLength) && contentLength < EMPTY_THRESHOLD_BYTES) {
+			// Drain so the upstream connection can close cleanly.
+			await upstream.arrayBuffer();
+			return { empty: true, body: null };
+		}
 	}
 	return { empty: false, body: upstream.body };
 };
 
-const computeUrl = (
+interface AtmosphericTileAttempt {
+	readonly url: string;
+	readonly nativeTile: TileCoord;
+	readonly requestedTime: string;
+	readonly sourceTime: string;
+}
+
+interface AtmosphericNoDataObservation {
+	readonly sourceTime: string;
+	readonly upstreamStatus: number;
+}
+
+const computeAttempts = (
 	layerDef: RasterLayerDef,
 	cap: AtmosphericCapability,
 	requestTile: TileCoord,
 	timeInput: string | undefined,
 	now: Date,
-): { readonly url: string; readonly nativeTile: TileCoord; readonly effectiveTime: string } | undefined => {
+): readonly AtmosphericTileAttempt[] | undefined => {
 	if (!isAtmosphericLayer(layerDef)) return undefined;
 	const nativeTile = clampTileToMaxNativeZoom(requestTile, cap.maxNativeZoom);
-	const effectiveTime = timeInput ?? defaultTimeForCapability(cap, now);
-	const url = expandAtmosphericUrl(
-		layerDef.upstreamUrlTemplate,
-		nativeTile.z,
-		nativeTile.x,
-		nativeTile.y,
-		effectiveTime,
-	);
-	return { url, nativeTile, effectiveTime };
+	const explicitTime = timeInput && timeInput.length > 0 ? timeInput : undefined;
+	const requestedTime = explicitTime ?? defaultTimeForCapability(cap, now);
+	const sourceTimes =
+		explicitTime || cap.dateCadence === 'static' || requestedTime === 'default'
+			? [requestedTime]
+			: [requestedTime, addDays(requestedTime, -1), addDays(requestedTime, -2)];
+	return sourceTimes.map((sourceTime) => ({
+		url: expandAtmosphericUrl(layerDef.upstreamUrlTemplate, nativeTile.z, nativeTile.x, nativeTile.y, sourceTime),
+		nativeTile,
+		requestedTime,
+		sourceTime,
+	}));
+};
+
+const addDays = (date: string, days: number): string => {
+	const parsed = Date.parse(`${date}T00:00:00.000Z`);
+	if (!Number.isFinite(parsed)) return date;
+	return new Date(parsed + days * DAY_MS).toISOString().slice(0, 10);
 };
 
 export const makeAtmosphericTileServiceLive = (
@@ -133,55 +179,78 @@ export const makeAtmosphericTileServiceLive = (
 				if (!cap) {
 					return yield* Effect.fail(new AtmosphericTileError({ reason: 'no-capability' }));
 				}
-				const expanded = computeUrl(req.layerDef, cap, req.tile, req.time, clock());
-				if (!expanded) {
+				const attempts = computeAttempts(req.layerDef, cap, req.tile, req.time, clock());
+				if (!attempts || attempts.length === 0) {
 					return yield* Effect.fail(new AtmosphericTileError({ reason: 'no-template' }));
 				}
-				const { url, nativeTile, effectiveTime } = expanded;
 
-				let upstream: Response;
-				try {
-					upstream = yield* Effect.tryPromise({
-						try: () => fetcher.fetch(url),
-						catch: (cause) => new AtmosphericTileError({ reason: 'fetch-failed', cause }),
-					});
-				} catch (cause) {
-					return yield* Effect.fail(new AtmosphericTileError({ reason: 'fetch-failed', cause }));
-				}
+				let lastNoData: AtmosphericNoDataObservation | undefined;
+				for (const attempt of attempts) {
+					const { url, nativeTile, requestedTime, sourceTime } = attempt;
+					let upstream: Response;
+					try {
+						upstream = yield* Effect.tryPromise({
+							try: () => fetcher.fetch(url),
+							catch: (cause) => new AtmosphericTileError({ reason: 'fetch-failed', cause }),
+						});
+					} catch (cause) {
+						return yield* Effect.fail(new AtmosphericTileError({ reason: 'fetch-failed', cause }));
+					}
 
-				// 404 from GIBS is a legitimate "no tile for this (z,x,y,time)"
-				// — surface as 204 no-data, not 502. Other non-2xx is structural.
-				if (upstream.status === 404) {
+					// 404 from GIBS is a legitimate "no tile for this (z,x,y,time)"
+					// — try older default dates before surfacing no-data. Other
+					// non-2xx statuses remain structural upstream failures.
+					if (upstream.status === 404) {
+						lastNoData = { sourceTime, upstreamStatus: upstream.status };
+						continue;
+					}
+					if (!upstream.ok && upstream.status !== 204) {
+						return yield* Effect.fail(new AtmosphericTileError({ reason: 'upstream-error', status: upstream.status }));
+					}
+
+					const { empty, body } = yield* Effect.promise(() => isEmptyImageResponse(upstream));
+					if (empty) {
+						lastNoData = { sourceTime, upstreamStatus: upstream.status };
+						continue;
+					}
+
+					const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
+					const cacheControl = isImmutableTime(sourceTime, clock()) ? IMMUTABLE_CACHE : FRESH_CACHE;
 					return {
-						tag: 'no-data',
-						status: 204,
-						cacheControl: NO_DATA_CACHE,
-						debugHeaders: debugHeadersFor(req.layerDef, req.tile, nativeTile, effectiveTime, 'no-data'),
+						tag: 'ok',
+						status: 200,
+						body,
+						contentType,
+						cacheControl,
+						debugHeaders: debugHeadersFor(
+							req.layerDef,
+							req.tile,
+							nativeTile,
+							requestedTime,
+							sourceTime,
+							'ok',
+							sourceTime === requestedTime ? 'ok' : 'ok-fallback',
+						),
 					} as const;
 				}
-				if (!upstream.ok && upstream.status !== 204) {
-					return yield* Effect.fail(new AtmosphericTileError({ reason: 'upstream-error', status: upstream.status }));
-				}
 
-				const { empty, body } = yield* Effect.promise(() => isEmptyImageResponse(upstream));
-				if (empty) {
-					return {
-						tag: 'no-data',
-						status: 204,
-						cacheControl: NO_DATA_CACHE,
-						debugHeaders: debugHeadersFor(req.layerDef, req.tile, nativeTile, effectiveTime, 'no-data'),
-					} as const;
-				}
-
-				const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
-				const cacheControl = isImmutableTime(effectiveTime, clock()) ? IMMUTABLE_CACHE : FRESH_CACHE;
+				const lastAttempt = attempts[attempts.length - 1];
 				return {
-					tag: 'ok',
+					tag: 'no-data',
 					status: 200,
-					body,
-					contentType,
-					cacheControl,
-					debugHeaders: debugHeadersFor(req.layerDef, req.tile, nativeTile, effectiveTime, 'ok'),
+					body: TRANSPARENT_PNG,
+					contentType: 'image/png',
+					cacheControl: NO_DATA_CACHE,
+					debugHeaders: debugHeadersFor(
+						req.layerDef,
+						req.tile,
+						lastAttempt.nativeTile,
+						lastAttempt.requestedTime,
+						lastNoData?.sourceTime ?? lastAttempt.sourceTime,
+						'no-data',
+						'no-data',
+						lastNoData?.upstreamStatus,
+					),
 				} as const;
 			}),
 	});
