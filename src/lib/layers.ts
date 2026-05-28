@@ -94,6 +94,39 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		opacity: 0.75,
 		attribution: GIBS_ATTRIBUTION,
 	},
+	{
+		id: 'clouds-viirs-noaa20',
+		upstreamUrlTemplate:
+			'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/{TIME}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg',
+		label: 'Clouds (VIIRS NOAA-20)',
+		description: 'NASA GIBS VIIRS NOAA-20 true-color, 375 m, daily PM pass — pairs with MODIS Terra (AM).',
+		group: 'atmospheric',
+		defaultEnabled: false,
+		opacity: 0.75,
+		attribution: GIBS_ATTRIBUTION,
+	},
+	{
+		id: 'aerosol-modis-aod',
+		upstreamUrlTemplate:
+			'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Combined_Value_Added_AOD/default/{TIME}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png',
+		label: 'Aerosol AOD (MODIS)',
+		description: 'NASA GIBS MODIS Combined Aerosol Optical Depth @ 550 nm, 2 km, daily — smoke / dust / urban haze.',
+		group: 'atmospheric',
+		defaultEnabled: false,
+		opacity: 0.6,
+		attribution: GIBS_ATTRIBUTION,
+	},
+	{
+		id: 'water-vapor-airs',
+		upstreamUrlTemplate:
+			'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/AIRS_Precipitable_Water_Day/default/{TIME}/GoogleMapsCompatible_Level5/{z}/{y}/{x}.png',
+		label: 'Water vapor (AIRS)',
+		description: 'NASA GIBS AIRS daytime precipitable water column, ~45 km, daily — total atmospheric H₂O burden.',
+		group: 'atmospheric',
+		defaultEnabled: false,
+		opacity: 0.55,
+		attribution: GIBS_ATTRIBUTION,
+	},
 ];
 
 /**
