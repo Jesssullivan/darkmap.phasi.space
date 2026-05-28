@@ -1,19 +1,23 @@
 <script lang="ts">
 	/**
 	 * HelpTooltip — convenience wrapper around Skeleton 4.15.2's
-	 * Zag-backed Tooltip primitive for our map-overlay readouts.
+	 * Zag-backed Popover primitive for our map-overlay readouts.
 	 *
-	 * Lets a chip render rich, screen-reader-friendly help on hover or
-	 * focus without each consumer wiring `Tooltip` /
-	 * `Tooltip.Trigger` / `Tooltip.Positioner` / `Tooltip.Content`
-	 * by hand. The trigger slot is the visible chip; the content slot
-	 * (or `text` prop for one-liners) shows in the floating panel.
+	 * Was built on `Tooltip` originally, but the Zag tooltip machine is
+	 * hover/focus driven and dismisses on `pointerdown`, so a touch tap
+	 * on the trigger opens and immediately re-closes the panel. Mobile
+	 * users could not read the help text. Migrated to `Popover`, whose
+	 * Zag machine is click/tap driven with `closeOnInteractOutside` +
+	 * `closeOnEscape`, exactly matching the "touch-friendly Skeleton
+	 * popover" promise in issue #197.
 	 *
-	 * For rich help (formula, links, multi-line) use the `content`
-	 * snippet. For a single string, set `text="…"` instead.
+	 * Public API is unchanged: callers still pass `text` or a `content`
+	 * snippet plus a `trigger` snippet. The component name is kept for
+	 * call-site stability — renaming the wrapper would churn dozens of
+	 * imports across the map UI for zero behavior delta.
 	 */
 
-	import { Tooltip } from '@skeletonlabs/skeleton-svelte';
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -26,20 +30,20 @@
 	let { text, positioning = 'top', trigger, content }: Props = $props();
 </script>
 
-<Tooltip positioning={{ placement: positioning }} openDelay={200} closeDelay={120}>
-	<Tooltip.Trigger class="help-tooltip-trigger">
+<Popover positioning={{ placement: positioning }}>
+	<Popover.Trigger class="help-tooltip-trigger" aria-label="Show help">
 		{@render trigger()}
-	</Tooltip.Trigger>
-	<Tooltip.Positioner>
-		<Tooltip.Content class="help-tooltip-content">
+	</Popover.Trigger>
+	<Popover.Positioner>
+		<Popover.Content class="help-tooltip-content">
 			{#if content}
 				{@render content()}
 			{:else if text}
 				{text}
 			{/if}
-		</Tooltip.Content>
-	</Tooltip.Positioner>
-</Tooltip>
+		</Popover.Content>
+	</Popover.Positioner>
+</Popover>
 
 <style>
 	:global(.help-tooltip-trigger) {
@@ -51,7 +55,8 @@
 		color: inherit;
 		font: inherit;
 		padding: 0;
-		cursor: help;
+		/* Click/tap-activated now, so a pointer cursor is the correct hint. */
+		cursor: pointer;
 	}
 	:global(.help-tooltip-content) {
 		background: rgba(8, 10, 16, 0.95);
