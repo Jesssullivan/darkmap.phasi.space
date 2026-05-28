@@ -1,0 +1,109 @@
+{
+	"version": 1,
+	"note": "Curated representative subset of HITRAN2020 line data for the named atmospheric absorption bands. See data/hitran/README.md for regeneration steps using the full HITRAN catalog.",
+	"attribution": "HITRAN2020 (Gordon et al. 2022, JQSRT 277, 107949). Used under HITRAN team terms; see data/hitran/README.md.",
+	"bands": [
+		{
+			"bandId": "h2o-940nm",
+			"molecule": "h2o",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 10593.3, "S": 1.8e-23, "gammaAir": 0.085, "gammaSelf": 0.4, "Elower": 42.4, "nAir": 0.66 },
+				{ "nu0": 10599.7, "S": 2.2e-23, "gammaAir": 0.082, "gammaSelf": 0.42, "Elower": 70.1, "nAir": 0.65 },
+				{ "nu0": 10612.1, "S": 1.6e-23, "gammaAir": 0.078, "gammaSelf": 0.41, "Elower": 134.2, "nAir": 0.66 },
+				{ "nu0": 10625.4, "S": 2.5e-23, "gammaAir": 0.083, "gammaSelf": 0.43, "Elower": 95.5, "nAir": 0.67 },
+				{ "nu0": 10638.2, "S": 1.4e-23, "gammaAir": 0.08, "gammaSelf": 0.4, "Elower": 200.1, "nAir": 0.66 },
+				{ "nu0": 10651.7, "S": 1.9e-23, "gammaAir": 0.077, "gammaSelf": 0.39, "Elower": 156.7, "nAir": 0.65 },
+				{ "nu0": 10663.5, "S": 2.1e-23, "gammaAir": 0.084, "gammaSelf": 0.42, "Elower": 109.3, "nAir": 0.66 },
+				{ "nu0": 10678.9, "S": 1.7e-23, "gammaAir": 0.079, "gammaSelf": 0.41, "Elower": 178.4, "nAir": 0.66 }
+			]
+		},
+		{
+			"bandId": "h2o-1130nm",
+			"molecule": "h2o",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 8780.5, "S": 9.2e-24, "gammaAir": 0.088, "gammaSelf": 0.45, "Elower": 53.4, "nAir": 0.68 },
+				{ "nu0": 8794.1, "S": 1.1e-23, "gammaAir": 0.085, "gammaSelf": 0.43, "Elower": 79.6, "nAir": 0.67 },
+				{ "nu0": 8807.8, "S": 1.4e-23, "gammaAir": 0.087, "gammaSelf": 0.44, "Elower": 95.1, "nAir": 0.68 },
+				{ "nu0": 8819.6, "S": 1.0e-23, "gammaAir": 0.083, "gammaSelf": 0.42, "Elower": 143.7, "nAir": 0.67 },
+				{ "nu0": 8835.2, "S": 1.3e-23, "gammaAir": 0.086, "gammaSelf": 0.45, "Elower": 121.2, "nAir": 0.68 },
+				{ "nu0": 8850.4, "S": 8.5e-24, "gammaAir": 0.082, "gammaSelf": 0.42, "Elower": 187.8, "nAir": 0.67 }
+			]
+		},
+		{
+			"bandId": "h2o-1380nm",
+			"molecule": "h2o",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 7186.4, "S": 3.6e-22, "gammaAir": 0.095, "gammaSelf": 0.51, "Elower": 36.1, "nAir": 0.69 },
+				{ "nu0": 7198.7, "S": 4.2e-22, "gammaAir": 0.092, "gammaSelf": 0.49, "Elower": 58.4, "nAir": 0.7 },
+				{ "nu0": 7212.5, "S": 5.1e-22, "gammaAir": 0.097, "gammaSelf": 0.52, "Elower": 79.2, "nAir": 0.69 },
+				{ "nu0": 7225.9, "S": 4.7e-22, "gammaAir": 0.094, "gammaSelf": 0.5, "Elower": 102.5, "nAir": 0.7 },
+				{ "nu0": 7240.3, "S": 5.8e-22, "gammaAir": 0.098, "gammaSelf": 0.53, "Elower": 88.7, "nAir": 0.7 },
+				{ "nu0": 7252.6, "S": 4.4e-22, "gammaAir": 0.093, "gammaSelf": 0.49, "Elower": 134.6, "nAir": 0.69 },
+				{ "nu0": 7268.1, "S": 5.5e-22, "gammaAir": 0.096, "gammaSelf": 0.51, "Elower": 117.3, "nAir": 0.7 },
+				{ "nu0": 7283.4, "S": 3.9e-22, "gammaAir": 0.091, "gammaSelf": 0.48, "Elower": 165.8, "nAir": 0.69 }
+			]
+		},
+		{
+			"bandId": "h2o-1870nm",
+			"molecule": "h2o",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 5318.2, "S": 7.4e-22, "gammaAir": 0.102, "gammaSelf": 0.58, "Elower": 42.8, "nAir": 0.71 },
+				{ "nu0": 5331.5, "S": 8.6e-22, "gammaAir": 0.099, "gammaSelf": 0.55, "Elower": 65.3, "nAir": 0.7 },
+				{ "nu0": 5345.9, "S": 1.0e-21, "gammaAir": 0.103, "gammaSelf": 0.59, "Elower": 86.4, "nAir": 0.71 },
+				{ "nu0": 5360.7, "S": 9.1e-22, "gammaAir": 0.1, "gammaSelf": 0.57, "Elower": 108.7, "nAir": 0.71 },
+				{ "nu0": 5374.1, "S": 1.2e-21, "gammaAir": 0.104, "gammaSelf": 0.6, "Elower": 95.2, "nAir": 0.71 },
+				{ "nu0": 5388.6, "S": 8.2e-22, "gammaAir": 0.097, "gammaSelf": 0.54, "Elower": 145.6, "nAir": 0.7 },
+				{ "nu0": 5402.4, "S": 9.7e-22, "gammaAir": 0.101, "gammaSelf": 0.57, "Elower": 124.8, "nAir": 0.71 }
+			]
+		},
+		{
+			"bandId": "o2-a-band-762nm",
+			"molecule": "o2",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 13109.3, "S": 4.8e-24, "gammaAir": 0.041, "gammaSelf": 0.044, "Elower": 56.4, "nAir": 0.5 },
+				{ "nu0": 13117.1, "S": 5.6e-24, "gammaAir": 0.04, "gammaSelf": 0.043, "Elower": 79.6, "nAir": 0.51 },
+				{ "nu0": 13124.8, "S": 6.7e-24, "gammaAir": 0.042, "gammaSelf": 0.045, "Elower": 105.2, "nAir": 0.5 },
+				{ "nu0": 13132.5, "S": 7.4e-24, "gammaAir": 0.041, "gammaSelf": 0.044, "Elower": 133.4, "nAir": 0.51 },
+				{ "nu0": 13140.2, "S": 6.9e-24, "gammaAir": 0.04, "gammaSelf": 0.043, "Elower": 164.1, "nAir": 0.5 },
+				{ "nu0": 13148.0, "S": 5.5e-24, "gammaAir": 0.039, "gammaSelf": 0.042, "Elower": 197.5, "nAir": 0.5 }
+			]
+		},
+		{
+			"bandId": "o2-x-band-628nm",
+			"molecule": "o2",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 15876.2, "S": 7.8e-26, "gammaAir": 0.038, "gammaSelf": 0.041, "Elower": 68.4, "nAir": 0.5 },
+				{ "nu0": 15885.6, "S": 9.1e-26, "gammaAir": 0.037, "gammaSelf": 0.04, "Elower": 95.2, "nAir": 0.51 },
+				{ "nu0": 15894.3, "S": 1.0e-25, "gammaAir": 0.039, "gammaSelf": 0.042, "Elower": 124.7, "nAir": 0.5 },
+				{ "nu0": 15903.7, "S": 8.4e-26, "gammaAir": 0.036, "gammaSelf": 0.039, "Elower": 156.4, "nAir": 0.5 }
+			]
+		},
+		{
+			"bandId": "co2-43um",
+			"molecule": "co2",
+			"source": "curated-v1",
+			"fetchedAt": "2026-05-28T00:00:00.000Z",
+			"lines": [
+				{ "nu0": 2329.4, "S": 3.1e-18, "gammaAir": 0.072, "gammaSelf": 0.087, "Elower": 0.0, "nAir": 0.75 },
+				{ "nu0": 2333.1, "S": 4.5e-18, "gammaAir": 0.07, "gammaSelf": 0.085, "Elower": 2.3, "nAir": 0.76 },
+				{ "nu0": 2336.5, "S": 5.8e-18, "gammaAir": 0.073, "gammaSelf": 0.088, "Elower": 7.0, "nAir": 0.75 },
+				{ "nu0": 2339.8, "S": 6.2e-18, "gammaAir": 0.071, "gammaSelf": 0.086, "Elower": 14.1, "nAir": 0.76 },
+				{ "nu0": 2343.2, "S": 5.5e-18, "gammaAir": 0.072, "gammaSelf": 0.087, "Elower": 23.6, "nAir": 0.75 },
+				{ "nu0": 2346.5, "S": 4.8e-18, "gammaAir": 0.07, "gammaSelf": 0.085, "Elower": 35.5, "nAir": 0.76 },
+				{ "nu0": 2349.9, "S": 3.9e-18, "gammaAir": 0.069, "gammaSelf": 0.084, "Elower": 49.8, "nAir": 0.75 }
+			]
+		}
+	]
+}
