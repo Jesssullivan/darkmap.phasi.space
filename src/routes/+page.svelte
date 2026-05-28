@@ -22,6 +22,7 @@
 	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
+	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -827,28 +828,24 @@
 		});
 	}
 
-	const BASEMAP_SOURCE_ID = 'darkmap-basemap-src';
-	const BASEMAP_LAYER_ID = 'darkmap-basemap-lyr';
-
-	function applyBasemap(map: import('maplibre-gl').Map, id: string): void {
+	function applyBasemapLive(map: import('maplibre-gl').Map, id: string): void {
 		const bm = basemapById(id);
-		if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
-		if (map.getSource(BASEMAP_SOURCE_ID)) map.removeSource(BASEMAP_SOURCE_ID);
-		map.addSource(BASEMAP_SOURCE_ID, {
-			type: 'raster',
-			tiles: [...bm.tiles],
-			tileSize: 256,
+		const elapsed = applyBasemapTimed(map, {
+			tiles: bm.tiles,
 			attribution: bm.attribution,
-			maxzoom: bm.maxZoom,
+			maxZoom: bm.maxZoom,
 		});
-		const firstOverlay = LAYERS.map((l) => `darkmap-${l.id}-lyr`).find((id) => map.getLayer(id));
-		map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstOverlay);
+		// Mobile basemap-swap budget (#198). Anything over this hints at
+		// jank — surface to dev console so QA can chase regressions.
+		if (elapsed > 16) {
+			console.debug(`basemap swap → ${id} took ${elapsed.toFixed(1)} ms`);
+		}
 	}
 
 	function onBasemapChange(id: string): void {
 		if (id === activeBasemap || !BASEMAPS.some((b) => b.id === id)) return;
 		activeBasemap = id;
-		if (mapInstance) applyBasemap(mapInstance, id);
+		if (mapInstance) applyBasemapLive(mapInstance, id);
 		scheduleHashWrite();
 	}
 
