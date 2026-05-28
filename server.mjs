@@ -13,7 +13,7 @@ const host = process.env.HOST ?? '0.0.0.0';
 const port = Number(process.env.PORT ?? '3000');
 
 const serviceWorkerHeaders = {
-	'cache-control': 'no-cache, must-revalidate',
+	'cache-control': 'no-store, no-cache, max-age=0, must-revalidate',
 	'content-type': 'text/javascript; charset=utf-8',
 	'service-worker-allowed': '/',
 };
