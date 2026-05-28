@@ -12,8 +12,9 @@ targets the active `tofu-state` bucket or protected darkmap state keys.
 
 ## What The Harness Proves
 
-`just ha-state-candidate-proof` currently runs the #142 scratch S3 phase only.
-It performs these operations against the package's `scratch_bucket`:
+`just ha-state-candidate-proof` without `--run-disposable-tofu` runs the #142
+scratch S3 phase. It performs these operations against the package's
+`scratch_bucket`:
 
 - list buckets and confirm the scratch bucket is visible
 - head the scratch bucket
@@ -65,6 +66,9 @@ just ha-state-candidate-proof \
   --phase baseline \
   --checkpoint-file scratch-proof-baseline.json
 ```
+
+The disposable OpenTofu proof is tracked separately in
+[`HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md`](./HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md).
 
 Repeat after endpoint restart or managed maintenance:
 

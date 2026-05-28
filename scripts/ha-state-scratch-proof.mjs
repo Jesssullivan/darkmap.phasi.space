@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -14,14 +15,20 @@ import {
 
 const OPTIONAL_SESSION_TOKEN_ENV = 'TOFU_HA_STATE_SESSION_TOKEN';
 const DEFAULT_PHASE = 'baseline';
+const DISPOSABLE_TOFU_PREFIX = 'darkmap-ha-state-proof/disposable-tofu';
 const PROTECTED_BUCKETS = new Set(['tofu-state']);
 const PROTECTED_KEY_TERMS = ['terraform.tfstate', 'spokes/darkmap', 'darkmap-tinyland-dev'];
+const PROTECTED_DISPOSABLE_KEY_TERMS = ['spokes/darkmap', 'darkmap-tinyland-dev'];
+const TOFU_ACCESS_ENV = ['AWS', 'ACCESS', 'KEY', 'ID'].join('_');
+const TOFU_SIGNING_ENV = ['AWS', 'SECRET', 'ACCESS', 'KEY'].join('_');
+const TOFU_SESSION_ENV = ['AWS', 'SESSION', 'TOKEN'].join('_');
 
 class ProofError extends Error {}
 
 const usage = () => {
 	console.error(`usage:
   node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> [--phase <name>] [--checkpoint-file <path>]
+  node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --run-disposable-tofu --use-lockfile [--phase <name>] [--checkpoint-file <path>]
   node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --dry-run
   node ${basename(fileURLToPath(import.meta.url))} --self-test
 
@@ -84,10 +91,8 @@ const parseArgs = (argv) => {
 	if (!/^[a-z0-9][a-z0-9._-]*$/i.test(parsed.phase)) {
 		throw new ProofError('--phase must be an alphanumeric label with optional dot, underscore, or dash');
 	}
-	if (parsed.runDisposableTofu) {
-		throw new ProofError(
-			'--run-disposable-tofu is tracked by #144; run the #142 scratch S3 proof without that flag first',
-		);
+	if (parsed.runDisposableTofu && !parsed.useLockfile) {
+		throw new ProofError('--run-disposable-tofu requires --use-lockfile for the #144 lockfile proof');
 	}
 	return parsed;
 };
@@ -197,6 +202,21 @@ const rejectUnsafeScratchTarget = (bucket, key) => {
 	}
 };
 
+const rejectUnsafeDisposableTarget = (bucket, key) => {
+	if (PROTECTED_BUCKETS.has(bucket)) {
+		throw new ProofError(`disposable backend bucket must not be protected bucket ${bucket}`);
+	}
+	if (!key.startsWith(`${DISPOSABLE_TOFU_PREFIX}/`) || !key.endsWith('/terraform.tfstate')) {
+		throw new ProofError(`disposable backend key must stay under ${DISPOSABLE_TOFU_PREFIX}/.../terraform.tfstate`);
+	}
+	const target = `${bucket}/${key}`.toLowerCase();
+	for (const term of PROTECTED_DISPOSABLE_KEY_TERMS) {
+		if (target.includes(term)) {
+			throw new ProofError(`disposable backend key must not include protected state term ${term}`);
+		}
+	}
+};
+
 const resolveRuntimeConfig = (pkg, env, { requireCredentials }) => {
 	const injection = pkg.credential_injection;
 	const endpointUrl = env[injection.endpoint_env] || pkg.endpoint_url;
@@ -242,6 +262,31 @@ const writeCheckpoint = (path, checkpoint) => {
 		return;
 	}
 	writeFileSync(path, `${JSON.stringify(checkpoint, null, 2)}\n`);
+};
+
+const recordCommand = (checkpoint, name, result, ok = result.status === 0) => {
+	checkpoint.steps.push({
+		name,
+		ok,
+		exit_code: result.status,
+		signal: result.signal,
+	});
+};
+
+const runTofuCommand = ({ args, cwd, env, expectedExitCodes = [0], name }) => {
+	const result = spawnSync('tofu', args, {
+		cwd,
+		encoding: 'utf8',
+		env,
+		maxBuffer: 2 * 1024 * 1024,
+	});
+	if (result.error) {
+		throw new ProofError(`${name} failed to start: ${result.error.message}`);
+	}
+	if (!expectedExitCodes.includes(result.status)) {
+		throw new ProofError(`${name} failed with exit code ${result.status}`);
+	}
+	return result;
 };
 
 const runScratchProof = async ({ args, packagePath, pkg }) => {
@@ -357,6 +402,283 @@ const runScratchProof = async ({ args, packagePath, pkg }) => {
 	}
 };
 
+const hclString = (value) => JSON.stringify(value);
+
+const renderDisposableBackendConfig = ({
+	config,
+	pkg,
+	stateKey,
+	useLockfile,
+}) => `bucket                      = ${hclString(pkg.scratch_bucket)}
+key                         = ${hclString(stateKey)}
+region                      = ${hclString(config.region)}
+endpoint                    = ${hclString(config.endpointUrl)}
+use_path_style              = true
+skip_credentials_validation = true
+skip_region_validation      = true
+skip_metadata_api_check     = true
+skip_requesting_account_id  = true
+skip_s3_checksum            = true
+use_lockfile                = ${useLockfile ? 'true' : 'false'}
+`;
+
+const disposableMainTf = `terraform {
+  required_version = ">= 1.6.0"
+  backend "s3" {}
+}
+
+variable "proof_nonce" {
+  type = string
+}
+
+variable "proof_phase" {
+  type = string
+}
+
+output "proof_nonce" {
+  value = var.proof_nonce
+}
+
+output "proof_phase" {
+  value = var.proof_phase
+}
+
+output "proof_stack" {
+  value = "darkmap-ha-state-disposable"
+}
+`;
+
+const disposableCheckpointBase = ({ args, packagePath, pkg, stateKey }) => ({
+	checkpoint_schema: 'darkmap.ha_state_disposable_tofu_proof.v1',
+	issue: 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/144',
+	package_name: pkg.name,
+	package_path: packagePath,
+	phase: args.phase,
+	scratch_bucket: pkg.scratch_bucket,
+	started_at: new Date().toISOString(),
+	steps: [],
+	state_key: stateKey,
+	use_lockfile_requested: args.useLockfile,
+});
+
+const makeDisposableTofuEnv = (config, dataDir) => {
+	const env = {
+		...process.env,
+		[TOFU_ACCESS_ENV]: config.accessId,
+		[TOFU_SIGNING_ENV]: config.signingMaterial,
+		TF_DATA_DIR: dataDir,
+	};
+	if (config.sessionToken) {
+		env[TOFU_SESSION_ENV] = config.sessionToken;
+	}
+	return env;
+};
+
+const runDisposableTofuProof = async ({ args, packagePath, pkg }) => {
+	const config = resolveRuntimeConfig(pkg, process.env, { requireCredentials: !args.dryRun });
+	const stateKey = `${DISPOSABLE_TOFU_PREFIX}/${args.phase}/${new Date()
+		.toISOString()
+		.replace(/[:.]/g, '-')}-${randomUUID()}/terraform.tfstate`;
+	const lockKey = `${stateKey}.tflock`;
+	rejectUnsafeDisposableTarget(pkg.scratch_bucket, stateKey);
+
+	const checkpoint = disposableCheckpointBase({ args, packagePath, pkg, stateKey });
+	const recordS3 = (name, response, ok = true) => {
+		checkpoint.steps.push({
+			name,
+			ok,
+			path: response?.path,
+			status: response?.status,
+			status_text: response?.statusText,
+		});
+	};
+
+	if (args.dryRun) {
+		checkpoint.completed_at = new Date().toISOString();
+		checkpoint.result = 'dry_run';
+		checkpoint.steps.push(
+			{ name: 'validate-disposable-backend-target', ok: true },
+			{ name: 'render-disposable-tofu-config', ok: true },
+			{ name: 'require-lockfile-config', ok: args.useLockfile },
+		);
+		writeCheckpoint(args.checkpointFile, checkpoint);
+		console.log(`PASS: HA state disposable OpenTofu proof dry run for ${pkg.scratch_bucket}`);
+		console.log(`state_key=${stateKey}`);
+		return checkpoint;
+	}
+
+	const tmpRoot = mkdtempSync(join(tmpdir(), 'darkmap-ha-state-disposable-tofu-'));
+	const tofuEnv = makeDisposableTofuEnv(config, join(tmpRoot, '.tofu-data'));
+	const vars = ['-var', `proof_nonce=${randomUUID()}`, '-var', `proof_phase=${args.phase}`];
+	let stateWasWritten = false;
+	let lockWasWritten = false;
+	let cleanupFailed = false;
+
+	try {
+		writeFileSync(
+			join(tmpRoot, 'backend.hcl'),
+			renderDisposableBackendConfig({ config, pkg, stateKey, useLockfile: args.useLockfile }),
+		);
+		writeFileSync(join(tmpRoot, 'main.tf'), disposableMainTf);
+		checkpoint.steps.push({ name: 'render-disposable-tofu-config', ok: true });
+
+		const init = runTofuCommand({
+			args: ['init', '-input=false', '-backend-config=backend.hcl'],
+			cwd: tmpRoot,
+			env: tofuEnv,
+			name: 'tofu-init',
+		});
+		recordCommand(checkpoint, 'tofu-init', init);
+
+		const apply = runTofuCommand({
+			args: ['apply', '-input=false', '-auto-approve', ...vars],
+			cwd: tmpRoot,
+			env: tofuEnv,
+			name: 'tofu-apply-first-write',
+		});
+		stateWasWritten = true;
+		recordCommand(checkpoint, 'tofu-apply-first-write', apply);
+
+		const readOutput = runTofuCommand({
+			args: ['output', '-json'],
+			cwd: tmpRoot,
+			env: tofuEnv,
+			name: 'tofu-output-readback',
+		});
+		recordCommand(checkpoint, 'tofu-output-readback', readOutput);
+		const outputs = JSON.parse(readOutput.stdout);
+		if (outputs.proof_phase?.value !== args.phase || typeof outputs.proof_nonce?.value !== 'string') {
+			throw new ProofError('tofu-output-readback did not contain expected disposable proof outputs');
+		}
+
+		const noOpPlan = runTofuCommand({
+			args: ['plan', '-input=false', '-detailed-exitcode', ...vars],
+			cwd: tmpRoot,
+			env: tofuEnv,
+			expectedExitCodes: [0],
+			name: 'tofu-plan-no-op',
+		});
+		recordCommand(checkpoint, 'tofu-plan-no-op', noOpPlan);
+
+		const lockBody = JSON.stringify({
+			created_at: new Date().toISOString(),
+			operation: 'darkmap-disposable-tofu-proof',
+			path: `${pkg.scratch_bucket}/${stateKey}`,
+		});
+		const putLock = await s3Request({
+			body: lockBody,
+			bucket: pkg.scratch_bucket,
+			config,
+			key: lockKey,
+			method: 'PUT',
+		});
+		lockWasWritten = true;
+		recordS3('put-synthetic-lockfile', putLock);
+		requireOk('put-synthetic-lockfile', putLock);
+
+		const lockedPlan = runTofuCommand({
+			args: ['plan', '-input=false', '-lock-timeout=1s', ...vars],
+			cwd: tmpRoot,
+			env: tofuEnv,
+			expectedExitCodes: [1],
+			name: 'tofu-plan-lock-contention',
+		});
+		recordCommand(checkpoint, 'tofu-plan-lock-contention', lockedPlan, true);
+
+		const deleteLock = await s3Request({
+			bucket: pkg.scratch_bucket,
+			config,
+			key: lockKey,
+			method: 'DELETE',
+		});
+		lockWasWritten = false;
+		recordS3('delete-synthetic-lockfile', deleteLock);
+		requireOk('delete-synthetic-lockfile', deleteLock);
+
+		const getState = await s3Request({ bucket: pkg.scratch_bucket, config, key: stateKey, method: 'GET' });
+		recordS3('get-state-for-restore', getState);
+		requireOk('get-state-for-restore', getState);
+		if (!getState.body.includes('"version"') || !getState.body.includes('"outputs"')) {
+			throw new ProofError('get-state-for-restore did not return an OpenTofu state-shaped object');
+		}
+
+		const deleteState = await s3Request({ bucket: pkg.scratch_bucket, config, key: stateKey, method: 'DELETE' });
+		stateWasWritten = false;
+		recordS3('delete-state-before-restore', deleteState);
+		requireOk('delete-state-before-restore', deleteState);
+
+		const headDeletedState = await s3Request({ bucket: pkg.scratch_bucket, config, key: stateKey, method: 'HEAD' });
+		recordS3('head-state-after-delete', headDeletedState, headDeletedState.status === 404);
+		if (headDeletedState.status !== 404) {
+			throw new ProofError(`head-state-after-delete expected HTTP 404, got HTTP ${headDeletedState.status}`);
+		}
+
+		const restoreState = await s3Request({
+			body: getState.body,
+			bucket: pkg.scratch_bucket,
+			config,
+			key: stateKey,
+			method: 'PUT',
+		});
+		stateWasWritten = true;
+		recordS3('restore-state-object', restoreState);
+		requireOk('restore-state-object', restoreState);
+
+		const restoredNoOpPlan = runTofuCommand({
+			args: ['plan', '-input=false', '-detailed-exitcode', ...vars],
+			cwd: tmpRoot,
+			env: tofuEnv,
+			expectedExitCodes: [0],
+			name: 'tofu-plan-after-restore',
+		});
+		recordCommand(checkpoint, 'tofu-plan-after-restore', restoredNoOpPlan);
+
+		checkpoint.completed_at = new Date().toISOString();
+		checkpoint.result = 'passed';
+		console.log(`PASS: HA state disposable OpenTofu proof ${args.phase} for bucket ${pkg.scratch_bucket}`);
+		return checkpoint;
+	} finally {
+		if (lockWasWritten) {
+			try {
+				const cleanupLock = await s3Request({
+					bucket: pkg.scratch_bucket,
+					config,
+					key: lockKey,
+					method: 'DELETE',
+				});
+				recordS3('cleanup-delete-lockfile', cleanupLock, cleanupLock.status >= 200 && cleanupLock.status <= 299);
+				cleanupFailed = cleanupFailed || cleanupLock.status < 200 || cleanupLock.status > 299;
+			} catch (error) {
+				cleanupFailed = true;
+				checkpoint.cleanup_error = error instanceof Error ? error.message : String(error);
+			}
+		}
+		if (stateWasWritten && !args.keepScratchObject) {
+			try {
+				const cleanupState = await s3Request({
+					bucket: pkg.scratch_bucket,
+					config,
+					key: stateKey,
+					method: 'DELETE',
+				});
+				recordS3('cleanup-delete-state', cleanupState, cleanupState.status >= 200 && cleanupState.status <= 299);
+				cleanupFailed = cleanupFailed || cleanupState.status < 200 || cleanupState.status > 299;
+			} catch (error) {
+				cleanupFailed = true;
+				checkpoint.cleanup_error = error instanceof Error ? error.message : String(error);
+			}
+		}
+		rmSync(tmpRoot, { force: true, recursive: true });
+		if (!checkpoint.completed_at) {
+			checkpoint.completed_at = new Date().toISOString();
+			checkpoint.result = 'failed';
+		} else if (checkpoint.result === 'passed' && cleanupFailed) {
+			checkpoint.result = 'failed';
+		}
+		writeCheckpoint(args.checkpointFile, checkpoint);
+	}
+};
+
 const withSelfTestProofEnv = async (pkg, run) => {
 	const injection = pkg.credential_injection;
 	const names = [
@@ -420,11 +742,21 @@ const runSelfTest = async () => {
 	requireSelfTestThrow('protected state key term', () =>
 		rejectUnsafeScratchTarget(pkg.scratch_bucket, 'spokes/darkmap/terraform.tfstate'),
 	);
-	requireSelfTestThrow('disposable tofu phase belongs to #144', () =>
+	requireSelfTestThrow('disposable tofu requires lockfile', () =>
 		parseArgs(['--endpoint-package', 'endpoint-package.json', '--run-disposable-tofu']),
 	);
 	requireSelfTestThrow('missing phase value', () =>
 		parseArgs(['--endpoint-package', 'endpoint-package.json', '--phase']),
+	);
+	rejectUnsafeDisposableTarget(
+		pkg.scratch_bucket,
+		`${DISPOSABLE_TOFU_PREFIX}/self-test/${randomUUID()}/terraform.tfstate`,
+	);
+	requireSelfTestThrow('disposable tofu rejects protected bucket', () =>
+		rejectUnsafeDisposableTarget('tofu-state', `${DISPOSABLE_TOFU_PREFIX}/self-test/proof/terraform.tfstate`),
+	);
+	requireSelfTestThrow('disposable tofu rejects protected darkmap key', () =>
+		rejectUnsafeDisposableTarget(pkg.scratch_bucket, `${DISPOSABLE_TOFU_PREFIX}/spokes/darkmap/terraform.tfstate`),
 	);
 
 	const tmpRoot = mkdtempSync(join(tmpdir(), 'darkmap-ha-state-scratch-proof-'));
@@ -455,6 +787,31 @@ const runSelfTest = async () => {
 		) {
 			throw new ProofError('self-test dry-run checkpoint leaked credential-shaped values');
 		}
+		const disposableCheckpointFile = join(tmpRoot, 'disposable-checkpoint.json');
+		const disposableCheckpoint = await withSelfTestProofEnv(pkg, () =>
+			runDisposableTofuProof({
+				args: {
+					checkpointFile: disposableCheckpointFile,
+					dryRun: true,
+					keepScratchObject: false,
+					phase: 'self-test',
+					useLockfile: true,
+				},
+				packagePath: 'self-test-endpoint-package.json',
+				pkg,
+			}),
+		);
+		const disposableCheckpointSource = readFileSync(disposableCheckpointFile, 'utf8');
+		if (disposableCheckpoint.result !== 'dry_run' || JSON.parse(disposableCheckpointSource).result !== 'dry_run') {
+			throw new ProofError('self-test disposable dry-run checkpoint did not record dry_run result');
+		}
+		if (
+			disposableCheckpointSource.includes('dry-run-signing-material') ||
+			disposableCheckpointSource.includes('dry-run-access-id') ||
+			disposableCheckpointSource.includes(OPTIONAL_SESSION_TOKEN_ENV)
+		) {
+			throw new ProofError('self-test disposable dry-run checkpoint leaked credential-shaped values');
+		}
 	} finally {
 		rmSync(tmpRoot, { force: true, recursive: true });
 	}
@@ -472,6 +829,10 @@ const main = async () => {
 
 		const loaded = loadPackage(args.endpointPackage);
 		validateEndpointPackage(loaded);
+		if (args.runDisposableTofu) {
+			await runDisposableTofuProof({ args, packagePath: args.endpointPackage, pkg: loaded.value });
+			return;
+		}
 		await runScratchProof({ args, packagePath: args.endpointPackage, pkg: loaded.value });
 	} catch (error) {
 		if (error instanceof PackageError || error instanceof ProofError || error instanceof SyntaxError) {

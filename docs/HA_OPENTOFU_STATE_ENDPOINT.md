@@ -78,7 +78,8 @@ or delete:
 
 5. Run the scratch S3 proof for #142 using
    [`docs/HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
-6. Run the disposable OpenTofu proof for #144 with `--use-lockfile`.
+6. Run the disposable OpenTofu proof for #144 using
+   [`docs/HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md`](./HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md).
 7. Keep #145 blocked until both proof phases pass and evidence is recorded.
 
 ## Completion Criteria For #141
