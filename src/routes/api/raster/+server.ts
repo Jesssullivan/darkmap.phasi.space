@@ -120,7 +120,17 @@ const fetchAtmosphericTile = async (
 	return new Response(upstream.body as BodyInit | null, { status: 200, headers });
 };
 
-const defaultAtmosphericTime = (): string => new Date().toISOString().slice(0, 10);
+/**
+ * Default time for atmospheric tiles when the client doesn't supply one.
+ * GIBS publishes near-real-time imagery at T+3h SLA, so before ~06:00 UTC
+ * today's tile may still be propagating — fall back to yesterday's date
+ * to avoid 404s on the first paint of the day.
+ */
+const defaultAtmosphericTime = (): string => {
+	const now = new Date();
+	const ref = now.getUTCHours() < 6 ? new Date(now.getTime() - 24 * 3600 * 1000) : now;
+	return ref.toISOString().slice(0, 10);
+};
 
 /**
  * GIBS WMTS tiles dated more than 48 h ago are frozen upstream — once a date
