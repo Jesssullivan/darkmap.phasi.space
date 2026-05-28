@@ -99,9 +99,7 @@ const awaitStyle = (map: MapLibreSurface): Effect.Effect<void, MapLayerError> =>
 		map.once('style.load', onLoad);
 	});
 
-export const makeMapLayerControllerLive = (
-	mapLike: MapLibreSurface | MapLibreMap,
-): Layer.Layer<MapLayerController> => {
+export const makeMapLayerControllerLive = (mapLike: MapLibreSurface | MapLibreMap): Layer.Layer<MapLayerController> => {
 	const map = mapLike as MapLibreSurface;
 
 	// Per-layer generation token + lifecycle state. The token increments on
