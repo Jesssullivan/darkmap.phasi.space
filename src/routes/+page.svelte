@@ -11,6 +11,7 @@
 		type GeolocationWatch,
 	} from '$lib/device/GeolocationService';
 	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
+	import { AtmosphericPointService, AtmosphericPointServiceLive } from '$lib/effect/services/AtmosphericPointService';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
 	// minimal Feature/FeatureCollection structure that MapLibre consumes.
@@ -402,14 +403,28 @@
 	async function queryAt(lat: number, lon: number): Promise<void> {
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
-		try {
+
+		const featureinfoPromise = (async (): Promise<ReadoutData> => {
 			const params = new URLSearchParams({ layer: activeViirs, lat: String(lat), lon: String(lon) });
 			const res = await fetch(`/api/featureinfo?${params}`);
-			if (!res.ok) {
-				readout = { lat, lon, loading: false, error: `${res.status} ${res.statusText}` };
-				return;
-			}
-			const data = (await res.json()) as ReadoutData;
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			return (await res.json()) as ReadoutData;
+		})();
+
+		// Atmospheric reading rides through the AtmosphericPointService Effect
+		// service so error reporting stays tagged. A failure here doesn't sink
+		// the whole readout — we still want VIIRS / World Atlas values to land.
+		const atmosphericPromise = Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* AtmosphericPointService;
+				return yield* svc.getReading({ lat, lon, time: ephemerisTime });
+			}).pipe(Effect.provide(AtmosphericPointServiceLive)),
+		);
+
+		try {
+			const [featureinfo, atmosphericExit] = await Promise.all([featureinfoPromise, atmosphericPromise]);
+			const data: ReadoutData =
+				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
 			readout = { lat, lon, loading: false, data };
 		} catch (e) {
 			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };

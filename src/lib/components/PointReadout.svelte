@@ -13,6 +13,20 @@
 		readonly worldAtlas?: {
 			readonly grayIndex: number;
 		};
+		readonly atmospheric?: {
+			/** Precipitable water column, mm. */
+			readonly pwv: number;
+			/** Relative humidity at 2 m, percent. */
+			readonly rh: number;
+			/** Low / mid / high cloud cover, percent. */
+			readonly cloudLow: number;
+			readonly cloudMid: number;
+			readonly cloudHigh: number;
+			/** Visibility, meters. */
+			readonly visibility: number;
+			/** ISO-8601 timestamp Open-Meteo matched to the requested time. */
+			readonly matchedTime: string;
+		};
 	}
 
 	interface Props {
@@ -125,7 +139,27 @@
 				{/if}
 			</section>
 		{/if}
-		{#if !data.viirs && !data.worldAtlas}
+		{#if data.atmospheric}
+			<section>
+				<h4>Atmosphere (Open-Meteo)</h4>
+				<dl class="atmos-grid">
+					<dt>PWV</dt>
+					<dd>{data.atmospheric.pwv.toFixed(1)}<span class="unit"> mm</span></dd>
+					<dt>RH</dt>
+					<dd>{Math.round(data.atmospheric.rh)}<span class="unit"> %</span></dd>
+					<dt>Cloud (L/M/H)</dt>
+					<dd>
+						{Math.round(data.atmospheric.cloudLow)}/{Math.round(data.atmospheric.cloudMid)}/{Math.round(
+							data.atmospheric.cloudHigh,
+						)}<span class="unit"> %</span>
+					</dd>
+					<dt>Visibility</dt>
+					<dd>{(data.atmospheric.visibility / 1000).toFixed(1)}<span class="unit"> km</span></dd>
+				</dl>
+				<p class="note">Forecast hour {data.atmospheric.matchedTime}Z · CC-BY Open-Meteo</p>
+			</section>
+		{/if}
+		{#if !data.viirs && !data.worldAtlas && !data.atmospheric}
 			<p class="loading">No data at this point.</p>
 		{/if}
 	{/if}
@@ -322,6 +356,22 @@
 		opacity: 0.7;
 	}
 	.events dd {
+		margin: 0;
+		text-align: right;
+		color: #ffd166;
+	}
+	.atmos-grid {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.2rem 0.75rem;
+		margin: 0;
+		font-size: 0.78rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.atmos-grid dt {
+		opacity: 0.7;
+	}
+	.atmos-grid dd {
 		margin: 0;
 		text-align: right;
 		color: #ffd166;
