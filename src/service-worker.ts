@@ -11,7 +11,7 @@
  *
  * Cache shape:
  *   `darkmap-app-shell-v${version}`  → precached SvelteKit build/files/prerendered
- *   `darkmap-raster-tile`            → /api/raster/* responses
+ *   `darkmap-raster-tile`            → /api/raster query/path responses
  *   `darkmap-ephemeris`              → /api/featureinfo, /api/elevation
  *   `darkmap-static-projection`      → checked-in projection JSON
  *   `darkmap-route`                  → reserved for user-imported routes
@@ -24,6 +24,11 @@
  */
 
 import { build, files, prerendered, version } from '$service-worker';
+import {
+	isEphemerisRequestPath,
+	isRasterTileRequestPath,
+	isStaticProjectionRequestPath,
+} from '$lib/effect/services/OfflineCacheRoutes';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -72,20 +77,20 @@ sw.addEventListener('fetch', (event) => {
 	const url = new URL(request.url);
 	if (url.origin !== sw.location.origin) return;
 
-	// /api/raster/* — opaque PNG tiles, cache-first, store in raster bucket.
-	if (url.pathname.startsWith('/api/raster/')) {
+	// /api/raster?layer=... — opaque PNG tiles, cache-first, store in raster bucket.
+	if (isRasterTileRequestPath(url.pathname)) {
 		event.respondWith(cacheFirst(request, RASTER_TILE));
 		return;
 	}
 
 	// /api/featureinfo and /api/elevation — small JSON, cache-first.
-	if (url.pathname.startsWith('/api/featureinfo') || url.pathname.startsWith('/api/elevation')) {
+	if (isEphemerisRequestPath(url.pathname)) {
 		event.respondWith(cacheFirst(request, EPHEMERIS));
 		return;
 	}
 
 	// Static-projection JSON.
-	if (url.pathname.startsWith('/projection/')) {
+	if (isStaticProjectionRequestPath(url.pathname)) {
 		event.respondWith(cacheFirst(request, STATIC_PROJECTION));
 		return;
 	}
