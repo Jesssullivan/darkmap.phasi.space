@@ -3,7 +3,13 @@
 	import { onDestroy } from 'svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
-	import { viewportGridPoints } from '$lib/viewportGrid';
+	import { viewportRangesFor } from '$lib/ephemeris/viewportSummaryCache';
+	import {
+		makeEphemerisViewportSummaryRequest,
+		type EphemerisEventKey,
+		type EventRange,
+		type EventRangeMap,
+	} from '$lib/ephemeris/viewportSummary';
 
 	export interface ViewportBounds {
 		readonly north: number;
@@ -16,10 +22,11 @@
 		location: LatLon;
 		time: Date;
 		bounds?: ViewportBounds;
+		zoom?: number;
 		onTimeChange?: (t: Date) => void;
 	}
 
-	let { location, time, bounds, onTimeChange }: Props = $props();
+	let { location, time, bounds, zoom, onTimeChange }: Props = $props();
 
 	let readout = $state<EphemerisReadout | null>(null);
 	let loading = $state(false);
@@ -27,22 +34,12 @@
 	let dragging = $state(false);
 	let now = $state(new Date());
 
-	// Per-event min..max range across a 4x4 grid sampled inside `bounds`.
+	// Per-event min..max range across a 4x4 grid sampled inside the
+	// tile-cover summary for the current bounds.
 	// Populated asynchronously after the center readout, so the gantt
 	// renders the cursor + bands immediately and the uncertainty stripes
 	// fade in once the corner samples settle.
-	type EventKey =
-		| 'astronomicalDawn'
-		| 'nauticalDawn'
-		| 'civilDawn'
-		| 'sunrise'
-		| 'solarNoon'
-		| 'sunset'
-		| 'civilDusk'
-		| 'nauticalDusk'
-		| 'astronomicalDusk';
-	type EventRange = { readonly min: Date; readonly max: Date };
-	let ranges = $state<Partial<Record<EventKey, EventRange>>>({});
+	let ranges = $state<EventRangeMap>({});
 
 	// Lazy-load astronomy-engine + EphemerisClient. The ~116 KB chunk only
 	// ships once the overlay actually mounts.
@@ -67,23 +64,24 @@
 	// Recompute whenever location or the calendar-day part of `time` changes.
 	// (Scrubbing within the same day moves the cursor but the band positions
 	// are stable for the day.)
-	let cancelGen = 0;
+	let readoutGen = 0;
+	let rangeGen = 0;
 	const dayKey = $derived(
 		`${time.getUTCFullYear()}-${time.getUTCMonth()}-${time.getUTCDate()}|${location.lat.toFixed(3)},${location.lon.toFixed(3)}`,
 	);
 	$effect(() => {
-		const myGen = ++cancelGen;
+		const myGen = ++readoutGen;
 		loading = true;
 		(async () => {
 			try {
 				const c = await loadClient();
 				const r = await c(location, time);
-				if (myGen === cancelGen) {
+				if (myGen === readoutGen) {
 					readout = r;
 					loading = false;
 				}
 			} catch (e) {
-				if (myGen === cancelGen) {
+				if (myGen === readoutGen) {
 					loading = false;
 					console.warn('EphemerisGantt: failed to compute readout', e);
 				}
@@ -94,63 +92,35 @@
 		dayKey;
 	});
 
-	// Grid-sample (4x4) across the viewport bounds to compute per-event
-	// min..max ranges. Only fires when bounds is provided. Recomputes when
-	// the bounds rect or the calendar day changes.
-	const boundsKey = $derived(
-		bounds
-			? `${bounds.north.toFixed(3)},${bounds.south.toFixed(3)},${bounds.east.toFixed(3)},${bounds.west.toFixed(3)}`
-			: '',
-	);
+	// Grid-sample across a coarse Web-Mercator tile cover, not the raw
+	// viewport rectangle. Small mobile pans inside the same summary tile
+	// cover reuse the same Promise and avoid churn in the dusk rail.
+	const summaryRequest = $derived(bounds ? makeEphemerisViewportSummaryRequest({ bounds, mapZoom: zoom, time }) : null);
+	const boundsKey = $derived(summaryRequest?.key ?? '');
 	$effect(() => {
-		if (!bounds) {
+		const key = boundsKey;
+		if (!key) {
 			ranges = {};
 			return;
 		}
-		const myGen = ++cancelGen;
+		const req = summaryRequest;
+		if (!req) return;
+		const myGen = ++rangeGen;
 		(async () => {
 			const c = await loadClient();
-			// 4x4 grid plus the center pin. Skip if the box is degenerate.
-			const points = viewportGridPoints(bounds, 4);
-			if (points.length === 0) return;
-			const readouts = await Promise.all(points.map((p) => c(p, time)));
-			if (myGen !== cancelGen) return;
-			const KEYS: EventKey[] = [
-				'astronomicalDawn',
-				'nauticalDawn',
-				'civilDawn',
-				'sunrise',
-				'solarNoon',
-				'sunset',
-				'civilDusk',
-				'nauticalDusk',
-				'astronomicalDusk',
-			];
-			const next: Partial<Record<EventKey, EventRange>> = {};
-			for (const k of KEYS) {
-				let min = Infinity;
-				let max = -Infinity;
-				for (const r of readouts) {
-					const d = r.events[k];
-					if (!d) continue;
-					const t = d.getTime();
-					if (t < min) min = t;
-					if (t > max) max = t;
-				}
-				if (Number.isFinite(min) && Number.isFinite(max)) {
-					next[k] = { min: new Date(min), max: new Date(max) };
-				}
-			}
+			const next = await viewportRangesFor(req, c, time);
+			if (myGen !== rangeGen) return;
 			ranges = next;
 		})().catch((e) => {
-			if (myGen === cancelGen) console.warn('EphemerisGantt: viewport sampling failed', e);
+			if (myGen === rangeGen) console.warn('EphemerisGantt: viewport sampling failed', e);
 		});
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		boundsKey;
+		key;
 	});
 
 	onDestroy(() => {
-		cancelGen++;
+		readoutGen++;
+		rangeGen++;
 	});
 
 	$effect(() => {
@@ -288,10 +258,10 @@
 
 	// Uncertainty stripes — pairs of (left%, width%) for each event whose
 	// viewport-range spans more than 1 minute.
-	type Stripe = { key: EventKey; left: number; width: number; deltaMin: number };
+	type Stripe = { key: EphemerisEventKey; left: number; width: number; deltaMin: number };
 	const stripes = $derived.by((): Stripe[] => {
 		const out: Stripe[] = [];
-		for (const [key, range] of Object.entries(ranges) as [EventKey, EventRange][]) {
+		for (const [key, range] of Object.entries(ranges) as [EphemerisEventKey, EventRange][]) {
 			const minF = fracOf(range.min);
 			const maxF = fracOf(range.max);
 			if (minF === null || maxF === null) continue;
@@ -311,8 +281,8 @@
 	// span as "civil dusk Δ 26 min" in the header.
 	const closestRange = $derived.by(() => {
 		const t = time.getTime();
-		let best: { key: EventKey; range: EventRange; distMs: number } | null = null;
-		for (const [key, range] of Object.entries(ranges) as [EventKey, EventRange][]) {
+		let best: { key: EphemerisEventKey; range: EventRange; distMs: number } | null = null;
+		for (const [key, range] of Object.entries(ranges) as [EphemerisEventKey, EventRange][]) {
 			const mid = (range.min.getTime() + range.max.getTime()) / 2;
 			const dist = Math.abs(t - mid);
 			if (!best || dist < best.distMs) best = { key, range, distMs: dist };
@@ -320,7 +290,7 @@
 		return best;
 	});
 
-	const labelFor = (k: EventKey): string => {
+	const labelFor = (k: EphemerisEventKey): string => {
 		switch (k) {
 			case 'astronomicalDawn':
 				return 'astro dawn';
@@ -366,8 +336,8 @@
 					<div>
 						<strong>Event-time spread across the visible viewport.</strong>
 						<br />
-						Sampled at 16 points (4×4 grid) inside the map bounds. Δ shrinks as you zoom in; state-scale views can show tens
-						of minutes between the earliest and latest civil dusk.
+						Sampled at 16 points across the current tile-cover summary. Small pans inside that cover reuse the same cache
+						entry; selected pins and GPS fixes stay point-precise.
 					</div>
 				{/snippet}
 			</HelpTooltip>
