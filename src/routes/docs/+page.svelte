@@ -4,6 +4,7 @@
 		{ id: 'features', title: 'Feature surface' },
 		{ id: 'attribution', title: 'Sources, attribution, inspiration' },
 		{ id: 'science', title: 'Scientific notes (what we measure)' },
+		{ id: 'atmosphere', title: 'Atmospheric overlays + transmission' },
 		{ id: 'tech', title: 'Tech stack + deployment' },
 		{ id: 'contact', title: 'Contact' },
 	];
@@ -146,6 +147,74 @@
 			(R_eff = 7/6 · R) when computing angular elevation. Polygon results are cached per (lat, lon) rounded to ~0.001° +
 			options key; revisit is instant.
 		</p>
+	</section>
+
+	<section id="atmosphere" class="mt-12">
+		<h2 class="mb-3 font-mono text-lg font-bold">Atmospheric overlays + transmission</h2>
+		<p>
+			The Atmosphere section of the Layer rail surfaces four NASA GIBS raster overlays plus an OpenAQ ground-station
+			PM2.5 heatmap. Drop a pin to see point-source PWV / RH / cloud cover via Open-Meteo, and tap the <code>i</code>
+			chevron on any atmospheric row to open the <em>transmission widget</em>, which renders the spectral transmission
+			curve T(λ) for the active inputs.
+		</p>
+		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Data sources (V1)</h3>
+		<ul class="mt-2 list-disc space-y-2 pl-6">
+			<li>
+				<strong>NASA GIBS WMTS</strong> — clouds (MODIS Terra AM, VIIRS NOAA-20 PM), aerosol (MODIS Combined AOD @ 550 nm),
+				water vapor (AIRS Precipitable Water Day). Public domain; "Imagery courtesy NASA EOSDIS GIBS" surfaces in the MapLibre
+				attribution control when any GIBS layer is on.
+			</li>
+			<li>
+				<strong>Open-Meteo /v1/forecast</strong> — point PWV, RH, layered cloud cover, visibility. CC-BY 4.0, no key
+				required; proxied through <code>/api/atmospheric/point</code>.
+			</li>
+			<li>
+				<strong>OpenAQ v3</strong> — PM2.5 ground stations in the viewport bbox, CC-BY 4.0. Requires an
+				<code>OPENAQ_API_KEY</code> env on the server; absent that, the proxy returns an empty FeatureCollection so the overlay
+				renders nothing instead of throwing.
+			</li>
+		</ul>
+
+		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Transmission methodology</h3>
+		<p>
+			The transmission widget interpolates a pre-baked LUT shipped at <code>/spectral-lut.json</code>. The LUT axes are
+			PWV (mm), AOD<sub>550</sub>, Ångström exponent, total ozone column (DU), and zenith angle; the wavelength grid
+			spans ~0.3 µm → 30 µm.
+		</p>
+		<p class="mt-2">
+			<strong>V1 LUT (this ship)</strong>: a closed-form analytical bake — Rayleigh λ<sup>−4.09</sup>, Ångström τ(λ) =
+			AOD<sub>550</sub> · (λ/0.55)<sup>−α</sup>, empirical water-vapor bands at 0.94 / 1.13 / 1.38 / 1.87 / 2.7 / 3.2 /
+			6.3 µm, Hartley + Huggins + Chappuis ozone bands, Kasten-Young airmass. This is an engineering estimate, not a
+			radiative-transfer model.
+		</p>
+		<p class="mt-2">
+			<strong>V2 / V3 roadmap</strong>: the LUT JSON contract is stable across versions. V2 swaps in
+			<a href="https://www.nrel.gov/grid/solar-resource/smarts.html" class="underline" rel="noreferrer external"
+				>SMARTS</a
+			>
+			(0.3 – 4 µm) +
+			<a href="https://github.com/paulricchiazzi/SBDART" class="underline" rel="noreferrer external">SBDART</a>
+			(4 – 30 µm) output baked offline against the US Standard Atmosphere. V3 adds Py4CAtS / HITRAN line-by-line for named
+			astronomy bands (H₂O 940/1130/1380/1870 nm, O₂ A-band, telluric O₂-X, CO₂ 4.3 µm). The widget code does not change between
+			LUT generations.
+		</p>
+
+		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Caveats</h3>
+		<ul class="mt-2 list-disc space-y-2 pl-6">
+			<li>
+				<strong>Engineering estimate.</strong> V1 is good to within ±10 % at clean-sky standard atmospheres in the visible
+				/ NIR; the IR thermal bands beyond 5 µm get noticeably less accurate. For real instrument planning, cross-check against
+				MODTRAN or libRadtran.
+			</li>
+			<li>
+				<strong>AOD defaults to 0.15 in the widget</strong> until pixel-sampling against the MODIS Combined AOD raster lands.
+				The displayed input chip shows the effective value.
+			</li>
+			<li>
+				<strong>Zenith defaults to 30°.</strong> Solar-zenith computation from the current ephemeris time + lat / lon is a
+				follow-up.
+			</li>
+		</ul>
 	</section>
 
 	<section id="tech" class="mt-12">
