@@ -26,6 +26,7 @@
 
 import { build, files, prerendered, version } from '$service-worker';
 import {
+	isAtmosphericRequestPath,
 	isEphemerisRequestPath,
 	isRasterTileRequestPath,
 	isStaticProjectionRequestPath,
@@ -85,6 +86,14 @@ sw.addEventListener('fetch', (event) => {
 	if (isRasterTileRequestPath(url.pathname)) {
 		const bucket = url.searchParams.get('kind') === 'atmospheric' ? ATMOSPHERIC_TILE : RASTER_TILE;
 		event.respondWith(cacheFirst(request, bucket));
+		return;
+	}
+
+	// /api/atmospheric/* — non-tile atmospheric responses (Open-Meteo point JSON).
+	// Share the atmospheric bucket so all atmospheric-flavored cache entries
+	// drain under a single eviction policy.
+	if (isAtmosphericRequestPath(url.pathname)) {
+		event.respondWith(cacheFirst(request, ATMOSPHERIC_TILE));
 		return;
 	}
 
