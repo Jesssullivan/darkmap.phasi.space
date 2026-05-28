@@ -18,6 +18,8 @@
 		TransmissionEstimatorLive,
 		type TransmissionCurve,
 	} from '$lib/effect/services/TransmissionEstimator';
+	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
+	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
@@ -114,23 +116,32 @@
 	let transmissionCurve = $state<TransmissionCurve | undefined>(undefined);
 	let transmissionLoading = $state(false);
 	let transmissionError = $state<string | undefined>(undefined);
+	// V2-D inputs the user adjusts from the widget. Null aerosol type keeps
+	// the LUT-only analytical path; any value switches on the live Mie blend.
+	let transmissionAerosolType = $state<AerosolType | null>(null);
+	let transmissionAod = $state(0.15);
+	let transmissionAngstrom = $state(1.4);
+	let transmissionRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function refreshTransmission(): Promise<void> {
 		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
 		const input = {
 			pwvMm: pwv,
-			aod550: 0.15,
-			angstrom: 1.4,
+			aod550: transmissionAod,
+			angstrom: transmissionAngstrom,
 			o3Du: 350,
 			zenithDeg: 30,
 		};
 		transmissionLoading = true;
 		transmissionError = undefined;
+		const aerosolType = transmissionAerosolType;
 		const exit = await Effect.runPromiseExit(
 			Effect.gen(function* () {
 				const svc = yield* TransmissionEstimator;
-				return yield* svc.estimate(input);
-			}).pipe(Effect.provide(TransmissionEstimatorLive)),
+				return aerosolType !== null
+					? yield* svc.estimateWithLiveAerosol(input, aerosolType)
+					: yield* svc.estimate(input);
+			}).pipe(Effect.provide(Layer.merge(TransmissionEstimatorLive, MieScatteringServiceLive))),
 		);
 		transmissionLoading = false;
 		if (exit._tag === 'Success') {
@@ -140,9 +151,28 @@
 		}
 	}
 
+	/** Debounced recompute used by the slider / picker callbacks. */
+	function scheduleTransmissionRefresh(): void {
+		clearTimeout(transmissionRecomputeTimer);
+		transmissionRecomputeTimer = setTimeout(() => void refreshTransmission(), 80);
+	}
+
 	function onTransmissionInfo(_layerId: string): void {
 		transmissionOpen = true;
 		void refreshTransmission();
+	}
+
+	function onAerosolTypeChange(value: AerosolType | null): void {
+		transmissionAerosolType = value;
+		scheduleTransmissionRefresh();
+	}
+	function onAodChange(value: number): void {
+		transmissionAod = value;
+		scheduleTransmissionRefresh();
+	}
+	function onAngstromChange(value: number): void {
+		transmissionAngstrom = value;
+		scheduleTransmissionRefresh();
 	}
 
 	function closeTransmission(): void {
@@ -911,6 +941,12 @@
 		loading={transmissionLoading}
 		error={transmissionError}
 		onclose={closeTransmission}
+		aerosolType={transmissionAerosolType}
+		aod={transmissionAod}
+		angstrom={transmissionAngstrom}
+		{onAerosolTypeChange}
+		{onAodChange}
+		{onAngstromChange}
 	/>
 {/if}
 
