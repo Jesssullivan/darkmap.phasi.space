@@ -4,7 +4,7 @@
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
-	import { healthLabel, healthTone, type LayerHealth } from '$lib/layers/health-state';
+	import { healthLabel, healthTone } from '$lib/layers/health-state';
 	import Legend from './Legend.svelte';
 
 	export interface LayerState {
@@ -199,11 +199,13 @@
 								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 							/>
 							<span class="label">{layer.label}</span>
-							{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
-							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
-								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
-									{healthLabel(h)}
-								</span>
+							{#if ls.on}
+								{@const h = layerHealth.getHealth(layer.id)}
+								{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+									<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+										{healthLabel(h)}
+									</span>
+								{/if}
 							{/if}
 						</label>
 						{#if ls.on}
@@ -268,11 +270,13 @@
 										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 									/>
 									<span class="label">{layer.label}</span>
-									{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
-									{#if h.tag !== 'idle' && h.tag !== 'rendered'}
-										<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
-											{healthLabel(h)}
-										</span>
+									{#if ls.on}
+										{@const h = layerHealth.getHealth(layer.id)}
+										{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+											<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+												{healthLabel(h)}
+											</span>
+										{/if}
 									{/if}
 								</label>
 								{#if oninfo}
