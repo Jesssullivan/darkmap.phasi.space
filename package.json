@@ -28,7 +28,8 @@
 		"test:coverage": "vitest run --coverage",
 		"test:e2e": "playwright test",
 		"bake:spectral": "tsx scripts/bake-spectral-lut.ts",
-		"bake:spectral-smarts-analog": "tsx scripts/bake-spectral-lut-smarts-analog.ts"
+		"bake:spectral-smarts-analog": "tsx scripts/bake-spectral-lut-smarts-analog.ts",
+		"bake:spectral-lbl": "tsx scripts/bake-spectral-lbl.ts"
 	},
 	"dependencies": {
 		"@effect/platform": "^0.96.0",
