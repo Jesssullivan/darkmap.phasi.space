@@ -15,7 +15,9 @@
 	 */
 	import { X } from '@lucide/svelte';
 	import type { TransmissionCurve } from '$lib/effect/services/TransmissionEstimator';
+	import type { BandCurve } from '$lib/effect/services/LineByLineService';
 	import { AEROSOL_TYPES, aerosolEntry, type AerosolType } from '$lib/spectral/aerosol-types';
+	import { findHitranBand, HITRAN_BANDS } from '$lib/spectral/hitran-bands';
 
 	interface Props {
 		curve: TransmissionCurve | undefined;
@@ -29,6 +31,12 @@
 		onAerosolTypeChange?: (value: AerosolType | null) => void;
 		onAodChange?: (value: number) => void;
 		onAngstromChange?: (value: number) => void;
+		// V3b-4 — band zoom controls. Parent owns selected-band state + curve.
+		selectedBandId?: string | null;
+		bandCurve?: BandCurve | undefined;
+		bandLoading?: boolean;
+		bandError?: string;
+		onBandSelect?: (bandId: string | null) => void;
 	}
 
 	let {
@@ -42,6 +50,11 @@
 		onAerosolTypeChange,
 		onAodChange,
 		onAngstromChange,
+		selectedBandId = null,
+		bandCurve = undefined,
+		bandLoading = false,
+		bandError = undefined,
+		onBandSelect,
 	}: Props = $props();
 
 	const WIDTH = 360;
@@ -193,7 +206,35 @@
 
 			<!-- curve -->
 			<polyline points={polyline} class="curve" fill="none"></polyline>
+
+			<!-- V3b-4: band-tick markers above the x-axis. Clicking the chip below
+			the chart opens the detail panel; the tick itself is just a visual cue. -->
+			{#each HITRAN_BANDS as band (band.id)}
+				<line
+					x1={xForLambda(band.centerUm)}
+					x2={xForLambda(band.centerUm)}
+					y1={PAD.top}
+					y2={PAD.top + PLOT_H}
+					class="band-tick"
+				></line>
+			{/each}
 		</svg>
+
+		<!-- V3b-4: band selector — opens the LBL detail panel for the named bands. -->
+		{#if onBandSelect}
+			<div class="band-tick-row" role="group" aria-label="Named absorption bands">
+				{#each HITRAN_BANDS as band (band.id)}
+					<button
+						type="button"
+						class="band-chip"
+						class:active={selectedBandId === band.id}
+						aria-pressed={selectedBandId === band.id}
+						title={band.description}
+						onclick={() => onBandSelect?.(band.id)}>{band.label}</button
+					>
+				{/each}
+			</div>
+		{/if}
 
 		<p class="disclaimer">
 			Engineering estimate (V0 analytical bake — Rayleigh + Ångström + H₂O bands + O₃). PR-G2 will swap in SMARTS +
@@ -207,6 +248,73 @@
 		</p>
 	{:else}
 		<p class="loading">Waiting for atmospheric inputs…</p>
+	{/if}
+
+	<!-- V3b-4: in-sheet detail panel for the user-selected named band. Replaces
+	the main chart area when active; "Back" returns to the spectrum. -->
+	{#if selectedBandId}
+		{@const band = findHitranBand(selectedBandId)}
+		<section class="band-detail" aria-label="Band detail">
+			<header class="band-detail-header">
+				<h4>{band?.label ?? selectedBandId}</h4>
+				<button type="button" class="band-back" onclick={() => onBandSelect?.(null)}>Back to spectrum</button>
+			</header>
+			{#if bandLoading}
+				<p class="loading">Loading line-by-line bake…</p>
+			{:else if bandError}
+				<p class="error">Error: {bandError}</p>
+			{:else if bandCurve}
+				{@const bandWidth = WIDTH}
+				{@const bandHeight = 130}
+				{@const bandPad = { left: 36, right: 12, top: 8, bottom: 24 }}
+				{@const bandPlotW = bandWidth - bandPad.left - bandPad.right}
+				{@const bandPlotH = bandHeight - bandPad.top - bandPad.bottom}
+				{@const wl = bandCurve.wavelengthsUm}
+				{@const tx = (i: number) => bandPad.left + ((wl[i] - wl[0]) / (wl[wl.length - 1] - wl[0])) * bandPlotW}
+				{@const ty = (t: number) => bandPad.top + (1 - t) * bandPlotH}
+				<svg
+					role="img"
+					aria-label="{band?.label ?? 'Band'} line-by-line transmission"
+					class="band-chart"
+					viewBox="0 0 {bandWidth} {bandHeight}"
+				>
+					<line
+						x1={bandPad.left}
+						y1={bandPad.top + bandPlotH}
+						x2={bandPad.left + bandPlotW}
+						y2={bandPad.top + bandPlotH}
+						class="axis"
+					></line>
+					<line x1={bandPad.left} y1={bandPad.top} x2={bandPad.left} y2={bandPad.top + bandPlotH} class="axis"></line>
+					<!-- y grid at T=0, 0.5, 1 -->
+					{#each [0, 0.5, 1] as t (t)}
+						<line
+							x1={bandPad.left}
+							x2={bandPad.left + bandPlotW}
+							y1={ty(t)}
+							y2={ty(t)}
+							class="grid"
+							stroke-dasharray="2,3"
+						></line>
+						<text x={bandPad.left - 6} y={ty(t) + 3} class="label-y" text-anchor="end">{t.toFixed(1)}</text>
+					{/each}
+					<text
+						x={bandPad.left + bandPlotW / 2}
+						y={bandPad.top + bandPlotH + 18}
+						class="axis-title"
+						text-anchor="middle">{wl[0].toFixed(3)} – {wl[wl.length - 1].toFixed(3)} µm</text
+					>
+					<polyline
+						points={wl.map((_, i) => `${tx(i).toFixed(1)},${ty(bandCurve.transmission[i]).toFixed(1)}`).join(' ')}
+						class="curve"
+						fill="none"
+					></polyline>
+				</svg>
+				<p class="attrib">{bandCurve.attribution} · source: <strong>{bandCurve.source}</strong></p>
+			{:else}
+				<p class="loading">Waiting for line-by-line data…</p>
+			{/if}
+		</section>
 	{/if}
 </div>
 
@@ -373,6 +481,71 @@
 	.curve {
 		stroke: #5ee2d0;
 		stroke-width: 1.5;
+	}
+	.band-tick {
+		stroke: rgba(255, 209, 102, 0.35);
+		stroke-width: 0.5;
+		stroke-dasharray: 1.5, 1.5;
+	}
+	.band-tick-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		margin: 0.35rem 0 0.4rem;
+	}
+	.band-chip {
+		font-family: inherit;
+		font-size: 0.62rem;
+		padding: 0.2rem 0.45rem;
+		background: rgba(255, 255, 255, 0.05);
+		color: rgba(233, 236, 243, 0.85);
+		border: 1px solid rgba(255, 209, 102, 0.25);
+		border-radius: 999px;
+		cursor: pointer;
+	}
+	.band-chip:hover {
+		background: rgba(255, 209, 102, 0.1);
+	}
+	.band-chip.active {
+		background: #ffd166;
+		color: #0a0e16;
+		border-color: #ffd166;
+	}
+	.band-detail {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.band-detail-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.35rem;
+	}
+	.band-detail-header h4 {
+		margin: 0;
+		font-size: 0.78rem;
+	}
+	.band-back {
+		background: none;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		color: rgba(233, 236, 243, 0.85);
+		font: inherit;
+		font-size: 0.62rem;
+		padding: 0.2rem 0.45rem;
+		border-radius: 3px;
+		cursor: pointer;
+	}
+	.band-back:hover {
+		color: #ffd166;
+		border-color: #ffd166;
+	}
+	.band-chart {
+		width: 100%;
+		max-width: 22rem;
+		height: auto;
+		display: block;
+		margin: 0 auto;
 	}
 	.disclaimer {
 		margin: 0.5rem 0 0.3rem;
