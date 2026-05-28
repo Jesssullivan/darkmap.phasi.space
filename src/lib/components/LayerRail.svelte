@@ -153,6 +153,14 @@
 							onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
 						/>
 						<span class="label">VIIRS Annual</span>
+						{#if viirsOn && activeViirsId}
+							{@const h = layerHealth.getHealth(activeViirsId)}
+							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+									{healthLabel(h)}
+								</span>
+							{/if}
+						{/if}
 					</label>
 					<div class="year-row" role="radiogroup" aria-label="VIIRS year">
 						{#each VIIRS_YEARS as l (l.id)}

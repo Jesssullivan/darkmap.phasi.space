@@ -21,6 +21,7 @@
 	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
 	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
+	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -925,10 +926,11 @@
 			if (!err) return;
 			if (sourceId === BASEMAP_SOURCE_ID) return;
 			pushToast(err.message ?? 'tile load failed', sourceId);
-			// #196 — map source id `darkmap-{layerId}-src` back to its LAYERS row
-			// and dispatch a tile-error health event.
-			if (sourceId?.startsWith('darkmap-') && sourceId.endsWith('-src')) {
-				const layerId = sourceId.slice('darkmap-'.length, -'-src'.length);
+			// #196 — dispatch a tile-error health event for the matching LAYERS row.
+			// Helper skips point-source overlays (which use a -pt-src suffix and
+			// dispatch health explicitly from refreshPointLayer).
+			const layerId = parseLayerIdFromSourceId(sourceId);
+			if (layerId) {
 				layerHealth.dispatch(layerId, {
 					type: 'tile-error',
 					reason: err.message ?? 'tile load failed',
@@ -946,9 +948,9 @@
 				isSourceLoaded?: boolean;
 				tile?: unknown;
 			};
-			if (!evt.sourceId || !evt.sourceId.startsWith('darkmap-') || !evt.sourceId.endsWith('-src')) return;
 			if (evt.tile === undefined) return; // Style or attribution event, not a tile load.
-			const layerId = evt.sourceId.slice('darkmap-'.length, -'-src'.length);
+			const layerId = parseLayerIdFromSourceId(evt.sourceId);
+			if (!layerId) return;
 			const current = layerHealth.getHealth(layerId);
 			if (current.tag === 'loading') {
 				layerHealth.dispatch(layerId, { type: 'tile-ok' });
