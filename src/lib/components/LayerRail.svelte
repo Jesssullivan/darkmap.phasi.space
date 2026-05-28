@@ -3,6 +3,8 @@
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
+	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
+	import { healthLabel, healthTone, type LayerHealth } from '$lib/layers/health-state';
 	import Legend from './Legend.svelte';
 
 	export interface LayerState {
@@ -197,6 +199,12 @@
 								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 							/>
 							<span class="label">{layer.label}</span>
+							{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
+							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+									{healthLabel(h)}
+								</span>
+							{/if}
 						</label>
 						{#if ls.on}
 							<div class="opacity-row">
@@ -260,6 +268,12 @@
 										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 									/>
 									<span class="label">{layer.label}</span>
+									{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
+									{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+										<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+											{healthLabel(h)}
+										</span>
+									{/if}
 								</label>
 								{#if oninfo}
 									<button
@@ -476,6 +490,36 @@
 			min-width: 2.5rem;
 			min-height: 2.5rem;
 		}
+	}
+	.health-pill {
+		margin-left: 0.4rem;
+		padding: 0.05rem 0.35rem;
+		font-size: 0.6rem;
+		border-radius: 999px;
+		border: 1px solid transparent;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+		font-variant-numeric: tabular-nums;
+	}
+	.health-pill.health-neutral {
+		background: rgba(255, 255, 255, 0.06);
+		color: rgba(233, 236, 243, 0.65);
+		border-color: rgba(255, 255, 255, 0.12);
+	}
+	.health-pill.health-good {
+		background: rgba(94, 226, 208, 0.12);
+		color: #5ee2d0;
+		border-color: rgba(94, 226, 208, 0.35);
+	}
+	.health-pill.health-warn {
+		background: rgba(255, 209, 102, 0.12);
+		color: #ffd166;
+		border-color: rgba(255, 209, 102, 0.35);
+	}
+	.health-pill.health-bad {
+		background: rgba(255, 107, 107, 0.15);
+		color: #ff6b6b;
+		border-color: rgba(255, 107, 107, 0.45);
 	}
 	.stale-pill {
 		margin-left: auto;
