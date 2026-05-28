@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Menu, X } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, Menu, X } from '@lucide/svelte';
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
@@ -16,16 +16,38 @@
 		onchange: (id: string, partial: Partial<LayerState>) => void;
 		basemap: string;
 		onbasemapchange: (id: string) => void;
+		/**
+		 * Current ephemeris / forecast time. Drives the atmospheric "stale"
+		 * badge — atmospheric layers fetch near-real-time imagery and forecast
+		 * point data, so scrubbing too far from now flags those rows.
+		 */
+		time?: Date;
 	}
 
-	let { layers, states, onchange, basemap, onbasemapchange }: Props = $props();
+	let { layers, states, onchange, basemap, onbasemapchange, time }: Props = $props();
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
 
-	// VIIRS annual is rendered as a year picker below; filter it out of the
-	// generic per-layer toggle list.
-	const nonViirs = $derived(layers.filter((l) => l.group !== 'viirs_annual'));
+	// Category partition. VIIRS Annual is its own picker (below); the World
+	// Atlas pair shares the Light Pollution section; atmospheric layers get
+	// their own collapsible group.
+	const lightExtras = $derived(layers.filter((l) => l.group === 'world_atlas' || l.group === 'world_atlas_raw'));
+	const atmosphericLayers = $derived(layers.filter((l) => l.group === 'atmospheric'));
+
+	let lightOpen = $state(true);
+	let atmosphereOpen = $state(false);
+
+	// 36 h crossover for the atmospheric stale badge. GIBS NRT is past-only
+	// (T+3 h SLA); Open-Meteo forecasts ~16 days forward. A user scrubbing
+	// more than a day and a half from "now" is likely outside the fetch
+	// window for at least one of the active overlays — flag the section so
+	// the absence of fresh tiles isn't read as a missing-data bug.
+	const ATMOSPHERIC_STALE_MS = 36 * 3_600_000;
+	const atmosphericStale = $derived.by(() => {
+		if (!time) return false;
+		return Math.abs(time.getTime() - Date.now()) > ATMOSPHERIC_STALE_MS;
+	});
 
 	// Active VIIRS year (single-select within the group). Falls back to the
 	// newest year if nothing's on, or the first .on entry otherwise.
@@ -55,8 +77,8 @@
 	}
 
 	function setViirsOpacity(opacity: number): void {
-		// Push the opacity to every VIIRS year that's currently on (in practice
-		// just one) so toggling years preserves the slider position.
+		// Push the opacity to every VIIRS year so toggling years preserves
+		// the slider position.
 		for (const l of VIIRS_YEARS) {
 			if (states[l.id]?.on) onchange(l.id, { opacity });
 			else onchange(l.id, { opacity });
@@ -85,7 +107,7 @@
 <aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers">
 	<header>
 		<h2>Layers</h2>
-		<p>VIIRS · World Atlas · SQM</p>
+		<p>VIIRS · World Atlas · Atmosphere</p>
 	</header>
 
 	<section class="basemap-section" aria-label="Basemap">
@@ -106,88 +128,157 @@
 		</div>
 	</section>
 
-	<ul>
-		<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
-		<li>
-			<label class="layer-toggle">
-				<input
-					type="checkbox"
-					checked={viirsOn}
-					onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
-				/>
-				<span class="label">VIIRS Annual</span>
-			</label>
-			<div class="year-row" role="radiogroup" aria-label="VIIRS year">
-				{#each VIIRS_YEARS as l (l.id)}
-					<button
-						type="button"
-						class="year-chip"
-						class:active={activeViirsId === l.id}
-						aria-pressed={activeViirsId === l.id}
-						disabled={!viirsOn}
-						onclick={() => pickViirsYear(l.id)}
-					>
-						{l.year}
-					</button>
-				{/each}
-			</div>
-			<div class="opacity-row">
-				<input
-					type="range"
-					min="0"
-					max="1"
-					step="0.05"
-					value={viirsOpacity}
-					disabled={!viirsOn}
-					aria-label="VIIRS opacity"
-					oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
-				/>
-				<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
-			</div>
-			<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019.</p>
-			{#if viirsOn}
-				<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
+	<section class="category" aria-label="Light Pollution">
+		<button type="button" class="category-header" aria-expanded={lightOpen} onclick={() => (lightOpen = !lightOpen)}>
+			{#if lightOpen}
+				<ChevronDown size={14} aria-hidden="true" />
+			{:else}
+				<ChevronRight size={14} aria-hidden="true" />
 			{/if}
-		</li>
+			<span>Light Pollution</span>
+		</button>
 
-		<!-- Non-VIIRS layers: one toggle + opacity slider each. -->
-		{#each nonViirs as layer (layer.id)}
-			{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
-			<li>
-				<label class="layer-toggle">
-					<input
-						type="checkbox"
-						checked={ls.on}
-						onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
-					/>
-					<span class="label">{layer.label}</span>
-				</label>
-				<div class="opacity-row">
-					<input
-						type="range"
-						min="0"
-						max="1"
-						step="0.05"
-						value={ls.opacity}
-						disabled={!ls.on}
-						aria-label="{layer.label} opacity"
-						oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
-					/>
-					<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
-				</div>
-				<p class="desc">{layer.description}</p>
-				{#if ls.on && layer.upstreamLayer}
-					{@const ramp = rampFor(layer.upstreamLayer)}
-					{#if ramp}
-						<Legend
-							{ramp}
-							title={layer.label === 'World Atlas 2015 (raw)' ? 'Falchi radiance' : layer.label + ' scale'}
+		{#if lightOpen}
+			<ul>
+				<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
+				<li>
+					<label class="layer-toggle">
+						<input
+							type="checkbox"
+							checked={viirsOn}
+							onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
 						/>
+						<span class="label">VIIRS Annual</span>
+					</label>
+					<div class="year-row" role="radiogroup" aria-label="VIIRS year">
+						{#each VIIRS_YEARS as l (l.id)}
+							<button
+								type="button"
+								class="year-chip"
+								class:active={activeViirsId === l.id}
+								aria-pressed={activeViirsId === l.id}
+								disabled={!viirsOn}
+								onclick={() => pickViirsYear(l.id)}
+							>
+								{l.year}
+							</button>
+						{/each}
+					</div>
+					{#if viirsOn}
+						<div class="opacity-row">
+							<input
+								type="range"
+								min="0"
+								max="1"
+								step="0.05"
+								value={viirsOpacity}
+								aria-label="VIIRS opacity"
+								oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
+							/>
+							<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
+						</div>
 					{/if}
+					<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019.</p>
+					{#if viirsOn}
+						<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
+					{/if}
+				</li>
+
+				<!-- World Atlas + raw: one toggle + opacity each. -->
+				{#each lightExtras as layer (layer.id)}
+					{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+					<li>
+						<label class="layer-toggle">
+							<input
+								type="checkbox"
+								checked={ls.on}
+								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+							/>
+							<span class="label">{layer.label}</span>
+						</label>
+						{#if ls.on}
+							<div class="opacity-row">
+								<input
+									type="range"
+									min="0"
+									max="1"
+									step="0.05"
+									value={ls.opacity}
+									aria-label="{layer.label} opacity"
+									oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
+								/>
+								<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
+							</div>
+						{/if}
+						<p class="desc">{layer.description}</p>
+						{#if ls.on && layer.upstreamLayer}
+							{@const ramp = rampFor(layer.upstreamLayer)}
+							{#if ramp}
+								<Legend
+									{ramp}
+									title={layer.label === 'World Atlas 2015 (raw)' ? 'Falchi radiance' : layer.label + ' scale'}
+								/>
+							{/if}
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+
+	{#if atmosphericLayers.length > 0}
+		<section class="category" aria-label="Atmosphere">
+			<button
+				type="button"
+				class="category-header"
+				aria-expanded={atmosphereOpen}
+				onclick={() => (atmosphereOpen = !atmosphereOpen)}
+			>
+				{#if atmosphereOpen}
+					<ChevronDown size={14} aria-hidden="true" />
+				{:else}
+					<ChevronRight size={14} aria-hidden="true" />
 				{/if}
-			</li>
-		{/each}
-	</ul>
+				<span>Atmosphere</span>
+				{#if atmosphericStale}
+					<span class="stale-pill" title="Time is outside the typical fetch window">outside fetch window</span>
+				{/if}
+			</button>
+
+			{#if atmosphereOpen}
+				<ul>
+					{#each atmosphericLayers as layer (layer.id)}
+						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+						<li class:stale={atmosphericStale && ls.on}>
+							<label class="layer-toggle">
+								<input
+									type="checkbox"
+									checked={ls.on}
+									onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+								/>
+								<span class="label">{layer.label}</span>
+							</label>
+							{#if ls.on}
+								<div class="opacity-row">
+									<input
+										type="range"
+										min="0"
+										max="1"
+										step="0.05"
+										value={ls.opacity}
+										aria-label="{layer.label} opacity"
+										oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
+									/>
+									<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
+								</div>
+							{/if}
+							<p class="desc">{layer.description}</p>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 </aside>
 
 <style>
@@ -310,13 +401,60 @@
 		outline: 2px solid #ffd166;
 		outline-offset: 1px;
 	}
+
+	.category {
+		margin-top: 0.85rem;
+	}
+	.category + .category {
+		margin-top: 1rem;
+		padding-top: 0.85rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.category-header {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		color: rgba(233, 236, 243, 0.85);
+		font: inherit;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		cursor: pointer;
+		text-align: left;
+	}
+	.category-header:hover {
+		color: #ffd166;
+	}
+	.category-header:focus-visible {
+		outline: 2px solid #ffd166;
+		outline-offset: 2px;
+	}
+	.stale-pill {
+		margin-left: auto;
+		text-transform: none;
+		letter-spacing: 0;
+		font-size: 0.62rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		background: rgba(255, 209, 102, 0.15);
+		color: #ffd166;
+		border: 1px solid rgba(255, 209, 102, 0.35);
+	}
+
 	ul {
 		list-style: none;
 		padding: 0;
-		margin: 0;
+		margin: 0.5rem 0 0;
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;
+	}
+	li.stale {
+		opacity: 0.65;
 	}
 	.layer-toggle {
 		display: flex;
@@ -376,10 +514,7 @@
 	.opacity-row input[type='range'] {
 		width: 100%;
 		accent-color: #ffd166;
-	}
-	.opacity-row input[type='range']:disabled {
-		opacity: 0.35;
-		cursor: not-allowed;
+		min-height: 1.25rem;
 	}
 	.opacity-pct {
 		font-variant-numeric: tabular-nums;
@@ -396,6 +531,12 @@
 	}
 	input[type='checkbox'] {
 		accent-color: #ffd166;
+	}
+
+	@media (pointer: coarse) {
+		.opacity-row input[type='range'] {
+			min-height: 2.75rem;
+		}
 	}
 
 	@media (max-width: 640px) {

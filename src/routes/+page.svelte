@@ -665,6 +665,7 @@
 	onchange={onChange}
 	basemap={activeBasemap}
 	onbasemapchange={onBasemapChange}
+	time={ephemerisTime}
 />
 
 {#if ephemerisOpen}
