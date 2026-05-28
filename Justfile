@@ -195,6 +195,18 @@ ha-state-endpoint-package-template-check:
 ha-state-endpoint-package-self-test:
     cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --self-test
 
+# Run the guarded #142 scratch S3 proof with a filled endpoint package
+ha-state-scratch-proof endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
+
+# Contract-stable candidate proof entrypoint; #144 will extend this for disposable OpenTofu
+ha-state-candidate-proof *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs {{ args }}
+
+# Offline guard tests for the scratch S3 proof harness
+ha-state-scratch-proof-self-test:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --self-test
+
 # Print the planned diff (non-empty on first run; clean after apply)
 tofu-plan:
     cd {{ tofu_dir }} && tofu plan -out=darkmap.tfplan

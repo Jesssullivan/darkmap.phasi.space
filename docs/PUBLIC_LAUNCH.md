@@ -176,6 +176,8 @@ complete. State failure evidence and the repo/platform recovery boundary are
 documented in [`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
 The next endpoint-package contract is documented in
 [`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
+The scratch S3 proof runbook is documented in
+[`HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
 
 ## Tracker Gate
 

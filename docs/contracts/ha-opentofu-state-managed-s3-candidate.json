@@ -32,7 +32,7 @@
 		"RBE CAS and action-cache are separate future authorities and are not backed by this state bucket"
 	],
 	"proof_plan": [
-		"scratch S3 proof uses the non-state bucket from just ha-state-candidate-proof --endpoint-package <endpoint-package.json>",
+		"scratch S3 proof uses the non-state bucket from just ha-state-candidate-proof --endpoint-package <endpoint-package.json> --phase baseline --checkpoint-file <path>",
 		"disposable OpenTofu proof uses just ha-state-candidate-proof --endpoint-package <endpoint-package.json> --run-disposable-tofu before protected state",
 		"restart verification is captured through the checkpoint flow or a managed maintenance equivalent",
 		"node maintenance verification is captured through one node or failure-domain event or a managed HA equivalent"

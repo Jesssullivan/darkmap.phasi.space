@@ -76,7 +76,8 @@ or delete:
    just ha-state-endpoint-package-check <endpoint-package.json>
    ```
 
-5. Run the scratch S3 proof for #142.
+5. Run the scratch S3 proof for #142 using
+   [`docs/HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
 6. Run the disposable OpenTofu proof for #144 with `--use-lockfile`.
 7. Keep #145 blocked until both proof phases pass and evidence is recorded.
 

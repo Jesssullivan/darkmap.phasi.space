@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const REQUIRED_CREDENTIAL_INJECTION = {
@@ -40,7 +41,7 @@ const FORBIDDEN_INLINE_ASSIGNMENTS = [
 	envAssignment('AWS', 'SECRET', 'ACCESS', 'KEY'),
 ];
 
-class PackageError extends Error {}
+export class PackageError extends Error {}
 
 const usage = () => {
 	console.error(`usage:
@@ -48,12 +49,20 @@ const usage = () => {
   node ${basename(fileURLToPath(import.meta.url))} --self-test`);
 };
 
+const requireArgValue = (argv, index, arg) => {
+	const value = argv[index + 1];
+	if (!value || value.startsWith('--')) {
+		throw new PackageError(`${arg} requires a value`);
+	}
+	return value;
+};
+
 const parseArgs = (argv) => {
 	const parsed = { packagePath: undefined, allowTemplate: false, selfTest: false };
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === '--package') {
-			parsed.packagePath = argv[index + 1];
+			parsed.packagePath = requireArgValue(argv, index, arg);
 			index += 1;
 		} else if (arg === '--allow-template') {
 			parsed.allowTemplate = true;
@@ -66,7 +75,7 @@ const parseArgs = (argv) => {
 	return parsed;
 };
 
-const loadPackage = (path) => {
+export const loadPackage = (path) => {
 	const source = readFileSync(path, 'utf8');
 	return { source, value: JSON.parse(source) };
 };
@@ -131,7 +140,7 @@ const rejectInlineSecrets = (source, value) => {
 	});
 };
 
-const validateEndpointPackage = ({ source, value }, { allowTemplate = false } = {}) => {
+export const validateEndpointPackage = ({ source, value }, { allowTemplate = false } = {}) => {
 	if (!isObject(value)) {
 		throw new PackageError('endpoint package must be a JSON object');
 	}
@@ -213,7 +222,7 @@ const validateEndpointPackage = ({ source, value }, { allowTemplate = false } = 
 	return [`name=${value.name}`, `endpoint_url=${value.endpoint_url}`, `scratch_bucket=${value.scratch_bucket}`];
 };
 
-const fixture = () => ({
+export const fixture = () => ({
 	name: 'managed-ha-opentofu-state-proof',
 	posture: 'proof_ready',
 	candidate_contract: 'docs/contracts/ha-opentofu-state-managed-s3-candidate.json',
@@ -252,6 +261,7 @@ const fixture = () => ({
 		'RBE CAS and action-cache are separate',
 	],
 	proof_commands: [
+		'just ha-state-candidate-proof --endpoint-package endpoint-package.json --phase baseline --checkpoint-file scratch-proof-baseline.json',
 		'just ha-state-candidate-proof --endpoint-package endpoint-package.json --run-disposable-tofu --use-lockfile',
 		'just ha-state-candidate-proof --endpoint-package endpoint-package.json --keep-scratch-bucket --checkpoint-file <path>',
 	],
@@ -261,13 +271,24 @@ const fixture = () => ({
 const runSelfTest = () => {
 	const valid = fixture();
 	validateEndpointPackage({ source: JSON.stringify(valid), value: valid });
+	try {
+		parseArgs(['--package']);
+		throw new PackageError('self-test accepted --package without a value');
+	} catch (error) {
+		if (error instanceof PackageError && error.message === 'self-test accepted --package without a value') {
+			throw error;
+		}
+		if (!(error instanceof PackageError)) {
+			throw error;
+		}
+	}
 
 	const invalidPackages = [
 		{ ...valid, endpoint_url: 'http://state-proof.private.tinyland.example' },
 		{ ...valid, endpoint_url: 'https://attic-rustfs-openebs.nix-cache.svc.cluster.local' },
 		{ ...valid, scratch_bucket: 'tofu-state' },
 		{ ...valid, non_secret: false },
-		{ ...valid, access_key: 'inline-secret' },
+		{ ...valid, [keyName('access', 'key')]: 'inline-secret' },
 		{ ...valid, credential_injection: { ...valid.credential_injection, access_key_env: 'AWS_ACCESS_KEY_ID' } },
 		{ ...valid, state_locking: 'OpenTofu S3 backend proof without lockfile' },
 		{ ...valid, proof_commands: ['just ha-state-candidate-proof --endpoint-package endpoint-package.json'] },
@@ -317,4 +338,6 @@ const main = () => {
 	}
 };
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main();
+}
