@@ -4,7 +4,7 @@
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
-	import { healthLabel, healthTone, type LayerHealth } from '$lib/layers/health-state';
+	import { healthLabel, healthTone } from '$lib/layers/health-state';
 	import Legend from './Legend.svelte';
 
 	export interface LayerState {
@@ -191,7 +191,6 @@
 				<!-- World Atlas + raw: one toggle + opacity each. -->
 				{#each lightExtras as layer (layer.id)}
 					{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
-					{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
 					<li>
 						<label class="layer-toggle">
 							<input
@@ -200,10 +199,13 @@
 								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 							/>
 							<span class="label">{layer.label}</span>
-							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
-								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
-									{healthLabel(h)}
-								</span>
+							{#if ls.on}
+								{@const h = layerHealth.getHealth(layer.id)}
+								{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+									<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+										{healthLabel(h)}
+									</span>
+								{/if}
 							{/if}
 						</label>
 						{#if ls.on}
@@ -259,7 +261,6 @@
 				<ul>
 					{#each atmosphericLayers as layer (layer.id)}
 						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
-						{@const h = ls.on ? layerHealth.getHealth(layer.id) : ({ tag: 'idle' } satisfies LayerHealth)}
 						<li class:stale={atmosphericStale && ls.on}>
 							<div class="atmospheric-row-head">
 								<label class="layer-toggle">
@@ -269,10 +270,13 @@
 										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
 									/>
 									<span class="label">{layer.label}</span>
-									{#if h.tag !== 'idle' && h.tag !== 'rendered'}
-										<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
-											{healthLabel(h)}
-										</span>
+									{#if ls.on}
+										{@const h = layerHealth.getHealth(layer.id)}
+										{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+											<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+												{healthLabel(h)}
+											</span>
+										{/if}
 									{/if}
 								</label>
 								{#if oninfo}
