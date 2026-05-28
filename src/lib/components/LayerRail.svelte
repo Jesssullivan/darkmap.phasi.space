@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, Menu, X } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, Info, Menu, X } from '@lucide/svelte';
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
@@ -22,9 +22,11 @@
 		 * point data, so scrubbing too far from now flags those rows.
 		 */
 		time?: Date;
+		/** Called when the user hits the `(i)` chevron on an atmospheric row — opens the transmission sheet (PR-H). */
+		oninfo?: (layerId: string) => void;
 	}
 
-	let { layers, states, onchange, basemap, onbasemapchange, time }: Props = $props();
+	let { layers, states, onchange, basemap, onbasemapchange, time, oninfo }: Props = $props();
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
@@ -250,14 +252,26 @@
 					{#each atmosphericLayers as layer (layer.id)}
 						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
 						<li class:stale={atmosphericStale && ls.on}>
-							<label class="layer-toggle">
-								<input
-									type="checkbox"
-									checked={ls.on}
-									onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
-								/>
-								<span class="label">{layer.label}</span>
-							</label>
+							<div class="atmospheric-row-head">
+								<label class="layer-toggle">
+									<input
+										type="checkbox"
+										checked={ls.on}
+										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+									/>
+									<span class="label">{layer.label}</span>
+								</label>
+								{#if oninfo}
+									<button
+										type="button"
+										class="info-btn"
+										aria-label="{layer.label} — open transmission sheet"
+										onclick={() => oninfo?.(layer.id)}
+									>
+										<Info size={14} aria-hidden="true" />
+									</button>
+								{/if}
+							</div>
 							{#if ls.on}
 								<div class="opacity-row">
 									<input
@@ -432,6 +446,36 @@
 	.category-header:focus-visible {
 		outline: 2px solid #ffd166;
 		outline-offset: 2px;
+	}
+	.atmospheric-row-head {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.atmospheric-row-head .layer-toggle {
+		flex: 1 1 auto;
+	}
+	.info-btn {
+		flex: 0 0 auto;
+		background: none;
+		border: none;
+		color: rgba(233, 236, 243, 0.55);
+		cursor: pointer;
+		padding: 0.25rem 0.4rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.info-btn:hover,
+	.info-btn:focus-visible {
+		color: #ffd166;
+		outline: none;
+	}
+	@media (pointer: coarse) {
+		.info-btn {
+			min-width: 2.5rem;
+			min-height: 2.5rem;
+		}
 	}
 	.stale-pill {
 		margin-left: auto;
