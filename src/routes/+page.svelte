@@ -109,9 +109,9 @@
 
 	// Transmission widget state (PR-H). Opened via the (i) chevron on any
 	// atmospheric LayerRail row. Inputs derived from the most recent
-	// PointReadout (PWV) + defaults for AOD / Ångström / O₃ / zenith. AOD
-	// pixel sampling lands in a follow-up; PR-H uses a sensible default
-	// (0.15) and shows it in the readout so users know it's not measured.
+	// PointReadout when available + defaults for PWV / AOD / Ångström / O₃ /
+	// zenith. AOD pixel sampling lands in a follow-up; PR-H uses a sensible
+	// default (0.15) and shows it in the readout so users know it's not measured.
 	let transmissionOpen = $state(false);
 	let transmissionCurve = $state<TransmissionCurve | undefined>(undefined);
 	let transmissionLoading = $state(false);

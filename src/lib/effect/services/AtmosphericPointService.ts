@@ -19,8 +19,8 @@ export interface AtmosphericPointRequest {
 }
 
 export interface AtmosphericPointReading {
-	/** Precipitable water column, mm. */
-	readonly pwv: number;
+	/** Precipitable water column, mm. Null when the point source does not expose PWV. */
+	readonly pwv: number | null;
 	/** Relative humidity at 2 m, percent (0..100). */
 	readonly rh: number;
 	/** Low-cloud cover, percent (0..100). */
@@ -90,17 +90,20 @@ const parseReading = (body: unknown): Effect.Effect<AtmosphericPointReading, Atm
 		return Effect.fail(new AtmosphericPointError({ reason: 'no-data' }));
 	}
 	const obj = body as Record<string, unknown>;
-	const fields: (keyof AtmosphericPointReading)[] = ['pwv', 'rh', 'cloudLow', 'cloudMid', 'cloudHigh', 'visibility'];
+	const fields: (keyof AtmosphericPointReading)[] = ['rh', 'cloudLow', 'cloudMid', 'cloudHigh', 'visibility'];
 	for (const f of fields) {
 		if (typeof obj[f] !== 'number' || !Number.isFinite(obj[f])) {
 			return Effect.fail(new AtmosphericPointError({ reason: 'parse-failed' }));
 		}
 	}
+	if (obj.pwv !== null && (typeof obj.pwv !== 'number' || !Number.isFinite(obj.pwv))) {
+		return Effect.fail(new AtmosphericPointError({ reason: 'parse-failed' }));
+	}
 	if (typeof obj.matchedTime !== 'string') {
 		return Effect.fail(new AtmosphericPointError({ reason: 'parse-failed' }));
 	}
 	return Effect.succeed({
-		pwv: obj.pwv as number,
+		pwv: obj.pwv as number | null,
 		rh: obj.rh as number,
 		cloudLow: obj.cloudLow as number,
 		cloudMid: obj.cloudMid as number,

@@ -14,8 +14,8 @@
 			readonly grayIndex: number;
 		};
 		readonly atmospheric?: {
-			/** Precipitable water column, mm. */
-			readonly pwv: number;
+			/** Precipitable water column, mm. Null when unavailable from the point source. */
+			readonly pwv: number | null;
 			/** Relative humidity at 2 m, percent. */
 			readonly rh: number;
 			/** Low / mid / high cloud cover, percent. */
@@ -144,7 +144,13 @@
 				<h4>Atmosphere (Open-Meteo)</h4>
 				<dl class="atmos-grid">
 					<dt>PWV</dt>
-					<dd>{data.atmospheric.pwv.toFixed(1)}<span class="unit"> mm</span></dd>
+					<dd>
+						{#if data.atmospheric.pwv === null}
+							<span class="muted">unavailable</span>
+						{:else}
+							{data.atmospheric.pwv.toFixed(1)}<span class="unit"> mm</span>
+						{/if}
+					</dd>
 					<dt>RH</dt>
 					<dd>{Math.round(data.atmospheric.rh)}<span class="unit"> %</span></dd>
 					<dt>Cloud (L/M/H)</dt>
@@ -375,6 +381,9 @@
 		margin: 0;
 		text-align: right;
 		color: #ffd166;
+	}
+	.atmos-grid dd .muted {
+		color: rgba(233, 236, 243, 0.62);
 	}
 	.delta {
 		margin-left: 0.3rem;

@@ -73,7 +73,7 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 	const PR_D_LAYERS: ReadonlyArray<{ id: string; tag: string }> = [
 		{ id: 'clouds-viirs-noaa20', tag: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor' },
 		{ id: 'aerosol-modis-aod', tag: 'MODIS_Combined_Value_Added_AOD' },
-		{ id: 'water-vapor-airs', tag: 'AIRS_Precipitable_Water_Day' },
+		{ id: 'water-vapor-airs', tag: 'MODIS_Terra_Water_Vapor_5km_Day' },
 	];
 
 	it('records native GIBS matrix depth so MapLibre overzooms instead of requesting unsupported tiles', () => {
@@ -84,7 +84,7 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 			'aerosol-modis-aod': 6,
 			'clouds-modis-terra': 9,
 			'clouds-viirs-noaa20': 9,
-			'water-vapor-airs': 5,
+			'water-vapor-airs': 6,
 		});
 
 		for (const def of LAYERS.filter((l) => l.group === 'atmospheric' && l.upstreamUrlTemplate)) {

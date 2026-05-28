@@ -10,7 +10,7 @@ import {
 	type RasterResponse,
 	type RasterTileRequest,
 } from '$lib/server/raster/RasterClient';
-import { parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
+import { clampTileToMaxNativeZoom, parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
 
 const RasterLayer = Layer.merge(RasterClientLive, RasterCacheLive);
 
@@ -131,10 +131,11 @@ const fetchAtmosphericTile = async (
 	if (!template) {
 		error(500, `atmospheric layer ${layerDef.id} missing upstreamUrlTemplate`);
 	}
+	const nativeTile = clampTileToMaxNativeZoom(tile, layerDef.maxNativeZoom);
 	const upstreamUrl = template
-		.replace('{z}', String(tile.z))
-		.replace('{x}', String(tile.x))
-		.replace('{y}', String(tile.y))
+		.replace('{z}', String(nativeTile.z))
+		.replace('{x}', String(nativeTile.x))
+		.replace('{y}', String(nativeTile.y))
 		.replace('{TIME}', effectiveTime);
 
 	let upstream: Response;
@@ -156,6 +157,9 @@ const fetchAtmosphericTile = async (
 		'cache-control',
 		isImmutableTime(effectiveTime) ? 'public, max-age=31536000, immutable' : 'public, max-age=3600, s-maxage=86400',
 	);
+	headers.set('x-darkmap-atmospheric-request-tile', `${tile.z}/${tile.x}/${tile.y}`);
+	headers.set('x-darkmap-atmospheric-native-tile', `${nativeTile.z}/${nativeTile.x}/${nativeTile.y}`);
+	headers.set('x-darkmap-atmospheric-time', effectiveTime);
 	return new Response(upstream.body as BodyInit | null, { status: 200, headers });
 };
 

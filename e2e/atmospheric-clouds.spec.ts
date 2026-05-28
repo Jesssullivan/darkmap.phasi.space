@@ -21,7 +21,7 @@ const EXTRA_LAYERS: ReadonlyArray<{
 }> = [
 	{ id: 'clouds-viirs-noaa20', label: /Clouds \(VIIRS NOAA-20\)/i, mapHash: '/#m=44,-73,12', maxNativeZoom: 9 },
 	{ id: 'aerosol-modis-aod', label: /Aerosol AOD \(MODIS\)/i, mapHash: '/#m=36,-115,12', maxNativeZoom: 6 },
-	{ id: 'water-vapor-airs', label: /Water vapor \(AIRS\)/i, mapHash: '/#m=38,-122,12', maxNativeZoom: 5 },
+	{ id: 'water-vapor-airs', label: /Water vapor \(MODIS Terra\)/i, mapHash: '/#m=38,-122,12', maxNativeZoom: 6 },
 ];
 
 const openAtmosphereRail = async (page: Page): Promise<void> => {
@@ -99,7 +99,7 @@ test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 		await page.waitForLoadState('networkidle');
 		await openAtmosphereRail(page);
 
-		const waterVaporToggle = page.getByRole('checkbox', { name: /Water vapor \(AIRS\)/i });
+		const waterVaporToggle = page.getByRole('checkbox', { name: /Water vapor \(MODIS Terra\)/i });
 		await expect(waterVaporToggle).toBeVisible();
 		const atmosphericTileRequest = page.waitForRequest(
 			(req) =>
@@ -112,7 +112,7 @@ test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 
 		const req = await atmosphericTileRequest;
 		const url = new URL(req.url());
-		expect(Number(url.searchParams.get('z'))).toBeLessThanOrEqual(5);
+		expect(Number(url.searchParams.get('z'))).toBeLessThanOrEqual(6);
 	});
 
 	test('toggling off re-checks to false; opacity slider becomes interactive when on', async ({ page }) => {

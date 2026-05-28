@@ -200,9 +200,10 @@
 			SBDART. Source: <strong>{curve.source}</strong>.
 		</p>
 		<p class="attrib">
-			Inputs: PWV / RH via <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> (CC-BY).
-			Aerosol via <a href="https://gibs.earthdata.nasa.gov" target="_blank" rel="noreferrer">NASA GIBS</a> (public domain).
-			Transmission model: SMARTS / SBDART analog.
+			Inputs: RH via <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> (CC-BY); PWV
+			falls back to the default until a point source is wired. Aerosol via
+			<a href="https://gibs.earthdata.nasa.gov" target="_blank" rel="noreferrer">NASA GIBS</a> (public domain). Transmission
+			model: SMARTS / SBDART analog.
 		</p>
 	{:else}
 		<p class="loading">Waiting for atmospheric inputs…</p>
