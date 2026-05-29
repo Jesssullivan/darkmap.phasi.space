@@ -3,8 +3,11 @@
 Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and
 low-light logistics: <https://darkmap.phasi.space>.
 
-The map combines VIIRS DNB radiance, Falchi 2016 World Atlas, OSM search,
-terrain horizon raycasting, sun/moon ephemeris, and shareable map state.
+The map combines VIIRS DNB radiance, Falchi 2016 World Atlas, NASA GIBS
+atmospheric overlays (clouds, aerosol optical depth, water vapor), an OpenAQ
+PM2.5 layer with a kernel-diffusion estimate, a spectral transmission widget
+(T(λ) with band guidance), point readout, OSM search, terrain horizon
+raycasting, sun/moon ephemeris, and shareable map state.
 
 ## Launch Status
 
@@ -76,6 +79,10 @@ Current public-readiness follow-up: [#122](https://github.com/Jesssullivan/darkm
 
 - NASA/NOAA VIIRS Day/Night Band composites
 - Falchi et al. 2016, *The new world atlas of artificial night sky brightness*
+- NASA GIBS WMTS (MODIS Terra / VIIRS NOAA-20 true-color, MODIS Combined AOD, MODIS Terra water vapor)
+- Open-Meteo point forecast (RH, cloud cover, visibility, PWV), CC-BY 4.0
+- OpenAQ v3 ground-station PM2.5, CC-BY 4.0
+- HITRAN2020 line data (curated subset) for the spectral transmission bands
 - OpenStreetMap data through Photon
 - AWS Mapzen Terrarium elevation tiles
 - Current public WMS transport for selected light-pollution rasters

@@ -50,8 +50,16 @@
 		<h2 class="mb-3 font-mono text-lg font-bold">Feature surface</h2>
 		<ul class="list-disc space-y-2 pl-6">
 			<li>
-				<strong>VIIRS DNB radiance</strong> — annual composites 2012-2019 + monthly composites Apr 2012 → Apr 2026 (169 months)
-				with a play / scrub time slider
+				<strong>VIIRS DNB radiance</strong> — NOAA annual composites 2012-2019, selected with a single-select year picker
+				in the layer rail
+			</li>
+			<li>
+				<strong>Atmospheric overlays</strong> — NASA GIBS clouds (MODIS Terra, VIIRS NOAA-20), MODIS aerosol optical depth,
+				and column water vapor, plus an OpenAQ ground-station PM2.5 layer with a kernel-diffusion estimate
+			</li>
+			<li>
+				<strong>Spectral transmission widget</strong> — T(λ) for the picked point with a plain-language "clearest window /
+				worst band" takeaway; the local PM2.5 estimate can drive the aerosol input
 			</li>
 			<li>
 				<strong>Falchi 2016 World Atlas</strong> — the styled overlay, plus the raw mcd/m² radiance surfaced in the point-query
@@ -73,8 +81,8 @@
 				<strong>Geocoder</strong> — search for a place (typo-tolerant), or paste coords as decimal / DMS / DMM
 			</li>
 			<li>
-				<strong>Shareable URLs</strong> — the hash captures view + active layers + basemap + ephemeris cursor + monthly slider
-				position + autoplay flag
+				<strong>Shareable URLs</strong> — the hash captures map view + active layers (with opacity) + basemap + ephemeris
+				cursor
 			</li>
 		</ul>
 	</section>
@@ -177,10 +185,11 @@
 				point source is wired.
 			</li>
 			<li>
-				<strong>OpenAQ v3</strong> — PM2.5 ground stations in the viewport bbox, CC-BY 4.0. The map shows
-				station-observation density, not physical diffusion; null readings are treated as unknown rather than clean air.
-				Requires an <code>OPENAQ_API_KEY</code> env on the server; absent that, the proxy returns an empty FeatureCollection
-				so the overlay renders nothing instead of throwing.
+				<strong>OpenAQ v3</strong> — PM2.5 ground stations in the viewport bbox, CC-BY 4.0. The map overlay shows
+				station-observation density (heatmap + markers), with null readings treated as unknown rather than clean air. A
+				separate kernel-diffusion model estimates point PM2.5 with a confidence signal — surfaced in the point readout
+				and used to drive the transmission widget's aerosol input. Requires an <code>OPENAQ_API_KEY</code> env on the server;
+				absent that, the proxy returns an empty FeatureCollection so the overlay renders nothing instead of throwing.
 			</li>
 		</ul>
 
@@ -246,9 +255,8 @@
 			>
 			(0.3 – 4 µm) +
 			<a href="https://github.com/paulricchiazzi/SBDART" class="underline" rel="noreferrer external">SBDART</a>
-			(4 – 30 µm) output against the US Standard Atmosphere. V3b adds Py4CAtS / HITRAN line-by-line for the named astronomy
-			bands (H₂O 940/1130/1380/1870 nm, O₂ A-band, telluric O₂-X, CO₂ 4.3 µm) — selective high-resolution overlays loaded
-			on demand. Widget code stays unchanged across all generations.
+			(4 – 30 µm) output against the US Standard Atmosphere. The LUT JSON contract and the shipped line-by-line bands above
+			stay stable across model swaps; the widget code is unchanged across generations.
 		</p>
 
 		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Caveats</h3>
@@ -259,8 +267,9 @@
 				MODTRAN or libRadtran.
 			</li>
 			<li>
-				<strong>AOD defaults to 0.15 in the widget</strong> until pixel-sampling against the MODIS Combined AOD raster lands.
-				The displayed input chip shows the effective value.
+				<strong>AOD defaults to 0.15 in the widget.</strong> When the PM2.5 overlay is on and a station is in range, a clicked
+				point instead drives AOD from the modeled local PM2.5 estimate (shown with a confidence caption); pixel-sampling against
+				the MODIS Combined AOD raster is still a follow-up. The displayed input chip shows the effective value.
 			</li>
 			<li>
 				<strong>Zenith defaults to 30°.</strong> Solar-zenith computation from the current ephemeris time + lat / lon is a
