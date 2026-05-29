@@ -33,6 +33,10 @@ const ATMOSPHERIC = [
 ] as const;
 
 const HEALTH_STATE = /loading|live|cache|cached|no data|stale|error|offline/i;
+const TRANSPARENT_PNG = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+	'base64',
+);
 
 const openRail = async (page: Page): Promise<void> => {
 	const railToggle = page.getByRole('button', { name: /Open layers/i });
@@ -43,6 +47,26 @@ const openAtmosphere = async (page: Page): Promise<void> => {
 	const header = page.getByRole('button', { name: /^Atmosphere/i });
 	await expect(header).toBeVisible();
 	if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+};
+
+const mockAtmosphericRasterTiles = async (page: Page): Promise<void> => {
+	await page.route('**/api/raster?**', async (route) => {
+		const url = new URL(route.request().url());
+		if (url.searchParams.get('kind') !== 'atmospheric') {
+			await route.continue();
+			return;
+		}
+
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'cache-control': 'no-store',
+				'content-type': 'image/png',
+				'x-darkmap-atmospheric-outcome': 'ok',
+			},
+			body: TRANSPARENT_PNG,
+		});
+	});
 };
 
 /** The <li> row that contains a given checkbox — lets us scope the pill query. */
@@ -93,6 +117,7 @@ test.describe('Mobile layer-toggle suite (#237)', () => {
 
 	test('every atmospheric overlay mounts + fetches through the proxy (rendered-or-degraded)', async ({ page }) => {
 		await page.setViewportSize(IPHONE_14);
+		await mockAtmosphericRasterTiles(page);
 		await page.goto('/#m=40,-100,4');
 		await page.waitForLoadState('networkidle');
 		await openRail(page);
@@ -114,16 +139,23 @@ test.describe('Mobile layer-toggle suite (#237)', () => {
 			// If a degraded pill surfaced (loading/no-data/stale/error), it must
 			// carry a valid state — never a blank/garbage pill. A healthy layer
 			// shows no pill, which is the correct "rendered" signal.
-			const pill = rowFor(page, label).locator('.health-pill');
-			if ((await pill.count()) > 0 && (await pill.isVisible())) {
-				await expect(pill).toHaveText(HEALTH_STATE);
+			const row = rowFor(page, label);
+			const pill = row.locator('.health-pill').first();
+			const pillText = await pill
+				.textContent({ timeout: 250 })
+				.catch(() => null)
+				.then((text) => text?.trim() || null);
+			if (pillText) {
+				expect(pillText).toMatch(HEALTH_STATE);
 			}
+			await expect(row.getByText('loading', { exact: true })).toHaveCount(0);
 			await toggle.uncheck();
 		}
 	});
 
 	test('rapid toggle storm keeps the console free of lifecycle errors', async ({ page }) => {
 		await page.setViewportSize(IPHONE_14);
+		await mockAtmosphericRasterTiles(page);
 		const errors = captureConsole(page);
 		await page.goto('/#m=40,-100,4');
 		await page.waitForLoadState('networkidle');
