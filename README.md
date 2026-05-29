@@ -38,7 +38,7 @@ summary is in [`docs/PUBLIC_READINESS_AUDIT.md`](./docs/PUBLIC_READINESS_AUDIT.m
 ## Stack
 
 - SvelteKit + adapter-node
-- Svelte 5, TypeScript, Skeleton 4, Tailwind v4
+- Svelte 5, TypeScript, Skeleton 4.15.2 (pinned), Tailwind v4 (v4-compat shim)
 - MapLibre GL JS
 - Effect.ts service layers for raster, geocoder, elevation, and ephemeris work
 - astronomy-engine for sun/moon calculations
