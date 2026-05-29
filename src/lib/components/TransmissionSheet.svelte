@@ -18,6 +18,8 @@
 	import type { BandCurve } from '$lib/effect/services/LineByLineService';
 	import { AEROSOL_TYPES, aerosolEntry, type AerosolType } from '$lib/spectral/aerosol-types';
 	import { findHitranBand, HITRAN_BANDS } from '$lib/spectral/hitran-bands';
+	import { bandGuidance } from '$lib/spectral/band-guidance';
+	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 
 	interface Props {
 		curve: TransmissionCurve | undefined;
@@ -92,6 +94,10 @@
 	});
 
 	const fmt = (n: number, digits = 2) => (Number.isFinite(n) ? n.toFixed(digits) : '—');
+
+	// Plain-language takeaway distilled from the curve (#PR4): clearest window
+	// to work in + worst absorption band to avoid.
+	const guidance = $derived(curve ? bandGuidance(curve) : null);
 </script>
 
 <div class="sheet" role="dialog" aria-label="Atmospheric transmission widget">
@@ -131,7 +137,15 @@
 
 		<div class="slider-row">
 			<label>
-				<span class="slider-label">AOD<sub>550</sub></span>
+				<span class="slider-label"
+					>AOD<sub>550</sub>
+					<HelpTooltip
+						positioning="top"
+						text="Aerosol optical depth at 550 nm — how much haze, smoke, or dust the path carries. ~0.05 pristine, ~0.2 average, &gt;0.5 hazy. Higher means more scattering and dimmer transmission."
+					>
+						{#snippet trigger()}<span class="param-help" role="img" aria-label="About AOD">?</span>{/snippet}
+					</HelpTooltip></span
+				>
 				<input
 					type="range"
 					min="0"
@@ -149,7 +163,16 @@
 		</div>
 		<div class="slider-row">
 			<label>
-				<span class="slider-label">Ångström α</span>
+				<span class="slider-label"
+					>Ångström α
+					<HelpTooltip
+						positioning="top"
+						text="Ångström exponent — how strongly aerosol scattering varies with wavelength. Low (~0.5) means large particles (dust, sea salt) scattering broadband; high (~1.5–2) means fine particles (smoke, urban haze) hitting shorter wavelengths harder."
+					>
+						{#snippet trigger()}<span class="param-help" role="img" aria-label="About the Ångström exponent">?</span
+							>{/snippet}
+					</HelpTooltip></span
+				>
 				<input
 					type="range"
 					min="0.3"
@@ -166,7 +189,15 @@
 		</div>
 
 		<dl class="inputs">
-			<dt>PWV</dt>
+			<dt>
+				PWV
+				<HelpTooltip
+					positioning="top"
+					text="Precipitable water vapor — total water in the atmospheric column (mm). The main driver of the infrared absorption bands; lower PWV opens up the SWIR/MWIR windows. From the Open-Meteo point reading."
+				>
+					{#snippet trigger()}<span class="param-help" role="img" aria-label="About PWV">?</span>{/snippet}
+				</HelpTooltip>
+			</dt>
 			<dd>{fmt(curve.input.pwvMm, 1)}<span class="unit"> mm</span></dd>
 			<dt>AOD₅₅₀</dt>
 			<dd>{fmt(curve.input.aod550, 2)}</dd>
@@ -225,6 +256,12 @@
 				></line>
 			{/each}
 		</svg>
+
+		{#if guidance && (guidance.clearest || guidance.worst)}
+			<p class="band-guidance">
+				<span class="band-guidance-icon" aria-hidden="true">◎</span>{guidance.takeaway}
+			</p>
+		{/if}
 
 		<!-- V3b-4: band selector — opens the LBL detail panel for the named bands. -->
 		{#if onBandSelect}
@@ -559,6 +596,43 @@
 		height: auto;
 		display: block;
 		margin: 0 auto;
+	}
+	.band-guidance {
+		display: flex;
+		gap: 0.4rem;
+		margin: 0.5rem 0 0.2rem;
+		padding: 0.45rem 0.6rem;
+		border-radius: 7px;
+		background: rgba(97, 220, 163, 0.1);
+		border: 1px solid rgba(97, 220, 163, 0.28);
+		color: #d6f5e6;
+		font-size: 0.72rem;
+		line-height: 1.4;
+	}
+	.band-guidance-icon {
+		color: #61dca3;
+		font-size: 0.85rem;
+		line-height: 1.2;
+	}
+	.param-help {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 0.95rem;
+		height: 0.95rem;
+		margin-left: 0.2rem;
+		border-radius: 999px;
+		border: 1px solid rgba(127, 187, 255, 0.45);
+		color: #c7ddff;
+		font-size: 0.6rem;
+		font-weight: 700;
+		line-height: 1;
+		cursor: pointer;
+		vertical-align: middle;
+		opacity: 0.8;
+	}
+	.param-help:hover {
+		opacity: 1;
 	}
 	.disclaimer {
 		margin: 0.5rem 0 0.3rem;
