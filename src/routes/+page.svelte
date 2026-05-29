@@ -53,6 +53,7 @@
 		VIIRS_YEARS,
 		type RasterLayerDef,
 	} from '$lib/layers';
+	import { LayerErrorDebouncer } from '$lib/layers/toast-bridge';
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 
@@ -107,6 +108,12 @@
 	function dismissToast(id: number): void {
 		toastErrors = toastErrors.filter((e) => e.id !== id);
 	}
+
+	// #236 — layer-error toast bridge. MapLibre `error` events used to push a
+	// toast for every tile failure, including the noisy retry bursts CDNs emit
+	// during a transient 5xx. The debouncer coalesces same-layer errors within
+	// 500 ms into a single, data-driven toast text from `reasonForLayer`.
+	const layerErrorBridge = new LayerErrorDebouncer((payload) => pushToast(payload.text, payload.source));
 
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
 	let readout: Readout | undefined = $state();
@@ -940,7 +947,6 @@
 				});
 				return;
 			}
-			pushToast(err.message ?? 'tile load failed', sourceId);
 			// #196 — dispatch a tile-error health event for the matching LAYERS row.
 			// Helper skips point-source overlays (which use a -pt-src suffix and
 			// dispatch health explicitly from refreshPointLayer).
@@ -951,6 +957,15 @@
 					reason: err.message ?? 'tile load failed',
 					status: err.status,
 				});
+				// #236 — feed the debounced toast bridge instead of pushing the
+				// raw upstream message inline. The bridge coalesces rapid bursts
+				// of the same layer error and turns the upstream into a short,
+				// user-readable reason from a data-driven table.
+				layerErrorBridge.enqueue({ layerId, status: err.status, message: err.message });
+			} else {
+				// No matching layer id — fall back to the raw upstream message
+				// (point-source overlays + unknown sources).
+				pushToast(err.message ?? 'tile load failed', sourceId);
 			}
 		});
 
@@ -970,6 +985,8 @@
 				if (current.tag === 'loading') {
 					layerHealth.dispatch(activeBasemap, { type: 'tile-ok' });
 				}
+				// Cancel any pending error toast — the basemap recovered.
+				layerErrorBridge.cancel(activeBasemap);
 				return;
 			}
 			const layerId = parseLayerIdFromSourceId(evt.sourceId);
@@ -978,6 +995,8 @@
 			if (current.tag === 'loading') {
 				layerHealth.dispatch(layerId, { type: 'tile-ok' });
 			}
+			// A successful tile load means the prior error (if any) is moot.
+			layerErrorBridge.cancel(layerId);
 		});
 
 		// Initial basemap mounts at map-init time; dispatch so the LayerRail
@@ -989,6 +1008,7 @@
 		clearTimeout(hashWriteTimer);
 		stopFollow();
 		clearRoute();
+		layerErrorBridge.dispose();
 		mapInstance?.remove();
 		mapInstance = undefined;
 		controllerLayer = undefined;
