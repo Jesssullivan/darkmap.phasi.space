@@ -31,8 +31,20 @@ import {
 	isRasterTileRequestPath,
 	isStaticProjectionRequestPath,
 } from '$lib/effect/services/OfflineCacheRoutes';
+import { cacheFirst as cacheFirstStrategy, networkFirst as networkFirstStrategy } from '$lib/sw/runtime-cache';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
+
+// Strategy deps — the SW global's `caches` + `fetch`. Extracted so the
+// caching logic lives in a unit-tested module (#254).
+const runtimeDeps = { caches, fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init) };
+
+/** Runtime API buckets cache under a normalized key; app-shell stays exact. */
+const cacheFirst = (request: Request, cacheName: string, normalize = false): Promise<Response> =>
+	cacheFirstStrategy(runtimeDeps, request, cacheName, { normalize });
+
+const networkFirst = (request: Request, cacheName: string): Promise<Response> =>
+	networkFirstStrategy(runtimeDeps, request, cacheName);
 
 const APP_SHELL = `darkmap-app-shell-v${version}`;
 const RASTER_TILE = 'darkmap-raster-tile';
@@ -85,7 +97,7 @@ sw.addEventListener('fetch', (event) => {
 	// GIBS cache without touching QueryRaster tiles the user explicitly enabled.
 	if (isRasterTileRequestPath(url.pathname)) {
 		const bucket = url.searchParams.get('kind') === 'atmospheric' ? ATMOSPHERIC_TILE : RASTER_TILE;
-		event.respondWith(cacheFirst(request, bucket));
+		event.respondWith(cacheFirst(request, bucket, true));
 		return;
 	}
 
@@ -93,19 +105,19 @@ sw.addEventListener('fetch', (event) => {
 	// Share the atmospheric bucket so all atmospheric-flavored cache entries
 	// drain under a single eviction policy.
 	if (isAtmosphericRequestPath(url.pathname)) {
-		event.respondWith(cacheFirst(request, ATMOSPHERIC_TILE));
+		event.respondWith(cacheFirst(request, ATMOSPHERIC_TILE, true));
 		return;
 	}
 
 	// /api/featureinfo and /api/elevation — small JSON, cache-first.
 	if (isEphemerisRequestPath(url.pathname)) {
-		event.respondWith(cacheFirst(request, EPHEMERIS));
+		event.respondWith(cacheFirst(request, EPHEMERIS, true));
 		return;
 	}
 
 	// Static-projection JSON.
 	if (isStaticProjectionRequestPath(url.pathname)) {
-		event.respondWith(cacheFirst(request, STATIC_PROJECTION));
+		event.respondWith(cacheFirst(request, STATIC_PROJECTION, true));
 		return;
 	}
 
@@ -124,38 +136,6 @@ sw.addEventListener('fetch', (event) => {
 		return;
 	}
 });
-
-async function cacheFirst(request: Request, cacheName: string): Promise<Response> {
-	const cache = await caches.open(cacheName);
-	const cached = await cache.match(request);
-	if (cached) return cached;
-	const response = await fetch(request);
-	if (response.ok && response.type !== 'opaqueredirect') {
-		await cache.put(request, response.clone()).catch(() => {
-			// Storage quota — fall through and serve the network response uncached.
-		});
-	}
-	return response;
-}
-
-async function networkFirst(request: Request, cacheName: string): Promise<Response> {
-	try {
-		const response = await fetch(request);
-		if (response.ok) {
-			const cache = await caches.open(cacheName);
-			await cache.put(request, response.clone()).catch(() => {});
-		}
-		return response;
-	} catch (err) {
-		const cache = await caches.open(cacheName);
-		const cached = await cache.match(request);
-		if (cached) return cached;
-		// Last resort for navigations: serve the prerendered shell if present.
-		const shellMatch = await cache.match('/');
-		if (shellMatch) return shellMatch;
-		throw err;
-	}
-}
 
 // Re-exported only so unit tests can assert the bucket name contract without
 // instantiating the SW global. Not consumed at runtime.
