@@ -54,8 +54,8 @@
 				with a play / scrub time slider
 			</li>
 			<li>
-				<strong>Falchi 2016 World Atlas</strong> — both the styled visualization and the raw mcd/m² grid (with Bortle / class
-				mapping in the point-query readout)
+				<strong>Falchi 2016 World Atlas</strong> — the styled overlay, plus the raw mcd/m² radiance surfaced in the point-query
+				readout (with Bortle / class mapping)
 			</li>
 			<li>
 				<strong>Per-view ephemeris</strong> — sun + moon position, twilight gantt (astro / nautical / civil), sky compass

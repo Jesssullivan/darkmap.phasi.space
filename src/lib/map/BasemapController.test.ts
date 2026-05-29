@@ -86,7 +86,7 @@ describe('firstOverlayLayerId', () => {
 
 	it('returns the lowest-LAYERS-index overlay that is currently mounted', () => {
 		map = new FakeMap();
-		// LAYERS order: viirs (multiple years), world_atlas, world_atlas_raw, atmospheric...
+		// LAYERS order: viirs (multiple years), world_atlas, atmospheric...
 		// Seed an atmospheric layer + a world atlas layer.
 		const wa = mapLayerControllerIds.layerIdFor('world_atlas_2015');
 		const atm = mapLayerControllerIds.layerIdFor('clouds-modis-terra');

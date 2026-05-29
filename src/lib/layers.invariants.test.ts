@@ -20,7 +20,7 @@ import { LAYERS, rasterUrlTemplate, VIIRS_YEARS, type LayerGroup, type RasterLay
 /* row cannot quietly break a contract the rest of the app depends on.     */
 /* ------------------------------------------------------------------------ */
 
-const VALID_GROUPS: ReadonlyArray<LayerGroup> = ['viirs_annual', 'world_atlas', 'world_atlas_raw', 'atmospheric'];
+const VALID_GROUPS: ReadonlyArray<LayerGroup> = ['viirs_annual', 'world_atlas', 'atmospheric'];
 
 const ID_RE = /^[a-z][a-z0-9_-]*$/;
 
@@ -42,7 +42,7 @@ const sourceKindOf = (
 describe('LAYERS — base invariants', () => {
 	it('has at least one entry per non-atmospheric group', () => {
 		const byGroup = new Set(LAYERS.map((l) => l.group));
-		for (const g of ['viirs_annual', 'world_atlas', 'world_atlas_raw', 'atmospheric'] as LayerGroup[]) {
+		for (const g of ['viirs_annual', 'world_atlas', 'atmospheric'] as LayerGroup[]) {
 			expect(byGroup.has(g)).toBe(true);
 		}
 	});

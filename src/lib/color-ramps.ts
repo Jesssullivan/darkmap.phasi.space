@@ -71,8 +71,6 @@ export const WORLD_ATLAS_RAMP: ColorRamp = {
 /** Pick the right ramp for a layer's upstream identifier. */
 export function rampFor(upstreamLayer: string): ColorRamp | undefined {
 	if (upstreamLayer.startsWith('PostGIS:VIIRS_')) return VIIRS_RAMP;
-	if (upstreamLayer === 'PostGIS:WA_2015' || upstreamLayer === 'PostGIS:WA_2015_raw') {
-		return WORLD_ATLAS_RAMP;
-	}
+	if (upstreamLayer === 'PostGIS:WA_2015') return WORLD_ATLAS_RAMP;
 	return undefined;
 }
