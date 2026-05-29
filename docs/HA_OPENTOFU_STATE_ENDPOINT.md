@@ -7,7 +7,10 @@ candidate backend.
 
 ## Status
 
-Current status: endpoint package contract ready, live package pending.
+Current status: endpoint package contract ready, live package pending. The
+checked-in public status artifact is
+[`docs/contracts/ha-opentofu-state-live-candidate-status.json`](./contracts/ha-opentofu-state-live-candidate-status.json)
+and currently records `NO_LIVE_HA_STATE_CANDIDATE`.
 
 The selected candidate class is a managed or appliance HA S3-compatible state
 service, recorded in
@@ -18,6 +21,21 @@ The editable package shape is
 Do not treat the existing RustFS singleton as satisfying this contract. RustFS
 remains guarded interim state until the HA package, proof credentials, scratch
 proof, disposable OpenTofu proof, and protected migration are complete.
+
+Validate the current interim status explicitly:
+
+```bash
+just tofu-state-ha-readiness --expect-interim
+```
+
+For final #141 readiness, the same command must pass without
+`--expect-interim` after the status artifact points at a filled non-secret
+endpoint package:
+
+```bash
+just tofu-state-ha-readiness --status docs/contracts/ha-opentofu-state-live-candidate-status.json \
+  --endpoint-package endpoint-package.json
+```
 
 ## Endpoint Package Requirements
 

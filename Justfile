@@ -98,7 +98,7 @@ test-e2e:
 test: test-unit test-e2e
 
 # Run lint + typecheck + unit (pre-commit gate)
-check: lint typecheck test-unit
+check: lint typecheck test-unit ha-state-live-candidate-status-check
     @echo "All checks passed."
 
 # Run full CI pipeline locally
@@ -182,6 +182,19 @@ tofu-init-reconfigure:
 # Static validation — no network or state access required
 tofu-validate:
     cd {{ tofu_dir }} && tofu fmt -check -recursive && tofu validate
+
+# HA state readiness gate. Without --expect-interim this should stay red until
+# #141 has a filled live endpoint package.
+tofu-state-ha-readiness *args:
+    cd {{ root }} && node scripts/ha-state-live-candidate-status.mjs {{ args }}
+
+# Validate the checked-in public status artifact while RustFS is still interim-only
+ha-state-live-candidate-status-check:
+    cd {{ root }} && node scripts/ha-state-live-candidate-status.mjs --expect-interim
+
+# Offline guard tests for the HA state live-candidate status validator
+ha-state-live-candidate-status-self-test:
+    cd {{ root }} && node scripts/ha-state-live-candidate-status.mjs --self-test
 
 # Validate a non-secret HA OpenTofu state endpoint package before scratch proof
 ha-state-endpoint-package-check package:
