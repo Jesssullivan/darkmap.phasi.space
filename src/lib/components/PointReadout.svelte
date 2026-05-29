@@ -394,10 +394,10 @@
 		.readout {
 			left: 0.75rem;
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem);
-			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 0.75rem);
+			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 			min-width: 0;
 			max-width: none;
-			max-height: calc(100dvh - var(--field-bottom-reserve, 7.75rem) - 2rem);
+			max-height: calc(100dvh - var(--field-bottom-reserve, 7.75rem) - env(safe-area-inset-bottom, 0px) - 7.5rem);
 			overflow-y: auto;
 			padding: 0.9rem 1rem 1rem;
 		}
