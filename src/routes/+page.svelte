@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Effect, Layer } from 'effect';
+	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
@@ -24,7 +24,14 @@
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
-	import { estimatePm25At, pm25ToAod550, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
+	import {
+		estimatePm25At,
+		formatNearestKm,
+		formatStationCount,
+		pm25ToAod550,
+		type Pm25Estimate,
+		type Pm25Station,
+	} from '$lib/atmospheric/pm25-diffusion';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -156,6 +163,11 @@
 	// is off or no station is in range (never a fabricated value).
 	let pm25Estimate = $state<Pm25Estimate | null>(null);
 
+	// Built once, not per keystroke — refreshTransmission runs on an 80ms debounce
+	// off every slider/picker change, so rebuilding the merged layer literal each
+	// call re-initializes both services needlessly.
+	const TRANSMISSION_LAYER = Layer.merge(TransmissionEstimatorLive, MieScatteringServiceLive);
+
 	async function refreshTransmission(): Promise<void> {
 		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
 		const input = {
@@ -174,7 +186,7 @@
 				return aerosolType !== null
 					? yield* svc.estimateWithLiveAerosol(input, aerosolType)
 					: yield* svc.estimate(input);
-			}).pipe(Effect.provide(Layer.merge(TransmissionEstimatorLive, MieScatteringServiceLive))),
+			}).pipe(Effect.provide(TRANSMISSION_LAYER)),
 		);
 		transmissionLoading = false;
 		if (exit._tag === 'Success') {
@@ -230,9 +242,8 @@
 			return;
 		}
 		transmissionAod = aod;
-		const near = est.nearestKm === null ? '' : `, nearest ${est.nearestKm < 1 ? '<1' : Math.round(est.nearestKm)} km`;
-		const plural = est.contributingStations === 1 ? '' : 's';
-		transmissionAodSource = `modeled from local PM2.5 — ${est.confidence} confidence (${est.contributingStations} station${plural}${near})`;
+		const near = formatNearestKm(est.nearestKm);
+		transmissionAodSource = `modeled from local PM2.5 — ${est.confidence} confidence (${formatStationCount(est.contributingStations)}${near ? `, ${near}` : ''})`;
 		if (transmissionOpen) scheduleTransmissionRefresh();
 	}
 	function onAngstromChange(value: number): void {
@@ -393,8 +404,12 @@
 			}).pipe(Effect.provide(layer)),
 		);
 		if (watchExit._tag === 'Failure') {
-			// Watch failed to start — usually unsupported. Pull the typed error.
-			const err = (watchExit.cause as unknown as { error?: { reason?: string; message?: string } }).error;
+			// Watch failed to start — usually unsupported. Pull the typed failure
+			// via Cause.failureOption so a Die/Sequential cause isn't silently
+			// dropped (a bare `cause.error` cast only reads a top-level Fail node).
+			const err = Option.getOrUndefined(Cause.failureOption(watchExit.cause)) as
+				| { reason?: string; message?: string }
+				| undefined;
 			handleFollowError({
 				reason: (err?.reason as 'unsupported') ?? 'failed',
 				message: err?.message ?? 'follow could not start',
@@ -533,7 +548,9 @@
 			}).pipe(Effect.provide(RouteImportServiceLive)),
 		);
 		if (exit._tag === 'Failure') {
-			const err = (exit.cause as unknown as { error?: { reason?: string; message?: string } }).error;
+			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as
+				| { reason?: string; message?: string }
+				| undefined;
 			pushToast(err?.message ?? 'Route import failed', 'route');
 			return;
 		}

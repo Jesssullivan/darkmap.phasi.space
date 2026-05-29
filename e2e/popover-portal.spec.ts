@@ -65,8 +65,10 @@ test.describe('HelpTooltip popover portaling (design-review)', () => {
 		expect(box).not.toBeNull();
 		expect(box!.x).toBeGreaterThanOrEqual(0);
 		expect(box!.width).toBeGreaterThan(120);
-		// Substantially on-screen: allow a few px at the extreme edge (floating-ui
-		// leaves a small gutter at 390px; tighter viewport clamping is a follow-up).
-		expect(box!.x + box!.width).toBeLessThanOrEqual(390 + 8);
+		// Fully on-screen: `strategy: 'fixed'` measures floating-ui's shift()
+		// against the visual viewport (not the portaled positioner's clipping
+		// ancestors), and `overflowPadding: 8` insets it — so the panel that
+		// previously spilled ~5px past the 390px edge now stays within it.
+		expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 	});
 });

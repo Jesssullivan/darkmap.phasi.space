@@ -31,7 +31,12 @@
 	let { text, positioning = 'top', trigger, content }: Props = $props();
 </script>
 
-<Popover positioning={{ placement: positioning }}>
+<!-- `strategy: 'fixed'` measures against the visual viewport, not the portaled
+     positioner's clipping ancestors — without it floating-ui's shift() lets the
+     panel spill ~5px past the screen edge on narrow (mobile) viewports.
+     `overflowPadding: 8` is the Zag default, passed explicitly so the viewport
+     inset is load-bearing at the call site. -->
+<Popover positioning={{ placement: positioning, strategy: 'fixed', overflowPadding: 8 }}>
 	<Popover.Trigger class="help-tooltip-trigger" aria-label="Show help">
 		{@render trigger()}
 	</Popover.Trigger>

@@ -86,10 +86,7 @@
 	function setViirsOpacity(opacity: number): void {
 		// Push the opacity to every VIIRS year so toggling years preserves
 		// the slider position.
-		for (const l of VIIRS_YEARS) {
-			if (states[l.id]?.on) onchange(l.id, { opacity });
-			else onchange(l.id, { opacity });
-		}
+		for (const l of VIIRS_YEARS) onchange(l.id, { opacity });
 	}
 </script>
 

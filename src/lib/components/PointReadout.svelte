@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { X } from '@lucide/svelte';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
-	import type { Pm25Estimate } from '$lib/atmospheric/pm25-diffusion';
+	import {
+		formatNearestKm,
+		formatStationCount,
+		pm25AqiCategory,
+		type Pm25Estimate,
+	} from '$lib/atmospheric/pm25-diffusion';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -44,17 +49,12 @@
 
 	let { lat, lon, time, data, loading, error, pm25 = null, onclose }: Props = $props();
 
-	// US-AQI PM2.5 category (µg/m³) — standard breakpoints, for plain-language context.
-	const pm25Category = (v: number): string => {
-		if (v < 12) return 'Good';
-		if (v < 35.5) return 'Moderate';
-		if (v < 55.5) return 'Unhealthy for sensitive groups';
-		if (v < 150.5) return 'Unhealthy';
-		if (v < 250.5) return 'Very unhealthy';
-		return 'Hazardous';
+	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
+	// the readout joins the fragments with middot separators.
+	const fmtNearest = (km: number | null): string => {
+		const near = formatNearestKm(km);
+		return near ? ` · ${near}` : '';
 	};
-	const fmtNearest = (km: number | null): string =>
-		km === null ? '' : ` · nearest ${km < 1 ? '<1' : Math.round(km)} km`;
 
 	const fmtCoord = (n: number) => n.toFixed(4);
 	const viirsAvg = $derived.by(() =>
@@ -208,11 +208,9 @@
 		<section>
 			<h4>PM2.5 <span class="modeled-tag">modeled</span></h4>
 			<p class="value">{pm25.valueUgm3.toFixed(1)}<span class="unit"> µg/m³</span></p>
-			<p class="note">{pm25Category(pm25.valueUgm3)}</p>
+			<p class="note">{pm25AqiCategory(pm25.valueUgm3)}</p>
 			<p class="note coverage" class:low={pm25.confidence === 'low'}>
-				{pm25.confidence} confidence · {pm25.contributingStations} station{pm25.contributingStations === 1
-					? ''
-					: 's'}{fmtNearest(pm25.nearestKm)}
+				{pm25.confidence} confidence · {formatStationCount(pm25.contributingStations)}{fmtNearest(pm25.nearestKm)}
 			</p>
 		</section>
 	{/if}

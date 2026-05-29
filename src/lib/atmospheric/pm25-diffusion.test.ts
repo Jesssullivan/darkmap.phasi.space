@@ -3,13 +3,47 @@ import { AOD550_AXIS } from '$lib/spectral/transmission-axes';
 import {
 	DEFAULT_DIFFUSION,
 	estimatePm25At,
+	formatNearestKm,
+	formatStationCount,
 	haversineKm,
+	pm25AqiCategory,
 	pm25ToAod550,
 	PM25_TO_AOD550_FACTOR,
 	type Pm25Station,
 } from './pm25-diffusion';
 
 const station = (lon: number, lat: number, value: number | null): Pm25Station => ({ lon, lat, value });
+
+/* --------------------------- coverage phrasing --------------------------- */
+
+describe('formatStationCount', () => {
+	it('singular for one station, plural otherwise', () => {
+		expect(formatStationCount(1)).toBe('1 station');
+		expect(formatStationCount(0)).toBe('0 stations');
+		expect(formatStationCount(3)).toBe('3 stations');
+	});
+});
+
+describe('formatNearestKm', () => {
+	it('returns null when no station is in range', () => {
+		expect(formatNearestKm(null)).toBeNull();
+	});
+	it('clamps sub-kilometre distances to "<1" and rounds the rest', () => {
+		expect(formatNearestKm(0.4)).toBe('nearest <1 km');
+		expect(formatNearestKm(4.6)).toBe('nearest 5 km');
+	});
+});
+
+describe('pm25AqiCategory', () => {
+	it('maps µg/m³ to US-AQI category labels at the breakpoints', () => {
+		expect(pm25AqiCategory(5)).toBe('Good');
+		expect(pm25AqiCategory(20)).toBe('Moderate');
+		expect(pm25AqiCategory(40)).toBe('Unhealthy for sensitive groups');
+		expect(pm25AqiCategory(100)).toBe('Unhealthy');
+		expect(pm25AqiCategory(200)).toBe('Very unhealthy');
+		expect(pm25AqiCategory(300)).toBe('Hazardous');
+	});
+});
 
 /* ------------------------------ haversine ------------------------------ */
 
