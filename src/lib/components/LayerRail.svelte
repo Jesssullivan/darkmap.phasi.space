@@ -115,7 +115,15 @@
 	</header>
 
 	<section class="basemap-section" aria-label="Basemap">
-		<p class="section-title">Basemap</p>
+		<p class="section-title">
+			<span>Basemap</span>
+			{#if basemap}
+				{@const h = layerHealth.getHealth(basemap)}
+				{#if h.tag !== 'idle'}
+					<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>{healthLabel(h)}</span>
+				{/if}
+			{/if}
+		</p>
 		<div class="basemap-row" role="radiogroup" aria-label="Basemap">
 			{#each BASEMAPS as bm (bm.id)}
 				<button
@@ -409,6 +417,18 @@
 		opacity: 0.55;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
+		/* Allow the inline health pill to float right of the label. */
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.4rem;
+	}
+	.section-title > span {
+		flex: 0 0 auto;
+	}
+	.section-title .health-pill {
+		text-transform: none;
+		letter-spacing: 0;
 	}
 	.basemap-row {
 		display: grid;
