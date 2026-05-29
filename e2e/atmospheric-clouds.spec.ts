@@ -79,6 +79,7 @@ const atmosphericRow = (page: Page, label: RegExp) =>
 for (const { id, label, mapHash, maxNativeZoom } of EXTRA_LAYERS) {
 	test(`Atmospheric layer ${id}: toggle fires the proxy with kind=atmospheric`, async ({ page }) => {
 		await page.setViewportSize({ width: 1280, height: 800 });
+		await mockAtmosphericLayerTiles(page, { layerId: id, status: 200, outcome: 'ok' });
 		await page.goto(mapHash);
 		await page.waitForLoadState('networkidle');
 		await openAtmosphereRail(page);
@@ -141,6 +142,7 @@ test.describe('Atmospheric layer health pills', () => {
 test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 	test('toggling the layer triggers a proxied GIBS tile fetch with kind=atmospheric', async ({ page }) => {
 		await page.setViewportSize({ width: 1280, height: 800 });
+		await mockAtmosphericLayerTiles(page, { layerId: 'clouds-modis-terra', status: 200, outcome: 'ok' });
 
 		await page.goto('/');
 		await page.waitForLoadState('networkidle');
@@ -172,6 +174,7 @@ test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 		page,
 	}) => {
 		await page.setViewportSize({ width: 390, height: 844 });
+		await mockAtmosphericLayerTiles(page, { layerId: 'water-vapor-airs', status: 200, outcome: 'ok' });
 
 		await page.goto('/#m=42.4434,-76.5019,12');
 		await page.waitForLoadState('networkidle');

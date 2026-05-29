@@ -80,6 +80,25 @@ describe('OpenAQService — getSensors', () => {
 		expect(exit.value.features).toHaveLength(0);
 	});
 
+	it('passes abort signals through to the fetcher', async () => {
+		const controller = new AbortController();
+		let seenSignal: AbortSignal | undefined;
+		const fetcher: OpenAQFetcher = {
+			fetch: async (_url, init) => {
+				seenSignal = init?.signal;
+				return { ok: true, status: 200, json: async () => makeBody([]) };
+			},
+		};
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OpenAQService;
+				return yield* svc.getSensors(BBOX, { signal: controller.signal });
+			}).pipe(Effect.provide(makeOpenAQServiceLive(fetcher))),
+		);
+		if (exit._tag !== 'Success') throw new Error('expected Success');
+		expect(seenSignal).toBe(controller.signal);
+	});
+
 	it('drops malformed features without failing the request', async () => {
 		const exit = await runWith(
 			fakeOk({

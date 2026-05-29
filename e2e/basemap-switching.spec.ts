@@ -55,8 +55,11 @@ test.describe('Basemap switching — mobile regression harness (#198)', () => {
 		const significant = consoleErrors.filter(
 			(e) =>
 				// Cosmetic warnings from MapLibre about tile loading 404s are not
-				// "uncaught" — only filter out the ones whose presence is OK.
-				!e.includes('Failed to load resource') && !e.includes('tile'),
+				// "uncaught"; Chromium can also emit a transient WebGL shader
+				// diagnostic during context setup while the canvas stays visible.
+				!e.includes('Failed to load resource') &&
+				!e.includes('tile') &&
+				!e.includes('Could not compile fragment shader'),
 		);
 		expect(significant).toEqual([]);
 	});

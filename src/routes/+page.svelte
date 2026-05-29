@@ -120,6 +120,8 @@
 
 	type Readout = { lat: number; lon: number; data?: ReadoutData; loading: boolean; error?: string };
 	let readout: Readout | undefined = $state();
+	let readoutGen = 0;
+	let readoutInflight: AbortController | undefined;
 
 	// Transmission widget state (PR-H). Opened via the (i) chevron on any
 	// atmospheric LayerRail row. Inputs derived from the most recent
@@ -563,13 +565,24 @@
 		void ingestRouteFile(file);
 	}
 
+	function closeReadout(): void {
+		readoutGen++;
+		readoutInflight?.abort();
+		readoutInflight = undefined;
+		readout = undefined;
+	}
+
 	async function queryAt(lat: number, lon: number): Promise<void> {
+		const myGen = ++readoutGen;
+		readoutInflight?.abort();
+		const controller = new AbortController();
+		readoutInflight = controller;
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
 
 		const featureinfoPromise = (async (): Promise<ReadoutData> => {
 			const params = new URLSearchParams({ layer: activeViirs, lat: String(lat), lon: String(lon) });
-			const res = await fetch(`/api/featureinfo?${params}`);
+			const res = await fetch(`/api/featureinfo?${params}`, { signal: controller.signal });
 			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
 			return (await res.json()) as ReadoutData;
 		})();
@@ -580,19 +593,25 @@
 		const atmosphericPromise = Effect.runPromiseExit(
 			Effect.gen(function* () {
 				const svc = yield* AtmosphericPointService;
-				return yield* svc.getReading({ lat, lon, time: ephemerisTime });
+				return yield* svc.getReading({ lat, lon, time: ephemerisTime }, { signal: controller.signal });
 			}).pipe(Effect.provide(AtmosphericPointServiceLive)),
 		);
 
 		try {
 			const [featureinfo, atmosphericExit] = await Promise.all([featureinfoPromise, atmosphericPromise]);
+			if (myGen !== readoutGen || controller.signal.aborted) return;
 			const data: ReadoutData =
 				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
 			readout = { lat, lon, loading: false, data };
 			// #275 — drive the transmission AOD from the local PM2.5 estimate.
 			applyPm25DerivedAod(lat, lon);
 		} catch (e) {
+			if (myGen !== readoutGen || controller.signal.aborted) return;
 			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };
+		} finally {
+			if (readoutInflight === controller) {
+				readoutInflight = undefined;
+			}
 		}
 	}
 
@@ -679,7 +698,10 @@
 	// `darkmap-atmospheric-tile` via the SW route.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping for the moveend handler, not reactive state
 	const POINT_SOURCE_IDS = new Set<string>();
-	let pointFetchInflight: AbortController | undefined;
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- in-flight request bookkeeping, not reactive UI state
+	const pointFetchInflight = new Map<string, AbortController>();
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- stale-response generation bookkeeping, not reactive UI state
+	const pointFetchGen = new Map<string, number>();
 	let pointMoveendDebounce: ReturnType<typeof setTimeout> | undefined;
 
 	const pointSourceId = (id: string) => `darkmap-${id}-pt-src`;
@@ -764,6 +786,9 @@
 		if (map.getLayer(circId)) map.removeLayer(circId);
 		if (map.getSource(srcId)) map.removeSource(srcId);
 		POINT_SOURCE_IDS.delete(l.id);
+		pointFetchGen.set(l.id, (pointFetchGen.get(l.id) ?? 0) + 1);
+		pointFetchInflight.get(l.id)?.abort();
+		pointFetchInflight.delete(l.id);
 		// #275 — drop the cached stations + any PM2.5-derived AOD caption.
 		if (l.id === SMOG_LAYER_ID) {
 			pm25Stations = [];
@@ -786,52 +811,65 @@
 		const b = map.getBounds();
 		const bbox = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
 
-		// Cancel any in-flight viewport fetch so we don't write stale data
-		// after a fast pan. The Effect service doesn't carry an abort surface
-		// (intentionally — we use this AbortController at the page seam).
-		pointFetchInflight?.abort();
-		pointFetchInflight = new AbortController();
+		// Cancel any in-flight viewport fetch for this point layer so fast pans,
+		// toggles, and unmounts cannot write stale station data.
+		pointFetchInflight.get(l.id)?.abort();
+		const controller = new AbortController();
+		pointFetchInflight.set(l.id, controller);
+		const myGen = (pointFetchGen.get(l.id) ?? 0) + 1;
+		pointFetchGen.set(l.id, myGen);
+		const stillCurrent = (): boolean =>
+			!controller.signal.aborted && POINT_SOURCE_IDS.has(l.id) && pointFetchGen.get(l.id) === myGen;
 
-		const exit = await Effect.runPromiseExit(
-			Effect.gen(function* () {
-				const svc = yield* OpenAQService;
-				return yield* svc.getSensors(bbox);
-			}).pipe(Effect.provide(OpenAQServiceLive)),
-		);
-		if (exit._tag !== 'Success') {
-			// Soft-fail — keep whatever the previous data was; the proxy returns
-			// degraded:true for missing keys so we won't normally enter here.
-			layerHealth.dispatch(l.id, { type: 'tile-error', reason: 'fetch failed' });
-			return;
-		}
-		const fc: OpenAQSensorCollection = exit.value;
-		// #275 — cache stations so a clicked point can sample the diffusion field.
-		pm25Stations = fc.features.map((f) => ({
-			lon: f.geometry.coordinates[0],
-			lat: f.geometry.coordinates[1],
-			value: f.properties.value,
-		}));
-		const src = map.getSource(pointSourceId(l.id));
-		if (src && 'setData' in src && typeof src.setData === 'function') {
-			(src as { setData: (data: OpenAQSensorCollection) => void }).setData(fc);
-		}
+		try {
+			const exit = await Effect.runPromiseExit(
+				Effect.gen(function* () {
+					const svc = yield* OpenAQService;
+					return yield* svc.getSensors(bbox, { signal: controller.signal });
+				}).pipe(Effect.provide(OpenAQServiceLive)),
+			);
+			if (!stillCurrent()) return;
+			if (exit._tag !== 'Success') {
+				// Soft-fail — keep whatever the previous data was; the proxy returns
+				// degraded:true for missing keys so we won't normally enter here.
+				layerHealth.dispatch(l.id, { type: 'tile-error', reason: 'fetch failed' });
+				return;
+			}
+			const fc: OpenAQSensorCollection = exit.value;
+			// #275 — cache stations so a clicked point can sample the diffusion field.
+			if (l.id === SMOG_LAYER_ID) {
+				pm25Stations = fc.features.map((f) => ({
+					lon: f.geometry.coordinates[0],
+					lat: f.geometry.coordinates[1],
+					value: f.properties.value,
+				}));
+			}
+			const src = map.getSource(pointSourceId(l.id));
+			if (src && 'setData' in src && typeof src.setData === 'function') {
+				(src as { setData: (data: OpenAQSensorCollection) => void }).setData(fc);
+			}
 
-		// Toggle heatmap visibility based on density — at < 5 features the
-		// heatmap is visually empty, so show only the circles for clarity.
-		const heatId = pointHeatmapId(l.id);
-		if (map.getLayer(heatId)) {
-			map.setLayoutProperty(heatId, 'visibility', fc.features.length >= 5 ? 'visible' : 'none');
-		}
+			// Toggle heatmap visibility based on density — at < 5 features the
+			// heatmap is visually empty, so show only the circles for clarity.
+			const heatId = pointHeatmapId(l.id);
+			if (map.getLayer(heatId)) {
+				map.setLayoutProperty(heatId, 'visibility', fc.features.length >= 5 ? 'visible' : 'none');
+			}
 
-		// Health-state dispatch (#196). degraded:true means OPENAQ_API_KEY is
-		// unset upstream or returned 401/403 — surface as 'no data' so users
-		// know the overlay is intentionally blank rather than broken.
-		if (fc.degraded === true) {
-			layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'OpenAQ proxy degraded' });
-		} else if (fc.features.length === 0) {
-			layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no sensors in viewport' });
-		} else {
-			layerHealth.dispatch(l.id, { type: 'tile-ok' });
+			// Health-state dispatch (#196). degraded:true means OPENAQ_API_KEY is
+			// unset upstream or returned 401/403 — surface as 'no data' so users
+			// know the overlay is intentionally blank rather than broken.
+			if (fc.degraded === true) {
+				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'OpenAQ proxy degraded' });
+			} else if (fc.features.length === 0) {
+				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no sensors in viewport' });
+			} else {
+				layerHealth.dispatch(l.id, { type: 'tile-ok' });
+			}
+		} finally {
+			if (pointFetchInflight.get(l.id) === controller) {
+				pointFetchInflight.delete(l.id);
+			}
 		}
 	}
 
@@ -1073,6 +1111,12 @@
 
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
+		readoutGen++;
+		readoutInflight?.abort();
+		for (const controller of pointFetchInflight.values()) {
+			controller.abort();
+		}
+		pointFetchInflight.clear();
 		stopFollow();
 		clearRoute();
 		layerErrorBridge.dispose();
@@ -1218,7 +1262,7 @@
 		data={readout.data}
 		loading={readout.loading}
 		error={readout.error}
-		onclose={() => (readout = undefined)}
+		onclose={closeReadout}
 	/>
 {/if}
 

@@ -82,6 +82,28 @@ describe('AtmosphericPointService — getReading', () => {
 		expect(exit.value.rh).toBe(78);
 	});
 
+	it('passes abort signals through to the fetcher', async () => {
+		const controller = new AbortController();
+		let seenSignal: AbortSignal | undefined;
+		const fetcher: AtmosphericPointFetcher = {
+			fetch: async (_url, init) => {
+				seenSignal = init?.signal;
+				return { ok: true, status: 200, json: async () => sampleReading };
+			},
+		};
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* AtmosphericPointService;
+				return yield* svc.getReading(
+					{ lat: 42.44, lon: -76.5, time: new Date('2026-05-27T22:14:00Z') },
+					{ signal: controller.signal },
+				);
+			}).pipe(Effect.provide(makeAtmosphericPointServiceLive(fetcher))),
+		);
+		if (exit._tag !== 'Success') throw new Error(`expected Success, got ${JSON.stringify(exit)}`);
+		expect(seenSignal).toBe(controller.signal);
+	});
+
 	it('reports fetch-failed on a non-2xx status', async () => {
 		const exit = await runWith(fakeStatus(503));
 		expect(failReason(exit)).toBe('fetch-failed');
