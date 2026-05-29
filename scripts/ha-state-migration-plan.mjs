@@ -75,6 +75,7 @@ const parseArgs = (argv) => {
 };
 
 const hclString = (value) => JSON.stringify(value);
+const publicPackageRef = (path) => basename(path);
 
 const rejectUnsafeMigrationTarget = ({ pkg, stateBucket, stateKey }) => {
 	if (!/^[a-z0-9][a-z0-9.-]*$/i.test(stateBucket)) {
@@ -125,7 +126,7 @@ const checkpointFor = ({ args, pkg }) => ({
 	checkpoint_schema: 'darkmap.ha_state_protected_migration_plan.v1',
 	issue: 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/145',
 	package_name: pkg.name,
-	package_path: args.endpointPackage,
+	package_ref: publicPackageRef(args.endpointPackage),
 	planned_at: new Date().toISOString(),
 	proof_gates_required: [
 		'https://github.com/Jesssullivan/darkmap.phasi.space/issues/141',

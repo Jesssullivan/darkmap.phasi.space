@@ -187,8 +187,9 @@ After creating a new sister site from this scaffold:
 - Protected HA-state migration must follow
   `docs/HA_OPENTOFU_STATE_MIGRATION.md`: generate a reviewable backend config
   first, keep private state snapshots out of git, use OpenTofu backend
-  migration, and verify Tofu apply, GitOps drift, and public smoke before
-  closing #145.
+  migration, validate the proof checkpoint bundle with
+  `just ha-state-proof-evidence-check`, and verify Tofu apply, GitOps drift,
+  and public smoke before closing #145.
 - Modules to be composed (post-M4):
   - `spoke-state-namespace` — S3 prefix + reaper IAM.
   - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.phasi.space`.

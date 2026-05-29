@@ -26,7 +26,7 @@ scratch S3 phase. It performs these operations against the package's
 
 The harness writes no credentials to stdout or checkpoint artifacts. Checkpoints
 record operation names, public-safe paths, HTTP status codes, phase, package
-name, and scratch bucket only.
+name, public package filename, and scratch bucket only.
 
 ## Required Runtime Inputs
 
@@ -97,6 +97,19 @@ phases:
 - post-restart or post-managed-maintenance scratch proof
 - post-node or post-failure-domain scratch proof
 - cleanup confirmation that the scratch objects were deleted
+
+Before posting public closeout evidence, run the bundle checker with all scratch
+and disposable checkpoints:
+
+```bash
+just ha-state-proof-evidence-check endpoint-package.json \
+  --scratch baseline:scratch-proof-baseline.json \
+  --scratch post-maintenance:scratch-proof-post-maintenance.json \
+  --scratch post-failure-domain:scratch-proof-post-failure-domain.json \
+  --disposable baseline:disposable-tofu-baseline.json \
+  --disposable post-maintenance:disposable-tofu-post-maintenance.json \
+  --disposable post-failure-domain:disposable-tofu-post-failure-domain.json
+```
 
 Do not publish credential values, private secret-store paths, kubeconfig
 contents, or provider-internal recovery commands in GitHub comments or

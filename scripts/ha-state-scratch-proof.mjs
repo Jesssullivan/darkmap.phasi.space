@@ -100,6 +100,7 @@ const parseArgs = (argv) => {
 const sha256Hex = (value) => createHash('sha256').update(value).digest('hex');
 const hmac = (key, value) => createHmac('sha256', key).update(value).digest();
 const hmacHex = (key, value) => createHmac('sha256', key).update(value).digest('hex');
+const publicPackageRef = (path) => basename(path);
 const encodeRfc3986 = (value) =>
 	encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 
@@ -248,7 +249,7 @@ const checkpointBase = ({ args, objectKey, packagePath, pkg }) => ({
 	checkpoint_schema: 'darkmap.ha_state_scratch_proof.v1',
 	issue: 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/142',
 	package_name: pkg.name,
-	package_path: packagePath,
+	package_ref: publicPackageRef(packagePath),
 	phase: args.phase,
 	scratch_bucket: pkg.scratch_bucket,
 	scratch_object_key: objectKey,
@@ -452,7 +453,7 @@ const disposableCheckpointBase = ({ args, packagePath, pkg, stateKey }) => ({
 	checkpoint_schema: 'darkmap.ha_state_disposable_tofu_proof.v1',
 	issue: 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/144',
 	package_name: pkg.name,
-	package_path: packagePath,
+	package_ref: publicPackageRef(packagePath),
 	phase: args.phase,
 	scratch_bucket: pkg.scratch_bucket,
 	started_at: new Date().toISOString(),
