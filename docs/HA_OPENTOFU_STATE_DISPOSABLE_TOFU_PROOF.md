@@ -113,6 +113,7 @@ and disposable checkpoints:
 
 ```bash
 just ha-state-proof-evidence-check endpoint-package.json \
+  --credential-boundary credential-boundary.json \
   --scratch baseline:scratch-proof-baseline.json \
   --scratch post-maintenance:scratch-proof-post-maintenance.json \
   --scratch post-failure-domain:scratch-proof-post-failure-domain.json \

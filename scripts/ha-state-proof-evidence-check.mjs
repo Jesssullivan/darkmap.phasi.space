@@ -13,9 +13,11 @@ import {
 } from './ha-state-endpoint-package-check.mjs';
 
 const REQUIRED_PHASES = ['baseline', 'post-maintenance', 'post-failure-domain'];
+const BOUNDARY_SCHEMA = 'darkmap.ha_state_credential_boundary.v1';
 const SCRATCH_SCHEMA = 'darkmap.ha_state_scratch_proof.v1';
 const DISPOSABLE_SCHEMA = 'darkmap.ha_state_disposable_tofu_proof.v1';
 const MIGRATION_SCHEMA = 'darkmap.ha_state_protected_migration_plan.v1';
+const BOUNDARY_ISSUE = 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/141';
 const SCRATCH_ISSUE = 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/142';
 const DISPOSABLE_ISSUE = 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/144';
 const MIGRATION_ISSUE = 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/145';
@@ -51,6 +53,7 @@ class EvidenceError extends Error {}
 const usage = () => {
 	console.error(`usage:
   node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --scratch <phase:path>... --disposable <phase:path>... [--migration-plan <path>]
+  node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --credential-boundary <path>
   node ${basename(fileURLToPath(import.meta.url))} --self-test
 
 Required phases: ${REQUIRED_PHASES.join(', ')}`);
@@ -74,6 +77,7 @@ const parsePhasePath = (value, arg) => {
 
 const parseArgs = (argv) => {
 	const parsed = {
+		credentialBoundary: undefined,
 		disposable: new Map(),
 		endpointPackage: undefined,
 		migrationPlan: undefined,
@@ -85,6 +89,9 @@ const parseArgs = (argv) => {
 		const arg = argv[index];
 		if (arg === '--endpoint-package') {
 			parsed.endpointPackage = requireArgValue(argv, index, arg);
+			index += 1;
+		} else if (arg === '--credential-boundary') {
+			parsed.credentialBoundary = requireArgValue(argv, index, arg);
 			index += 1;
 		} else if (arg === '--scratch') {
 			const entry = parsePhasePath(requireArgValue(argv, index, arg), arg);
@@ -212,6 +219,30 @@ const validateScratchCheckpoint = ({ checkpoint, endpointPackagePath, label, pha
 	requireStep(checkpoint, 'head-object-after-delete', { status: 404 });
 };
 
+const validateBoundaryCheckpoint = ({ checkpoint, endpointPackagePath, pkg }) => {
+	const label = 'credential-boundary';
+	requireObject(checkpoint, label);
+	rejectUnsafeEvidence({ source: JSON.stringify(checkpoint), value: checkpoint }, label);
+	requireEqual(checkpoint.checkpoint_schema, BOUNDARY_SCHEMA, `${label}.checkpoint_schema`);
+	requireEqual(checkpoint.issue, BOUNDARY_ISSUE, `${label}.issue`);
+	requireEqual(checkpoint.package_name, pkg.name, `${label}.package_name`);
+	validatePackageRef(checkpoint, endpointPackagePath, label);
+	requireEqual(checkpoint.scratch_bucket, pkg.scratch_bucket, `${label}.scratch_bucket`);
+	requireEqual(checkpoint.result, 'passed', `${label}.result`);
+	requireStep(checkpoint, 'list-buckets-without-protected-state');
+	requireStep(checkpoint, 'head-scratch-bucket');
+	for (const stepName of [
+		'head-active-state-bucket',
+		'head-current-darkmap-state-key',
+		'head-final-darkmap-state-key',
+	]) {
+		const step = requireStep(checkpoint, stepName);
+		if (step.status !== 403 && step.status !== 404) {
+			throw new EvidenceError(`${label} step ${stepName} status must be 403 or 404`);
+		}
+	}
+};
+
 const validateDisposableCheckpoint = ({ checkpoint, endpointPackagePath, label, phase, pkg }) => {
 	requireObject(checkpoint, label);
 	rejectUnsafeEvidence({ source: JSON.stringify(checkpoint), value: checkpoint }, label);
@@ -277,26 +308,41 @@ const validateEvidenceBundle = (args) => {
 	const loadedPackage = loadPackage(args.endpointPackage);
 	validateEndpointPackage(loadedPackage);
 	const pkg = loadedPackage.value;
-	requirePhaseEntries(args.scratch, 'scratch evidence');
-	requirePhaseEntries(args.disposable, 'disposable evidence');
+	if (args.credentialBoundary) {
+		validateBoundaryCheckpoint({
+			checkpoint: readJson(args.credentialBoundary).value,
+			endpointPackagePath: args.endpointPackage,
+			pkg,
+		});
+	}
+	const hasProofBundle = args.scratch.size > 0 || args.disposable.size > 0 || Boolean(args.migrationPlan);
+	if (!args.credentialBoundary && !hasProofBundle) {
+		throw new EvidenceError('provide --credential-boundary or the full scratch/disposable proof bundle');
+	}
+	if (hasProofBundle) {
+		requirePhaseEntries(args.scratch, 'scratch evidence');
+		requirePhaseEntries(args.disposable, 'disposable evidence');
+	}
 
-	for (const phase of REQUIRED_PHASES) {
-		const scratch = readJson(args.scratch.get(phase));
-		validateScratchCheckpoint({
-			checkpoint: scratch.value,
-			endpointPackagePath: args.endpointPackage,
-			label: `scratch ${phase}`,
-			phase,
-			pkg,
-		});
-		const disposable = readJson(args.disposable.get(phase));
-		validateDisposableCheckpoint({
-			checkpoint: disposable.value,
-			endpointPackagePath: args.endpointPackage,
-			label: `disposable ${phase}`,
-			phase,
-			pkg,
-		});
+	if (hasProofBundle) {
+		for (const phase of REQUIRED_PHASES) {
+			const scratch = readJson(args.scratch.get(phase));
+			validateScratchCheckpoint({
+				checkpoint: scratch.value,
+				endpointPackagePath: args.endpointPackage,
+				label: `scratch ${phase}`,
+				phase,
+				pkg,
+			});
+			const disposable = readJson(args.disposable.get(phase));
+			validateDisposableCheckpoint({
+				checkpoint: disposable.value,
+				endpointPackagePath: args.endpointPackage,
+				label: `disposable ${phase}`,
+				phase,
+				pkg,
+			});
+		}
 	}
 
 	if (args.migrationPlan) {
@@ -308,10 +354,29 @@ const validateEvidenceBundle = (args) => {
 	}
 
 	console.log('PASS: HA state proof evidence bundle');
-	console.log(`scratch_phases=${REQUIRED_PHASES.join(',')}`);
-	console.log(`disposable_phases=${REQUIRED_PHASES.join(',')}`);
+	console.log(`scratch_phases=${hasProofBundle ? REQUIRED_PHASES.join(',') : 'omitted'}`);
+	console.log(`disposable_phases=${hasProofBundle ? REQUIRED_PHASES.join(',') : 'omitted'}`);
+	console.log(`credential_boundary=${args.credentialBoundary ? 'present' : 'omitted'}`);
 	console.log(`migration_plan=${args.migrationPlan ? 'present' : 'omitted'}`);
 };
+
+const boundaryFixture = (pkg) => ({
+	checkpoint_schema: BOUNDARY_SCHEMA,
+	completed_at: '2026-05-29T00:00:00.000Z',
+	issue: BOUNDARY_ISSUE,
+	package_name: pkg.name,
+	package_ref: 'endpoint-package.json',
+	result: 'passed',
+	scratch_bucket: pkg.scratch_bucket,
+	started_at: '2026-05-29T00:00:00.000Z',
+	steps: [
+		{ name: 'list-buckets-without-protected-state', ok: true, status: 200 },
+		{ name: 'head-scratch-bucket', ok: true, status: 200 },
+		{ name: 'head-active-state-bucket', ok: true, status: 403 },
+		{ name: 'head-current-darkmap-state-key', ok: true, status: 404 },
+		{ name: 'head-final-darkmap-state-key', ok: true, status: 403 },
+	],
+});
 
 const scratchFixture = ({ phase, pkg }) => ({
 	checkpoint_schema: SCRATCH_SCHEMA,
@@ -403,6 +468,8 @@ const runSelfTest = () => {
 	try {
 		const packagePath = join(tmpRoot, 'endpoint-package.json');
 		writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
+		const credentialBoundary = join(tmpRoot, 'credential-boundary.json');
+		writeFileSync(credentialBoundary, `${JSON.stringify(boundaryFixture(pkg), null, 2)}\n`);
 		const scratch = new Map();
 		const disposable = new Map();
 		for (const phase of REQUIRED_PHASES) {
@@ -415,14 +482,33 @@ const runSelfTest = () => {
 		}
 		const migrationPlan = join(tmpRoot, 'migration-plan.json');
 		writeFileSync(migrationPlan, `${JSON.stringify(migrationFixture(pkg), null, 2)}\n`);
-		validateEvidenceBundle({ disposable, endpointPackage: packagePath, migrationPlan, scratch });
+		validateEvidenceBundle({ credentialBoundary, disposable, endpointPackage: packagePath, migrationPlan, scratch });
+		validateEvidenceBundle({
+			credentialBoundary,
+			disposable: new Map(),
+			endpointPackage: packagePath,
+			scratch: new Map(),
+		});
 
 		requireSelfTestThrow('missing phase', () =>
 			validateEvidenceBundle({
+				credentialBoundary,
 				disposable,
 				endpointPackage: packagePath,
 				migrationPlan,
 				scratch: new Map([...scratch].filter(([phase]) => phase !== 'post-maintenance')),
+			}),
+		);
+		requireSelfTestThrow('boundary protected access succeeded', () =>
+			validateBoundaryCheckpoint({
+				checkpoint: {
+					...boundaryFixture(pkg),
+					steps: boundaryFixture(pkg).steps.map((step) =>
+						step.name === 'head-active-state-bucket' ? { ...step, status: 200 } : step,
+					),
+				},
+				endpointPackagePath: packagePath,
+				pkg,
 			}),
 		);
 		requireSelfTestThrow('legacy package_path', () =>

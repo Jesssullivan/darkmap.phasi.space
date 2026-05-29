@@ -19,6 +19,19 @@ const DISPOSABLE_TOFU_PREFIX = 'darkmap-ha-state-proof/disposable-tofu';
 const PROTECTED_BUCKETS = new Set(['tofu-state']);
 const PROTECTED_KEY_TERMS = ['terraform.tfstate', 'spokes/darkmap', 'darkmap-tinyland-dev'];
 const PROTECTED_DISPOSABLE_KEY_TERMS = ['spokes/darkmap', 'darkmap-tinyland-dev'];
+const PROTECTED_STATE_PROBES = [
+	{ bucket: 'tofu-state', key: undefined, name: 'head-active-state-bucket' },
+	{
+		bucket: 'tofu-state',
+		key: 'darkmap-tinyland-dev/terraform.tfstate',
+		name: 'head-current-darkmap-state-key',
+	},
+	{
+		bucket: 'tofu-state',
+		key: 'spokes/darkmap/terraform.tfstate',
+		name: 'head-final-darkmap-state-key',
+	},
+];
 const TOFU_ACCESS_ENV = ['AWS', 'ACCESS', 'KEY', 'ID'].join('_');
 const TOFU_SIGNING_ENV = ['AWS', 'SECRET', 'ACCESS', 'KEY'].join('_');
 const TOFU_SESSION_ENV = ['AWS', 'SESSION', 'TOKEN'].join('_');
@@ -28,6 +41,7 @@ class ProofError extends Error {}
 const usage = () => {
 	console.error(`usage:
   node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> [--phase <name>] [--checkpoint-file <path>]
+  node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --credential-boundary-check [--checkpoint-file <path>]
   node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --run-disposable-tofu --use-lockfile [--phase <name>] [--checkpoint-file <path>]
   node ${basename(fileURLToPath(import.meta.url))} --endpoint-package <path> --dry-run
   node ${basename(fileURLToPath(import.meta.url))} --self-test
@@ -47,6 +61,7 @@ const requireArgValue = (argv, index, arg) => {
 const parseArgs = (argv) => {
 	const parsed = {
 		checkpointFile: undefined,
+		credentialBoundaryCheck: false,
 		dryRun: false,
 		endpointPackage: undefined,
 		keepScratchObject: false,
@@ -69,6 +84,8 @@ const parseArgs = (argv) => {
 			index += 1;
 		} else if (arg === '--dry-run') {
 			parsed.dryRun = true;
+		} else if (arg === '--credential-boundary-check') {
+			parsed.credentialBoundaryCheck = true;
 		} else if (arg === '--self-test') {
 			parsed.selfTest = true;
 		} else if (arg === '--keep-scratch-object') {
@@ -93,6 +110,9 @@ const parseArgs = (argv) => {
 	}
 	if (parsed.runDisposableTofu && !parsed.useLockfile) {
 		throw new ProofError('--run-disposable-tofu requires --use-lockfile for the #144 lockfile proof');
+	}
+	if (parsed.credentialBoundaryCheck && parsed.runDisposableTofu) {
+		throw new ProofError('--credential-boundary-check cannot be combined with --run-disposable-tofu');
 	}
 	return parsed;
 };
@@ -258,6 +278,16 @@ const checkpointBase = ({ args, objectKey, packagePath, pkg }) => ({
 	use_lockfile_requested: args.useLockfile,
 });
 
+const credentialBoundaryCheckpointBase = ({ packagePath, pkg }) => ({
+	checkpoint_schema: 'darkmap.ha_state_credential_boundary.v1',
+	issue: 'https://github.com/Jesssullivan/darkmap.phasi.space/issues/141',
+	package_name: pkg.name,
+	package_ref: publicPackageRef(packagePath),
+	scratch_bucket: pkg.scratch_bucket,
+	started_at: new Date().toISOString(),
+	steps: [],
+});
+
 const writeCheckpoint = (path, checkpoint) => {
 	if (!path) {
 		return;
@@ -395,6 +425,77 @@ const runScratchProof = async ({ args, packagePath, pkg }) => {
 				checkpoint.cleanup_error = error instanceof Error ? error.message : String(error);
 			}
 		}
+		if (!checkpoint.completed_at) {
+			checkpoint.completed_at = new Date().toISOString();
+			checkpoint.result = 'failed';
+		}
+		writeCheckpoint(args.checkpointFile, checkpoint);
+	}
+};
+
+const recordS3Step = (checkpoint, name, response, ok = true) => {
+	checkpoint.steps.push({
+		name,
+		ok,
+		path: response?.path,
+		status: response?.status,
+		status_text: response?.statusText,
+	});
+};
+
+const requireDeniedOrAbsent = (name, response) => {
+	if (response.status === 403 || response.status === 404) {
+		return;
+	}
+	if (response.status >= 200 && response.status <= 299) {
+		throw new ProofError(`${name} unexpectedly succeeded with HTTP ${response.status}`);
+	}
+	throw new ProofError(`${name} returned unexpected HTTP ${response.status} ${response.statusText}`);
+};
+
+const runCredentialBoundaryCheck = async ({ args, packagePath, pkg }) => {
+	const config = resolveRuntimeConfig(pkg, process.env, { requireCredentials: !args.dryRun });
+	const checkpoint = credentialBoundaryCheckpointBase({ packagePath, pkg });
+
+	if (args.dryRun) {
+		checkpoint.completed_at = new Date().toISOString();
+		checkpoint.result = 'dry_run';
+		checkpoint.steps.push(
+			{ name: 'list-buckets-without-protected-state', ok: true },
+			{ name: 'head-scratch-bucket', ok: true },
+			...PROTECTED_STATE_PROBES.map((probe) => ({ name: probe.name, ok: true, expected_status: '403-or-404' })),
+		);
+		writeCheckpoint(args.checkpointFile, checkpoint);
+		console.log(`PASS: HA state credential boundary dry run for ${pkg.scratch_bucket}`);
+		return checkpoint;
+	}
+
+	try {
+		const listBuckets = await s3Request({ config, method: 'GET' });
+		recordS3Step(checkpoint, 'list-buckets-without-protected-state', listBuckets);
+		requireOk('list-buckets-without-protected-state', listBuckets);
+		if (!listBuckets.body.includes(`<Name>${pkg.scratch_bucket}</Name>`)) {
+			throw new ProofError(`list-buckets did not include scratch bucket ${pkg.scratch_bucket}`);
+		}
+		if (listBuckets.body.includes('<Name>tofu-state</Name>')) {
+			throw new ProofError('list-buckets exposed protected tofu-state bucket to proof credentials');
+		}
+
+		const headScratchBucket = await s3Request({ bucket: pkg.scratch_bucket, config, method: 'HEAD' });
+		recordS3Step(checkpoint, 'head-scratch-bucket', headScratchBucket);
+		requireOk('head-scratch-bucket', headScratchBucket);
+
+		for (const probe of PROTECTED_STATE_PROBES) {
+			const response = await s3Request({ bucket: probe.bucket, config, key: probe.key, method: 'HEAD' });
+			recordS3Step(checkpoint, probe.name, response, response.status === 403 || response.status === 404);
+			requireDeniedOrAbsent(probe.name, response);
+		}
+
+		checkpoint.completed_at = new Date().toISOString();
+		checkpoint.result = 'passed';
+		console.log(`PASS: HA state credential boundary check for ${pkg.scratch_bucket}`);
+		return checkpoint;
+	} finally {
 		if (!checkpoint.completed_at) {
 			checkpoint.completed_at = new Date().toISOString();
 			checkpoint.result = 'failed';
@@ -746,6 +847,15 @@ const runSelfTest = async () => {
 	requireSelfTestThrow('disposable tofu requires lockfile', () =>
 		parseArgs(['--endpoint-package', 'endpoint-package.json', '--run-disposable-tofu']),
 	);
+	requireSelfTestThrow('credential boundary cannot combine with disposable tofu', () =>
+		parseArgs([
+			'--endpoint-package',
+			'endpoint-package.json',
+			'--credential-boundary-check',
+			'--run-disposable-tofu',
+			'--use-lockfile',
+		]),
+	);
 	requireSelfTestThrow('missing phase value', () =>
 		parseArgs(['--endpoint-package', 'endpoint-package.json', '--phase']),
 	);
@@ -787,6 +897,31 @@ const runSelfTest = async () => {
 			checkpointSource.includes(OPTIONAL_SESSION_TOKEN_ENV)
 		) {
 			throw new ProofError('self-test dry-run checkpoint leaked credential-shaped values');
+		}
+		const boundaryCheckpointFile = join(tmpRoot, 'credential-boundary-checkpoint.json');
+		const boundaryCheckpoint = await withSelfTestProofEnv(pkg, () =>
+			runCredentialBoundaryCheck({
+				args: {
+					checkpointFile: boundaryCheckpointFile,
+					dryRun: true,
+					keepScratchObject: false,
+					phase: 'self-test',
+					useLockfile: false,
+				},
+				packagePath: 'self-test-endpoint-package.json',
+				pkg,
+			}),
+		);
+		const boundaryCheckpointSource = readFileSync(boundaryCheckpointFile, 'utf8');
+		if (boundaryCheckpoint.result !== 'dry_run' || JSON.parse(boundaryCheckpointSource).result !== 'dry_run') {
+			throw new ProofError('self-test credential boundary dry-run checkpoint did not record dry_run result');
+		}
+		if (
+			boundaryCheckpointSource.includes('dry-run-signing-material') ||
+			boundaryCheckpointSource.includes('dry-run-access-id') ||
+			boundaryCheckpointSource.includes(OPTIONAL_SESSION_TOKEN_ENV)
+		) {
+			throw new ProofError('self-test credential boundary dry-run checkpoint leaked credential-shaped values');
 		}
 		const disposableCheckpointFile = join(tmpRoot, 'disposable-checkpoint.json');
 		const disposableCheckpoint = await withSelfTestProofEnv(pkg, () =>
@@ -830,6 +965,10 @@ const main = async () => {
 
 		const loaded = loadPackage(args.endpointPackage);
 		validateEndpointPackage(loaded);
+		if (args.credentialBoundaryCheck) {
+			await runCredentialBoundaryCheck({ args, packagePath: args.endpointPackage, pkg: loaded.value });
+			return;
+		}
 		if (args.runDisposableTofu) {
 			await runDisposableTofuProof({ args, packagePath: args.endpointPackage, pkg: loaded.value });
 			return;
