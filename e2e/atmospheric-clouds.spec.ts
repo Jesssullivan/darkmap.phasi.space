@@ -24,6 +24,11 @@ const EXTRA_LAYERS: ReadonlyArray<{
 	{ id: 'water-vapor-airs', label: /Water vapor \(MODIS Terra\)/i, mapHash: '/#m=38,-122,12', maxNativeZoom: 6 },
 ];
 
+const TRANSPARENT_PNG = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+	'base64',
+);
+
 const openAtmosphereRail = async (page: Page): Promise<void> => {
 	const drawerToggle = page.getByRole('button', { name: /Open layers/i });
 	if (await drawerToggle.isVisible()) await drawerToggle.click();
@@ -32,6 +37,44 @@ const openAtmosphereRail = async (page: Page): Promise<void> => {
 	const expanded = await atmosphereHeader.getAttribute('aria-expanded');
 	if (expanded !== 'true') await atmosphereHeader.click();
 };
+
+const mockAtmosphericLayerTiles = async (
+	page: Page,
+	opts: {
+		readonly layerId: string;
+		readonly status: number;
+		readonly outcome?: 'ok' | 'no-data';
+	},
+): Promise<void> => {
+	await page.route('**/api/raster?**', async (route) => {
+		const url = new URL(route.request().url());
+		if (url.searchParams.get('layer') !== opts.layerId || url.searchParams.get('kind') !== 'atmospheric') {
+			await route.continue();
+			return;
+		}
+
+		const headers: Record<string, string> = {};
+		if (opts.outcome) headers['x-darkmap-atmospheric-outcome'] = opts.outcome;
+
+		if (opts.status >= 200 && opts.status < 300) {
+			await route.fulfill({
+				status: opts.status,
+				headers: { ...headers, 'content-type': 'image/png' },
+				body: TRANSPARENT_PNG,
+			});
+			return;
+		}
+
+		await route.fulfill({
+			status: opts.status,
+			headers: { ...headers, 'content-type': 'text/plain' },
+			body: `upstream ${opts.status}`,
+		});
+	});
+};
+
+const atmosphericRow = (page: Page, label: RegExp) =>
+	page.locator('li').filter({ has: page.getByRole('checkbox', { name: label }) });
 
 for (const { id, label, mapHash, maxNativeZoom } of EXTRA_LAYERS) {
 	test(`Atmospheric layer ${id}: toggle fires the proxy with kind=atmospheric`, async ({ page }) => {
@@ -59,6 +102,41 @@ for (const { id, label, mapHash, maxNativeZoom } of EXTRA_LAYERS) {
 		expect(Number(url.searchParams.get('z'))).toBeLessThanOrEqual(maxNativeZoom);
 	});
 }
+
+test.describe('Atmospheric layer health pills', () => {
+	test('transparent no-data tiles surface as no data in the LayerRail', async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await mockAtmosphericLayerTiles(page, { layerId: 'water-vapor-airs', status: 200, outcome: 'no-data' });
+
+		await page.goto('/#m=38,-122,12');
+		await page.waitForLoadState('networkidle');
+		await openAtmosphereRail(page);
+
+		const waterVaporToggle = page.getByRole('checkbox', { name: /Water vapor \(MODIS Terra\)/i });
+		await expect(waterVaporToggle).toBeVisible();
+		await waterVaporToggle.check();
+
+		const row = atmosphericRow(page, /Water vapor \(MODIS Terra\)/i);
+		await expect(row.getByText('no data', { exact: true })).toBeVisible();
+		await expect(row.getByText('live', { exact: true })).toHaveCount(0);
+	});
+
+	test('upstream failures surface status-specific errors in the LayerRail', async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await mockAtmosphericLayerTiles(page, { layerId: 'aerosol-modis-aod', status: 502 });
+
+		await page.goto('/#m=36,-115,12');
+		await page.waitForLoadState('networkidle');
+		await openAtmosphereRail(page);
+
+		const aerosolToggle = page.getByRole('checkbox', { name: /Aerosol AOD \(MODIS\)/i });
+		await expect(aerosolToggle).toBeVisible();
+		await aerosolToggle.check();
+
+		const row = atmosphericRow(page, /Aerosol AOD \(MODIS\)/i);
+		await expect(row.getByText('error 502', { exact: true })).toBeVisible();
+	});
+});
 
 test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 	test('toggling the layer triggers a proxied GIBS tile fetch with kind=atmospheric', async ({ page }) => {
