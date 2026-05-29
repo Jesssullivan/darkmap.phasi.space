@@ -23,6 +23,7 @@
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
+	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -632,10 +633,10 @@
 
 	// ----- Point-source overlays (OpenAQ smog, future PurpleAir / AirNow) -----
 	//
-	// MapLibre's heatmap layer does GPU-side KDE; we feed it a GeoJSON source
-	// that re-fetches on viewport change. Below a 5-feature density threshold,
-	// the heatmap looks empty, so we render circle markers alongside for the
-	// sparse-coverage UX (PR-F). All point overlays bucket through
+	// MapLibre renders station-observation density, not physical diffusion; null
+	// PM2.5 readings are unknown and excluded from heatmap weight. Below a
+	// 5-feature density threshold, the heatmap looks empty, so circle markers
+	// carry the sparse-coverage UX (PR-F). All point overlays bucket through
 	// `darkmap-atmospheric-tile` via the SW route.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping for the moveend handler, not reactive state
 	const POINT_SOURCE_IDS = new Set<string>();
@@ -671,7 +672,7 @@
 				type: 'heatmap',
 				source: srcId,
 				paint: {
-					'heatmap-weight': ['interpolate', ['linear'], ['coalesce', ['get', 'value'], 0], 0, 0, 100, 1],
+					'heatmap-weight': pm25HeatmapWeightExpression(),
 					'heatmap-intensity': 1,
 					'heatmap-radius': 30,
 					'heatmap-opacity': opacity,
@@ -702,21 +703,7 @@
 				source: srcId,
 				paint: {
 					'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 3, 12, 7],
-					'circle-color': [
-						'interpolate',
-						['linear'],
-						['coalesce', ['get', 'value'], 0],
-						0,
-						'#00e400',
-						12,
-						'#ffff00',
-						35,
-						'#ff7e00',
-						55,
-						'#ff0000',
-						150,
-						'#8f3f97',
-					],
+					'circle-color': pm25CircleColorExpression(),
 					'circle-opacity': opacity,
 					'circle-stroke-width': 1,
 					'circle-stroke-color': 'rgba(8, 10, 16, 0.85)',
