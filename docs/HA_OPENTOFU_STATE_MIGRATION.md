@@ -58,18 +58,33 @@ should still review it before copying it into `infra/tofu/backend.hcl`.
 
 3. Generate and review the HA backend config with
    `just ha-state-migration-plan`.
-4. Open a PR that changes only `infra/tofu/backend.hcl` to the reviewed
+4. Validate the proof evidence bundle before the backend PR:
+
+   ```bash
+   just ha-state-proof-evidence-check endpoint-package.json \
+     --scratch baseline:scratch-proof-baseline.json \
+     --scratch post-maintenance:scratch-proof-post-maintenance.json \
+     --scratch post-failure-domain:scratch-proof-post-failure-domain.json \
+     --disposable baseline:disposable-tofu-baseline.json \
+     --disposable post-maintenance:disposable-tofu-post-maintenance.json \
+     --disposable post-failure-domain:disposable-tofu-post-failure-domain.json \
+     --migration-plan /tmp/darkmap-ha-migration-plan.json
+   ```
+
+   This rejects dry-run checkpoints, missing phases, failed cleanup, legacy
+   `package_path` evidence, and secret- or private-path-shaped content.
+5. Open a PR that changes only `infra/tofu/backend.hcl` to the reviewed
    generated config.
-5. On the approved state runner, inject credentials from the private secret
+6. On the approved state runner, inject credentials from the private secret
    authority using the environment names from the endpoint package.
-6. Run the backend migration:
+7. Run the backend migration:
 
    ```bash
    cd infra/tofu
    tofu init -backend-config=/tmp/darkmap-ha-backend.hcl -migrate-state
    ```
 
-7. Run a no-op plan:
+8. Run a no-op plan:
 
    ```bash
    cd infra/tofu
@@ -79,15 +94,15 @@ should still review it before copying it into `infra/tofu/backend.hcl`.
    Exit code `0` is the expected clean result. Exit code `2` needs review before
    any apply.
 
-8. Run the repo gates:
+9. Run the repo gates:
 
    ```bash
    just tofu-plan
    just tofu-apply
    ```
 
-9. Confirm GitOps drift, public smoke, and live health remain green.
-10. Add a public tracker comment with the migration commit, run IDs, old key,
+10. Confirm GitOps drift, public smoke, and live health remain green.
+11. Add a public tracker comment with the migration commit, run IDs, old key,
     new key, snapshot timestamp, and rollback owner. Do not publish snapshot
     contents or credential details.
 
@@ -114,3 +129,5 @@ Rollback should be a reviewed operator action, not an automatic script:
 - GitOps drift passes on the HA backend
 - public health and smoke checks pass after migration
 - rollback evidence exists without exposing secrets or state contents
+- the evidence bundle checker passes for the scratch, disposable, and migration
+  checkpoints

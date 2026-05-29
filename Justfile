@@ -219,6 +219,14 @@ ha-state-migration-plan endpoint_package *args:
 ha-state-migration-plan-self-test:
     cd {{ root }} && node scripts/ha-state-migration-plan.mjs --self-test
 
+# Validate public-safe #142/#144/#145 HA state evidence checkpoints before tracker closeout
+ha-state-proof-evidence-check endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-proof-evidence-check.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
+
+# Offline guard tests for the HA state evidence checker
+ha-state-proof-evidence-self-test:
+    cd {{ root }} && node scripts/ha-state-proof-evidence-check.mjs --self-test
+
 # Print the planned diff (non-empty on first run; clean after apply)
 tofu-plan:
     cd {{ tofu_dir }} && tofu plan -out=darkmap.tfplan
