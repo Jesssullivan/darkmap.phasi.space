@@ -180,6 +180,8 @@ The scratch S3 proof runbook is documented in
 [`HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
 The disposable OpenTofu proof runbook is documented in
 [`HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md`](./HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md).
+The protected migration runbook is documented in
+[`HA_OPENTOFU_STATE_MIGRATION.md`](./HA_OPENTOFU_STATE_MIGRATION.md).
 
 ## Tracker Gate
 

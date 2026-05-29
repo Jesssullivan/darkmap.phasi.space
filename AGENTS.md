@@ -184,6 +184,11 @@ After creating a new sister site from this scaffold:
   using it for `terraform.tfstate` is legitimate.
 - State key path will move to `spokes/darkmap/terraform.tfstate`
   when M4 lands; current key is per `infra/tofu/backend.hcl`.
+- Protected HA-state migration must follow
+  `docs/HA_OPENTOFU_STATE_MIGRATION.md`: generate a reviewable backend config
+  first, keep private state snapshots out of git, use OpenTofu backend
+  migration, and verify Tofu apply, GitOps drift, and public smoke before
+  closing #145.
 - Modules to be composed (post-M4):
   - `spoke-state-namespace` — S3 prefix + reaper IAM.
   - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.phasi.space`.

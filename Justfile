@@ -211,6 +211,14 @@ ha-state-candidate-proof *args:
 ha-state-scratch-proof-self-test:
     cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --self-test
 
+# Render a reviewed backend config plan for the protected #145 migration
+ha-state-migration-plan endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-migration-plan.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
+
+# Offline guard tests for the protected migration plan renderer
+ha-state-migration-plan-self-test:
+    cd {{ root }} && node scripts/ha-state-migration-plan.mjs --self-test
+
 # Print the planned diff (non-empty on first run; clean after apply)
 tofu-plan:
     cd {{ tofu_dir }} && tofu plan -out=darkmap.tfplan

@@ -80,7 +80,9 @@ or delete:
    [`docs/HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
 6. Run the disposable OpenTofu proof for #144 using
    [`docs/HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md`](./HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md).
-7. Keep #145 blocked until both proof phases pass and evidence is recorded.
+7. Keep the protected migration in #145 blocked until both proof phases pass
+   and evidence is recorded, then use
+   [`docs/HA_OPENTOFU_STATE_MIGRATION.md`](./HA_OPENTOFU_STATE_MIGRATION.md).
 
 ## Completion Criteria For #141
 
