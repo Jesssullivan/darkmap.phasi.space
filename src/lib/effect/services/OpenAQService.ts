@@ -49,7 +49,10 @@ export class OpenAQError extends Data.TaggedError('OpenAQError')<{
 export class OpenAQService extends Context.Tag('@darkmap/OpenAQService')<
 	OpenAQService,
 	{
-		readonly getSensors: (bbox: OpenAQBbox) => Effect.Effect<OpenAQSensorCollection, OpenAQError>;
+		readonly getSensors: (
+			bbox: OpenAQBbox,
+			options?: { readonly signal?: AbortSignal },
+		) => Effect.Effect<OpenAQSensorCollection, OpenAQError>;
 	}
 >() {}
 
@@ -59,15 +62,16 @@ export const openAQUrl = (bbox: OpenAQBbox): string =>
 export interface OpenAQFetcher {
 	readonly fetch: (
 		url: string,
+		init?: { readonly signal?: AbortSignal },
 	) => Promise<{ readonly ok: boolean; readonly status: number; readonly json: () => Promise<unknown> }>;
 }
 
 export const makeOpenAQServiceLive = (fetcher: OpenAQFetcher): Layer.Layer<OpenAQService> =>
 	Layer.succeed(OpenAQService, {
-		getSensors: (bbox) =>
+		getSensors: (bbox, options) =>
 			Effect.gen(function* () {
 				const res = yield* Effect.tryPromise({
-					try: () => fetcher.fetch(openAQUrl(bbox)),
+					try: () => fetcher.fetch(openAQUrl(bbox), options?.signal ? { signal: options.signal } : undefined),
 					catch: (cause) => new OpenAQError({ reason: 'fetch-failed', cause }),
 				});
 				if (!res.ok) {
@@ -115,5 +119,5 @@ const parseCollection = (body: unknown): Effect.Effect<OpenAQSensorCollection, O
 };
 
 export const OpenAQServiceLive: Layer.Layer<OpenAQService> = Layer.suspend(() =>
-	makeOpenAQServiceLive({ fetch: (url) => fetch(url) }),
+	makeOpenAQServiceLive({ fetch: (url, init) => fetch(url, init) }),
 );

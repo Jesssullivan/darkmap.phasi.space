@@ -46,6 +46,7 @@ export class AtmosphericPointService extends Context.Tag('@darkmap/AtmosphericPo
 	{
 		readonly getReading: (
 			req: AtmosphericPointRequest,
+			options?: { readonly signal?: AbortSignal },
 		) => Effect.Effect<AtmosphericPointReading, AtmosphericPointError>;
 	}
 >() {}
@@ -59,6 +60,7 @@ export const atmosphericPointUrl = (req: AtmosphericPointRequest): string =>
 export interface AtmosphericPointFetcher {
 	readonly fetch: (
 		url: string,
+		init?: { readonly signal?: AbortSignal },
 	) => Promise<{ readonly ok: boolean; readonly status: number; readonly json: () => Promise<unknown> }>;
 }
 
@@ -67,11 +69,11 @@ export const makeAtmosphericPointServiceLive = (
 	fetcher: AtmosphericPointFetcher,
 ): Layer.Layer<AtmosphericPointService> =>
 	Layer.succeed(AtmosphericPointService, {
-		getReading: (req) =>
+		getReading: (req, options) =>
 			Effect.gen(function* () {
 				const url = atmosphericPointUrl(req);
 				const res = yield* Effect.tryPromise({
-					try: () => fetcher.fetch(url),
+					try: () => fetcher.fetch(url, options?.signal ? { signal: options.signal } : undefined),
 					catch: (cause) => new AtmosphericPointError({ reason: 'fetch-failed', cause }),
 				});
 				if (!res.ok) {
@@ -120,6 +122,6 @@ const parseReading = (body: unknown): Effect.Effect<AtmosphericPointReading, Atm
  */
 export const AtmosphericPointServiceLive: Layer.Layer<AtmosphericPointService> = Layer.suspend(() =>
 	makeAtmosphericPointServiceLive({
-		fetch: (url) => fetch(url),
+		fetch: (url, init) => fetch(url, init),
 	}),
 );
