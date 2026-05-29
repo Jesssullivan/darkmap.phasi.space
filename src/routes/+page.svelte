@@ -54,6 +54,7 @@
 		type RasterLayerDef,
 	} from '$lib/layers';
 	import { LayerErrorDebouncer } from '$lib/layers/toast-bridge';
+	import { ATMO_PROTOCOL, atmosphericTileTemplate, makeAtmosphericTileLoader } from '$lib/map/atmosphericTileProtocol';
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 
@@ -593,11 +594,16 @@
 			void mountPointLayer(l);
 			return;
 		}
+		// #248 — atmospheric tiles route through our custom protocol so the
+		// loader can read the no-data/error outcome header and own the health
+		// state. They start in `loading`; the loader flips to ok/empty/error.
+		const atmospheric = l.group === 'atmospheric';
+		if (atmospheric) layerHealth.dispatch(l.id, { type: 'mount' });
 		void runController(
 			Effect.flatMap(MapLayerController, (c) =>
 				c.mount({
 					id: l.id,
-					tileUrlTemplate: rasterUrlTemplate(l.id),
+					tileUrlTemplate: atmospheric ? atmosphericTileTemplate(l.id) : rasterUrlTemplate(l.id),
 					opacity: layerState[l.id]?.opacity ?? l.opacity,
 					...(l.maxNativeZoom !== undefined ? { maxZoom: l.maxNativeZoom } : {}),
 					...(l.attribution ? { attribution: l.attribution } : {}),
@@ -611,6 +617,8 @@
 			unmountPointLayer(l);
 			return;
 		}
+		// Clear the atmospheric health pill back to idle on toggle-off.
+		if (l.group === 'atmospheric') layerHealth.dispatch(l.id, { type: 'unmount' });
 		void runController(Effect.flatMap(MapLayerController, (c) => c.unmount(l.id)));
 	}
 
@@ -868,6 +876,18 @@
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
 		maplibreLib = maplibre;
+		// #248 — register the atmospheric tile protocol so GIBS tiles fetch
+		// through our loader, which reads the no-data/error outcome header and
+		// drives the LayerRail health pill. Must be registered before any
+		// atmospheric source is added (mount happens on toggle, post-init).
+		maplibre.addProtocol(
+			ATMO_PROTOCOL,
+			makeAtmosphericTileLoader({
+				fetchImpl: (input, init) => fetch(input, init),
+				getHealth: (id) => layerHealth.getHealth(id),
+				dispatch: (id, event) => layerHealth.dispatch(id, event),
+			}),
+		);
 		const { center, zoom } = await getInitialView();
 		const bm = basemapById(activeBasemap);
 		mapInstance = new maplibre.Map({
@@ -952,11 +972,17 @@
 			// dispatch health explicitly from refreshPointLayer).
 			const layerId = parseLayerIdFromSourceId(sourceId);
 			if (layerId) {
-				layerHealth.dispatch(layerId, {
-					type: 'tile-error',
-					reason: err.message ?? 'tile load failed',
-					status: err.status,
-				});
+				// #248 — atmospheric layers own their health via the protocol
+				// loader (which has the no-data/error outcome header). Don't
+				// double-dispatch here; just surface the toast.
+				const atmospheric = LAYERS.find((l) => l.id === layerId)?.group === 'atmospheric';
+				if (!atmospheric) {
+					layerHealth.dispatch(layerId, {
+						type: 'tile-error',
+						reason: err.message ?? 'tile load failed',
+						status: err.status,
+					});
+				}
 				// #236 — feed the debounced toast bridge instead of pushing the
 				// raw upstream message inline. The bridge coalesces rapid bursts
 				// of the same layer error and turns the upstream into a short,
@@ -991,6 +1017,10 @@
 			}
 			const layerId = parseLayerIdFromSourceId(evt.sourceId);
 			if (!layerId) return;
+			// #248 — atmospheric layers are owned by the protocol loader (it has
+			// the no-data outcome header); a generic sourcedata tile-ok here would
+			// wrongly flip a no-data layer to "live". Skip them.
+			if (LAYERS.find((l) => l.id === layerId)?.group === 'atmospheric') return;
 			const current = layerHealth.getHealth(layerId);
 			if (current.tag === 'loading') {
 				layerHealth.dispatch(layerId, { type: 'tile-ok' });
@@ -1009,6 +1039,13 @@
 		stopFollow();
 		clearRoute();
 		layerErrorBridge.dispose();
+		// #248 — unregister the atmospheric protocol so a re-mount (HMR / SPA
+		// nav) doesn't throw "Protocol already added".
+		try {
+			maplibreLib?.removeProtocol(ATMO_PROTOCOL);
+		} catch {
+			// not registered (SSR / early teardown) — ignore.
+		}
 		mapInstance?.remove();
 		mapInstance = undefined;
 		controllerLayer = undefined;
