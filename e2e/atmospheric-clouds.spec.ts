@@ -100,6 +100,7 @@ for (const { id, label, mapHash, maxNativeZoom } of EXTRA_LAYERS) {
 		const url = new URL(req.url());
 		expect(url.searchParams.get('layer')).toBe(id);
 		expect(url.searchParams.get('kind')).toBe('atmospheric');
+		expect(url.searchParams.get('time')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 		expect(Number(url.searchParams.get('z'))).toBeLessThanOrEqual(maxNativeZoom);
 	});
 }
@@ -166,8 +167,42 @@ test.describe('Atmospheric layer: MODIS Terra clouds', () => {
 		const url = new URL(req.url());
 		expect(url.searchParams.get('layer')).toBe('clouds-modis-terra');
 		expect(url.searchParams.get('kind')).toBe('atmospheric');
+		expect(url.searchParams.get('time')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 		expect(url.searchParams.get('z')).toMatch(/^\d+$/);
 		expect(Number(url.searchParams.get('z'))).toBeLessThanOrEqual(9);
+	});
+
+	test('tiles use the ephemeris UTC day and remount when the day changes', async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await mockAtmosphericLayerTiles(page, { layerId: 'clouds-modis-terra', status: 200, outcome: 'ok' });
+
+		await page.goto('/#m=42.4434,-76.5019,9&et=2026-05-28T23:50Z');
+		await page.waitForLoadState('networkidle');
+		await openAtmosphereRail(page);
+
+		const cloudsToggle = page.getByRole('checkbox', { name: /Clouds \(MODIS Terra\)/i });
+		const initialDayRequest = page.waitForRequest(
+			(req) =>
+				req.url().includes('/api/raster') &&
+				req.url().includes('layer=clouds-modis-terra') &&
+				req.url().includes('kind=atmospheric') &&
+				req.url().includes('time=2026-05-28'),
+			{ timeout: 15_000 },
+		);
+		await cloudsToggle.check();
+		expect(new URL((await initialDayRequest).url()).searchParams.get('time')).toBe('2026-05-28');
+
+		const nextDayRequest = page.waitForRequest(
+			(req) =>
+				req.url().includes('/api/raster') &&
+				req.url().includes('layer=clouds-modis-terra') &&
+				req.url().includes('kind=atmospheric') &&
+				req.url().includes('time=2026-05-29'),
+			{ timeout: 15_000 },
+		);
+		await page.getByRole('slider', { name: /Time scrubber/i }).focus();
+		await page.keyboard.press('ArrowRight');
+		expect(new URL((await nextDayRequest).url()).searchParams.get('time')).toBe('2026-05-29');
 	});
 
 	test('high-zoom map overzooms atmospheric layers instead of requesting unsupported GIBS matrix tiles', async ({

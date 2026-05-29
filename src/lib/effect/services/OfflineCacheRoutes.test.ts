@@ -149,6 +149,15 @@ describe('classify + normalize compose for the SW dispatch path', () => {
 		expect(normalizeCacheKey(a)).toBe(normalizeCacheKey(b));
 	});
 
+	it('atmospheric tile dates participate in normalized keys without query-order drift', () => {
+		const a = u('/api/raster?time=2026-05-28&kind=atmospheric&z=4&x=5&y=6&layer=clouds-modis-terra');
+		const b = u('/api/raster?layer=clouds-modis-terra&kind=atmospheric&y=6&x=5&z=4&time=2026-05-28');
+		const c = u('/api/raster?layer=clouds-modis-terra&kind=atmospheric&y=6&x=5&z=4&time=2026-05-29');
+		expect(classifyRequest(a)).toBe('atmospheric-tile');
+		expect(normalizeCacheKey(a)).toBe(normalizeCacheKey(b));
+		expect(normalizeCacheKey(a)).not.toBe(normalizeCacheKey(c));
+	});
+
 	it('an atmospheric tile and a raster tile with the same z/x/y route differently', () => {
 		const atm = u('/api/raster?kind=atmospheric&layer=clouds-modis-terra&z=4&x=5&y=6');
 		const raster = u('/api/raster?layer=viirs_2019&z=4&x=5&y=6');

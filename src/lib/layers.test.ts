@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYERS, rasterUrlTemplate, VIIRS_YEARS, type RasterLayerDef } from './layers';
+import { LAYERS, rasterUrlTemplate, utcDayKey, VIIRS_YEARS, type RasterLayerDef } from './layers';
 
 describe('layer manifest — VIIRS annual', () => {
 	it('exposes 8 VIIRS annual layers (2012-2019)', () => {
@@ -55,8 +55,19 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 		);
 	});
 
+	it('rasterUrlTemplate appends an explicit atmospheric UTC day when provided', () => {
+		expect(rasterUrlTemplate('clouds-modis-terra', { time: new Date('2026-05-28T23:50:00Z') })).toBe(
+			'/api/raster?layer=clouds-modis-terra&z={z}&x={x}&y={y}&kind=atmospheric&time=2026-05-28',
+		);
+	});
+
 	it("rasterUrlTemplate omits the 'kind' hint for non-atmospheric layers", () => {
 		expect(rasterUrlTemplate('viirs_2019')).not.toContain('kind=atmospheric');
+		expect(rasterUrlTemplate('viirs_2019', { time: '2026-05-28' })).not.toContain('time=');
+	});
+
+	it('utcDayKey is stable across local timezone offsets', () => {
+		expect(utcDayKey(new Date('2026-05-29T00:30:00+02:00'))).toBe('2026-05-28');
 	});
 
 	it('MODIS Terra clouds entry exists with GIBS WMTS template + NASA EOSDIS attribution', () => {
