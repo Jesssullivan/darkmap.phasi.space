@@ -19,6 +19,7 @@
 
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import type { Snippet } from 'svelte';
+	import { portal } from '$lib/actions/portal';
 
 	interface Props {
 		text?: string;
@@ -35,13 +36,21 @@
 		{@render trigger()}
 	</Popover.Trigger>
 	<Popover.Positioner>
-		<Popover.Content class="help-tooltip-content">
-			{#if content}
-				{@render content()}
-			{:else if text}
-				{text}
-			{/if}
-		</Popover.Content>
+		<!-- Portal the positioner to <body> so a trigger inside a scroll
+		     container (LayerRail) doesn't clip the popover at the rail edge.
+		     The `element` override lets us attach the portal action while
+		     keeping Zag's positioner attributes. -->
+		{#snippet element(attributes)}
+			<div {...attributes} use:portal>
+				<Popover.Content class="help-tooltip-content">
+					{#if content}
+						{@render content()}
+					{:else if text}
+						{text}
+					{/if}
+				</Popover.Content>
+			</div>
+		{/snippet}
 	</Popover.Positioner>
 </Popover>
 
@@ -67,7 +76,9 @@
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.7rem;
 		line-height: 1.4;
-		max-width: 22rem;
+		/* Cap to the viewport so the portaled popover never overflows the
+		   screen edge on narrow (mobile) widths. */
+		max-width: min(22rem, calc(100vw - 1.5rem));
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		backdrop-filter: blur(6px);
 		z-index: 50;
