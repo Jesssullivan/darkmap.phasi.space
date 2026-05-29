@@ -116,7 +116,26 @@
 	</button>
 	<header>
 		<h3>Point readout</h3>
-		<p>{fmtCoord(lat)}°, {fmtCoord(lon)}°</p>
+		<p class="locator" title="Marked on the map">
+			<svg
+				class="locator-mark"
+				viewBox="0 0 24 24"
+				width="11"
+				height="11"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="6" />
+				<line x1="12" y1="0" x2="12" y2="4" />
+				<line x1="12" y1="20" x2="12" y2="24" />
+				<line x1="0" y1="12" x2="4" y2="12" />
+				<line x1="20" y1="12" x2="24" y2="12" />
+			</svg>
+			<span>{fmtCoord(lat)}°, {fmtCoord(lon)}°</span>
+		</p>
 	</header>
 	{#if loading}
 		<p class="loading">Querying upstream…</p>
@@ -278,6 +297,16 @@
 		opacity: 0.6;
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
+	}
+	header .locator {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		opacity: 0.78;
+	}
+	.locator-mark {
+		color: #ffd166;
+		flex: 0 0 auto;
 	}
 	section {
 		margin-top: 0.85rem;

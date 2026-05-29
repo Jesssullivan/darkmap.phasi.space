@@ -58,12 +58,14 @@
 	} from '$lib/layers';
 	import { LayerErrorDebouncer } from '$lib/layers/toast-bridge';
 	import { ATMO_PROTOCOL, atmosphericTileTemplate, makeAtmosphericTileLoader } from '$lib/map/atmosphericTileProtocol';
+	import { PointMarkerController } from '$lib/map/point-marker';
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
 	let controllerLayer: Layer.Layer<MapLayerController> | undefined;
+	let pointMarker: PointMarkerController | undefined;
 
 	const initialState = (): Record<string, LayerState> => {
 		const defaults: Record<string, LayerState> = Object.fromEntries(
@@ -573,6 +575,7 @@
 		readoutInflight?.abort();
 		readoutInflight = undefined;
 		readout = undefined;
+		pointMarker?.remove();
 	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
@@ -582,6 +585,8 @@
 		readoutInflight = controller;
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
+		// Drop the locator crosshair immediately so the point is visible while the readout loads.
+		pointMarker?.place(lon, lat);
 
 		const featureinfoPromise = (async (): Promise<ReadoutData> => {
 			const params = new URLSearchParams({ layer: activeViirs, lat: String(lat), lon: String(lon) });
@@ -1022,6 +1027,8 @@
 		});
 		mapInstance.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
 		controllerLayer = makeMapLayerControllerLive(mapInstance);
+		// Locator marker — anchors each readout's numbers to a visible point.
+		pointMarker = new PointMarkerController({ maplibre, map: mapInstance });
 
 		// Mount initial layers through the controller. The controller awaits
 		// `style.load` internally, so we no longer race "Style is not done
@@ -1155,6 +1162,7 @@
 		pointFetchInflight.clear();
 		stopFollow();
 		clearRoute();
+		pointMarker?.remove();
 		layerErrorBridge.dispose();
 		// #248 — unregister the atmospheric protocol so a re-mount (HMR / SPA
 		// nav) doesn't throw "Protocol already added".
