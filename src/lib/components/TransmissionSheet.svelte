@@ -27,6 +27,8 @@
 		// V2-D — live-aerosol controls. Parent owns the state; widget emits.
 		aerosolType?: AerosolType | null;
 		aod?: number;
+		/** Optional caption shown under the AOD slider when AOD is modeled (e.g. from local PM2.5). #275 */
+		aodSource?: string;
 		angstrom?: number;
 		onAerosolTypeChange?: (value: AerosolType | null) => void;
 		onAodChange?: (value: number) => void;
@@ -46,6 +48,7 @@
 		onclose,
 		aerosolType = null,
 		aod = 0.15,
+		aodSource = undefined,
 		angstrom = 1.4,
 		onAerosolTypeChange,
 		onAodChange,
@@ -140,6 +143,9 @@
 				/>
 				<span class="slider-value">{aod.toFixed(2)}</span>
 			</label>
+			{#if aodSource}
+				<p class="aod-source">{aodSource}</p>
+			{/if}
 		</div>
 		<div class="slider-row">
 			<label>
@@ -442,6 +448,13 @@
 		color: #ffd166;
 		min-width: 2.5em;
 		text-align: right;
+	}
+	.aod-source {
+		margin: 0.15rem 0 0;
+		font-size: 0.62rem;
+		line-height: 1.3;
+		color: rgba(199, 221, 255, 0.78);
+		font-style: italic;
 	}
 	@media (pointer: coarse) {
 		.aerosol-chip {
