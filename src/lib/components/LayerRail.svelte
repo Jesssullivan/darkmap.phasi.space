@@ -5,6 +5,8 @@
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { healthLabel, healthTone } from '$lib/layers/health-state';
+	import { modelCardFor } from '$lib/atmospheric/model-cards';
+	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import Legend from './Legend.svelte';
 
 	export interface LayerState {
@@ -109,6 +111,25 @@
 	<div class="rail-backdrop" role="presentation" onclick={close} onkeydown={(e) => e.key === 'Escape' && close()}></div>
 {/if}
 
+{#snippet modelInfo(id: string)}
+	{@const card = modelCardFor(id)}
+	{#if card}
+		<HelpTooltip positioning="right">
+			{#snippet trigger()}
+				<span class="model-help" role="img" aria-label="About {card.title}">?</span>
+			{/snippet}
+			{#snippet content()}
+				<div class="model-card">
+					<p class="model-card-head"><strong>{card.title}</strong><span class="model-kind">{card.kind}</span></p>
+					<p>{card.what}</p>
+					{#if card.units}<p class="model-units">Units: {card.units}</p>{/if}
+					<p class="model-src"><a href={card.href} target="_blank" rel="noopener">{card.source} ↗</a></p>
+				</div>
+			{/snippet}
+		</HelpTooltip>
+	{/if}
+{/snippet}
+
 <aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers">
 	<header>
 		<h2>Layers</h2>
@@ -199,7 +220,7 @@
 							<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
 						</div>
 					{/if}
-					<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019.</p>
+					<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</p>
 					{#if viirsOn}
 						<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
 					{/if}
@@ -239,7 +260,7 @@
 								<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
 							</div>
 						{/if}
-						<p class="desc">{layer.description}</p>
+						<p class="desc">{layer.description} {@render modelInfo(layer.id)}</p>
 						{#if ls.on && layer.upstreamLayer}
 							{@const ramp = rampFor(layer.upstreamLayer)}
 							{#if ramp}
@@ -318,7 +339,7 @@
 									<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
 								</div>
 							{/if}
-							<p class="desc">{layer.description}</p>
+							<p class="desc">{layer.description} {@render modelInfo(layer.id)}</p>
 						</li>
 					{/each}
 				</ul>
@@ -646,6 +667,54 @@
 		opacity: 0.6;
 		font-size: 0.72rem;
 		line-height: 1.35;
+	}
+	/* Inline "?" model-card affordance — opens a Popover explaining the layer. */
+	.model-help {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.05rem;
+		height: 1.05rem;
+		border-radius: 999px;
+		border: 1px solid rgba(127, 187, 255, 0.45);
+		color: #c7ddff;
+		font-size: 0.66rem;
+		font-weight: 700;
+		line-height: 1;
+		vertical-align: baseline;
+		cursor: pointer;
+		opacity: 0.85;
+	}
+	.model-help:hover {
+		opacity: 1;
+		background: rgba(127, 187, 255, 0.14);
+	}
+	:global(.model-card) {
+		max-width: 17rem;
+		font-size: 0.72rem;
+		line-height: 1.4;
+	}
+	:global(.model-card p) {
+		margin: 0 0 0.3rem 0;
+	}
+	:global(.model-card-head) {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	:global(.model-kind) {
+		font-size: 0.58rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		opacity: 0.7;
+	}
+	:global(.model-units) {
+		opacity: 0.7;
+		font-variant-numeric: tabular-nums;
+	}
+	:global(.model-src a) {
+		color: #ffd166;
 	}
 	input[type='checkbox'] {
 		accent-color: #ffd166;
