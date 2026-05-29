@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X } from '@lucide/svelte';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
+	import type { Pm25Estimate } from '$lib/atmospheric/pm25-diffusion';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -36,10 +37,24 @@
 		data: ReadoutData | undefined;
 		loading: boolean;
 		error?: string;
+		/** Clicked-point PM2.5 kernel-diffusion estimate (#275); null when smog off / no station in range. */
+		pm25?: Pm25Estimate | null;
 		onclose: () => void;
 	}
 
-	let { lat, lon, time, data, loading, error, onclose }: Props = $props();
+	let { lat, lon, time, data, loading, error, pm25 = null, onclose }: Props = $props();
+
+	// US-AQI PM2.5 category (µg/m³) — standard breakpoints, for plain-language context.
+	const pm25Category = (v: number): string => {
+		if (v < 12) return 'Good';
+		if (v < 35.5) return 'Moderate';
+		if (v < 55.5) return 'Unhealthy for sensitive groups';
+		if (v < 150.5) return 'Unhealthy';
+		if (v < 250.5) return 'Very unhealthy';
+		return 'Hazardous';
+	};
+	const fmtNearest = (km: number | null): string =>
+		km === null ? '' : ` · nearest ${km < 1 ? '<1' : Math.round(km)} km`;
 
 	const fmtCoord = (n: number) => n.toFixed(4);
 	const viirsAvg = $derived.by(() =>
@@ -187,6 +202,19 @@
 		{#if !data.viirs && !data.worldAtlas && !data.atmospheric}
 			<p class="loading">No data at this point.</p>
 		{/if}
+	{/if}
+
+	{#if pm25 && pm25.valueUgm3 !== null}
+		<section>
+			<h4>PM2.5 <span class="modeled-tag">modeled</span></h4>
+			<p class="value">{pm25.valueUgm3.toFixed(1)}<span class="unit"> µg/m³</span></p>
+			<p class="note">{pm25Category(pm25.valueUgm3)}</p>
+			<p class="note coverage" class:low={pm25.confidence === 'low'}>
+				{pm25.confidence} confidence · {pm25.contributingStations} station{pm25.contributingStations === 1
+					? ''
+					: 's'}{fmtNearest(pm25.nearestKm)}
+			</p>
+		</section>
 	{/if}
 
 	<section class="ephemeris-section">
@@ -337,6 +365,24 @@
 		margin: 0.25rem 0 0 0;
 		font-size: 0.72rem;
 		opacity: 0.7;
+	}
+	.modeled-tag {
+		margin-left: 0.35rem;
+		padding: 0.02rem 0.3rem;
+		border-radius: 999px;
+		border: 1px solid rgba(127, 187, 255, 0.4);
+		background: rgba(127, 187, 255, 0.12);
+		color: #c7ddff;
+		font-size: 0.55rem;
+		letter-spacing: 0.04em;
+		vertical-align: middle;
+	}
+	.coverage {
+		opacity: 0.6;
+	}
+	.coverage.low {
+		color: #ffd166;
+		opacity: 0.85;
 	}
 	.loading {
 		opacity: 0.55;
