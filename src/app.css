@@ -333,6 +333,31 @@ pre.shiki span {
 	background: var(--color-surface-500);
 }
 
+/* ===== On-map surface stacking contract =====
+   Fixed overlays share the map canvas; this is the authoritative map of
+   their z-index + anchor so new panels compose instead of colliding.
+   Keep this comment in sync when adding/moving an overlay.
+
+     z-index  surface              anchor
+     ───────  ───────────────────  ─────────────────────────────
+       5      attribution          bottom-left
+       6      SkyCompass           top-right (hidden ≤560px)
+       6      EphemerisGantt strip bottom, full width (minus toolbar inset)
+       8      MapToolbar           bottom-right
+       8      MapErrorToast        bottom-left
+       9      LayerRail backdrop   full (mobile drawer only)
+      10      LayerRail            left (drawer ≤640px)
+      11      GeocoderSearch       top-center
+      11      PointReadout         bottom-right (full-width ≤820px)
+      12      TransmissionSheet    bottom-right (full-width bottom sheet ≤640px)
+      12      LayerRail toggle     top-left
+
+   Bottom-stack rule: mobile bottom panels reserve the twilight strip's
+   height (#267) and the toolbar's width, and every edge-anchored panel
+   uses `max(<gap>, env(safe-area-inset-*))` so notched-landscape never
+   clips it. The transmission sheet (z-12) intentionally floats over the
+   readout (z-11) when both are open. */
+
 /* ===== Queried-point locator marker =====
    Imperative MapLibre marker (lives outside the Svelte tree), so styled
    globally. Amber crosshair anchoring a PointReadout to its place; dims
