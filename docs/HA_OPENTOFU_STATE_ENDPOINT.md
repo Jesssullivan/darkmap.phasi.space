@@ -63,6 +63,28 @@ or delete:
 - unrelated Tinyland infrastructure state keys
 - Attic, Bazel, BCR/Bzlmod, RBE CAS, or action-cache buckets
 
+## Credential Boundary Check
+
+Before running the mutating scratch proof, run the non-mutating credential
+boundary check:
+
+```bash
+just ha-state-credential-boundary-check endpoint-package.json \
+  --checkpoint-file credential-boundary.json
+```
+
+The check validates that the proof credentials can list and head the scratch
+bucket, that bucket listing does not expose `tofu-state`, and that HEAD requests
+against the active/final darkmap state bucket and keys return only `403` or
+`404`. It does not write to protected state paths.
+
+Validate the public-safe checkpoint before posting #141 evidence:
+
+```bash
+just ha-state-proof-evidence-check endpoint-package.json \
+  --credential-boundary credential-boundary.json
+```
+
 ## Operator Sequence
 
 1. Copy the endpoint package template outside this repo or into an approved
@@ -76,13 +98,15 @@ or delete:
    just ha-state-endpoint-package-check <endpoint-package.json>
    ```
 
-5. Run the scratch S3 proof for #142 using
+5. Run `just ha-state-credential-boundary-check` and attach a public-safe
+   summary of the checkpoint to #141.
+6. Run the scratch S3 proof for #142 using
    [`docs/HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
-6. Run the disposable OpenTofu proof for #144 using
+7. Run the disposable OpenTofu proof for #144 using
    [`docs/HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md`](./HA_OPENTOFU_STATE_DISPOSABLE_TOFU_PROOF.md).
-7. Validate the public-safe proof checkpoint bundle with
+8. Validate the public-safe proof checkpoint bundle with
    `just ha-state-proof-evidence-check`.
-8. Keep the protected migration in #145 blocked until both proof phases pass
+9. Keep the protected migration in #145 blocked until both proof phases pass
    and evidence is recorded, then use
    [`docs/HA_OPENTOFU_STATE_MIGRATION.md`](./HA_OPENTOFU_STATE_MIGRATION.md).
 
@@ -92,4 +116,4 @@ or delete:
 endpoint package and private operators confirm scoped proof credentials exist.
 The filled package can stay outside this public repo if publishing endpoint
 coordinates would create operational risk, but the public issue must record the
-non-secret contract facts and verification result.
+non-secret contract facts, credential boundary result, and verification result.

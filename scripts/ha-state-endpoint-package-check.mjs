@@ -16,6 +16,7 @@ const REQUIRED_MAINTENANCE_FIELDS = ['restart_or_managed_maintenance', 'node_or_
 const REQUIRED_OBSERVABILITY_TERMS = ['failed auth', 'failed write', 'replication lag', 'delete behavior'];
 const REQUIRED_SEPARATION_TERMS = ['attic', 'bazel', 'bcr', 'rbe', 'cas', 'action-cache'];
 const REQUIRED_PROOF_TERMS = [
+	'just ha-state-credential-boundary-check',
 	'just ha-state-candidate-proof',
 	'--endpoint-package',
 	'--run-disposable-tofu',
@@ -261,6 +262,7 @@ export const fixture = () => ({
 		'RBE CAS and action-cache are separate',
 	],
 	proof_commands: [
+		'just ha-state-credential-boundary-check endpoint-package.json --checkpoint-file credential-boundary.json',
 		'just ha-state-candidate-proof --endpoint-package endpoint-package.json --phase baseline --checkpoint-file scratch-proof-baseline.json',
 		'just ha-state-candidate-proof --endpoint-package endpoint-package.json --run-disposable-tofu --use-lockfile',
 		'just ha-state-candidate-proof --endpoint-package endpoint-package.json --keep-scratch-bucket --checkpoint-file <path>',

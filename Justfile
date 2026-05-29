@@ -207,6 +207,10 @@ ha-state-disposable-tofu-proof endpoint_package *args:
 ha-state-candidate-proof *args:
     cd {{ root }} && node scripts/ha-state-scratch-proof.mjs {{ args }}
 
+# Non-mutating #141 credential boundary check for scoped proof credentials
+ha-state-credential-boundary-check endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" --credential-boundary-check {{ args }}
+
 # Offline guard tests for the scratch S3 and disposable OpenTofu proof harness
 ha-state-scratch-proof-self-test:
     cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --self-test
