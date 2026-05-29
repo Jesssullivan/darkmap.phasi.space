@@ -24,6 +24,7 @@
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
+	import { estimatePm25At, pm25ToAod550, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -135,6 +136,14 @@
 	let transmissionAod = $state(0.15);
 	let transmissionAngstrom = $state(1.4);
 	let transmissionRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
+	// #275 — when the smog overlay is on, a clicked point's AOD input can be
+	// driven by the local PM2.5 kernel-diffusion estimate. `transmissionAodSource`
+	// captions the widget so users know the AOD is modeled (with confidence),
+	// not measured. Cleared when the user drags the slider manually.
+	let transmissionAodSource = $state<string | undefined>(undefined);
+	// Latest in-viewport OpenAQ stations, cached so a click can sample the
+	// diffusion field without re-fetching. Mirrors the GeoJSON the heatmap uses.
+	let pm25Stations = $state<Pm25Station[]>([]);
 
 	async function refreshTransmission(): Promise<void> {
 		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
@@ -181,7 +190,35 @@
 	}
 	function onAodChange(value: number): void {
 		transmissionAod = value;
+		// Manual override — the AOD is no longer the PM2.5-derived estimate.
+		transmissionAodSource = undefined;
 		scheduleTransmissionRefresh();
+	}
+
+	const SMOG_LAYER_ID = 'smog-openaq-pm25';
+
+	/**
+	 * #275 — derive the transmission AOD input from the local PM2.5 field at a
+	 * clicked point. Only when the smog overlay is enabled and stations are in
+	 * range; honest about confidence and never fabricates over sparse data
+	 * (the diffusion estimator returns `none` and we leave AOD untouched).
+	 */
+	function applyPm25DerivedAod(lat: number, lon: number): void {
+		if (!layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
+			transmissionAodSource = undefined;
+			return;
+		}
+		const est = estimatePm25At(pm25Stations, lon, lat);
+		const aod = pm25ToAod550(est.valueUgm3);
+		if (est.confidence === 'none' || aod === null) {
+			transmissionAodSource = undefined;
+			return;
+		}
+		transmissionAod = aod;
+		const near = est.nearestKm === null ? '' : `, nearest ${est.nearestKm < 1 ? '<1' : Math.round(est.nearestKm)} km`;
+		const plural = est.contributingStations === 1 ? '' : 's';
+		transmissionAodSource = `modeled from local PM2.5 — ${est.confidence} confidence (${est.contributingStations} station${plural}${near})`;
+		if (transmissionOpen) scheduleTransmissionRefresh();
 	}
 	function onAngstromChange(value: number): void {
 		transmissionAngstrom = value;
@@ -552,6 +589,8 @@
 			const data: ReadoutData =
 				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
 			readout = { lat, lon, loading: false, data };
+			// #275 — drive the transmission AOD from the local PM2.5 estimate.
+			applyPm25DerivedAod(lat, lon);
 		} catch (e) {
 			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };
 		}
@@ -725,6 +764,11 @@
 		if (map.getLayer(circId)) map.removeLayer(circId);
 		if (map.getSource(srcId)) map.removeSource(srcId);
 		POINT_SOURCE_IDS.delete(l.id);
+		// #275 — drop the cached stations + any PM2.5-derived AOD caption.
+		if (l.id === SMOG_LAYER_ID) {
+			pm25Stations = [];
+			transmissionAodSource = undefined;
+		}
 	}
 
 	function setPointLayerOpacity(l: RasterLayerDef, op: number): void {
@@ -761,6 +805,12 @@
 			return;
 		}
 		const fc: OpenAQSensorCollection = exit.value;
+		// #275 — cache stations so a clicked point can sample the diffusion field.
+		pm25Stations = fc.features.map((f) => ({
+			lon: f.geometry.coordinates[0],
+			lat: f.geometry.coordinates[1],
+			value: f.properties.value,
+		}));
 		const src = map.getSource(pointSourceId(l.id));
 		if (src && 'setData' in src && typeof src.setData === 'function') {
 			(src as { setData: (data: OpenAQSensorCollection) => void }).setData(fc);
@@ -1090,6 +1140,7 @@
 		onclose={closeTransmission}
 		aerosolType={transmissionAerosolType}
 		aod={transmissionAod}
+		aodSource={transmissionAodSource}
 		angstrom={transmissionAngstrom}
 		{onAerosolTypeChange}
 		{onAodChange}
