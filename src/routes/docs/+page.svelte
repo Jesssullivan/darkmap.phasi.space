@@ -165,6 +165,13 @@
 				attribution control when any GIBS layer is on.
 			</li>
 			<li>
+				<strong>GIBS dates are explicit.</strong> Atmospheric raster tiles request the current ephemeris UTC day via
+				<code>time=YYYY-MM-DD</code>. Scrubbing within a day keeps the mounted tile source stable; crossing a UTC day
+				remounts the active GIBS layers so the imagery, health pill, and cache key refer to the same product day. The
+				server uses per-product publication-lag windows and falls back only to a bounded prior day when GIBS has not
+				published yet.
+			</li>
+			<li>
 				<strong>Open-Meteo /v1/forecast</strong> — point RH, layered cloud cover, visibility. CC-BY 4.0, no key
 				required; proxied through <code>/api/atmospheric/point</code>. PWV is treated as unavailable until a supported
 				point source is wired.

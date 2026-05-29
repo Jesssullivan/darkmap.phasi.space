@@ -151,14 +151,39 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 ];
 
 /**
+ * Stable UTC day key used by daily atmospheric products and cache keys.
+ */
+export const utcDayKey = (date: Date): string => {
+	const year = date.getUTCFullYear();
+	const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+	const day = String(date.getUTCDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
+};
+
+export interface RasterUrlTemplateOptions {
+	/**
+	 * Explicit daily product date for atmospheric layers. Pass a UTC-day string
+	 * (`YYYY-MM-DD`) or a Date; non-atmospheric layers ignore it.
+	 */
+	readonly time?: string | Date;
+}
+
+const normalizeTemplateTime = (time: string | Date | undefined): string | undefined =>
+	time instanceof Date ? utcDayKey(time) : time;
+
+/**
  * MapLibre raster source URL template targeting our proxy. Atmospheric layers
  * carry `&kind=atmospheric` so the service worker can route the response to
  * `darkmap-atmospheric-tile` without importing the layer catalog into the SW.
+ * When a daily product date is known, atmospheric templates also carry
+ * `time=YYYY-MM-DD` so GIBS, health badges, and cache keys agree.
  */
-export const rasterUrlTemplate = (layerId: string): string => {
+export const rasterUrlTemplate = (layerId: string, options: RasterUrlTemplateOptions = {}): string => {
 	const layer = LAYERS.find((l) => l.id === layerId);
 	const base = `/api/raster?layer=${encodeURIComponent(layerId)}&z={z}&x={x}&y={y}`;
-	return layer?.group === 'atmospheric' ? `${base}&kind=atmospheric` : base;
+	if (layer?.group !== 'atmospheric') return base;
+	const time = normalizeTemplateTime(options.time);
+	return `${base}&kind=atmospheric${time ? `&time=${encodeURIComponent(time)}` : ''}`;
 };
 
 /** Default map center — Ithaca, NY (the lab fallback when geolocation is unavailable). */

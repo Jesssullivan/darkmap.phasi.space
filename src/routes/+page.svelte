@@ -52,6 +52,7 @@
 		FALLBACK_ZOOM,
 		LAYERS,
 		rasterUrlTemplate,
+		utcDayKey,
 		VIIRS_YEARS,
 		type RasterLayerDef,
 	} from '$lib/layers';
@@ -95,6 +96,8 @@
 	};
 	let ephemerisOpen = $state(false);
 	let ephemerisTime: Date = $state(initialTime());
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- mounted tile date bookkeeping, not reactive UI state
+	const atmosphericTileDays = new Map<string, string>();
 	let viewCenter: { lat: number; lon: number } = $state({
 		lat: FALLBACK_CENTER[1],
 		lon: FALLBACK_CENTER[0],
@@ -648,6 +651,17 @@
 		);
 	}
 
+	function rasterMountFor(l: RasterLayerDef, atmosphericDay = utcDayKey(ephemerisTime)) {
+		const atmospheric = l.group === 'atmospheric';
+		return {
+			id: l.id,
+			tileUrlTemplate: atmospheric ? atmosphericTileTemplate(l.id, { time: atmosphericDay }) : rasterUrlTemplate(l.id),
+			opacity: layerState[l.id]?.opacity ?? l.opacity,
+			...(l.maxNativeZoom !== undefined ? { maxZoom: l.maxNativeZoom } : {}),
+			...(l.attribution ? { attribution: l.attribution } : {}),
+		};
+	}
+
 	function mountLayer(l: RasterLayerDef): void {
 		if (l.pointSourceUrl) {
 			void mountPointLayer(l);
@@ -657,18 +671,12 @@
 		// loader can read the no-data/error outcome header and own the health
 		// state. They start in `loading`; the loader flips to ok/empty/error.
 		const atmospheric = l.group === 'atmospheric';
-		if (atmospheric) layerHealth.dispatch(l.id, { type: 'mount' });
-		void runController(
-			Effect.flatMap(MapLayerController, (c) =>
-				c.mount({
-					id: l.id,
-					tileUrlTemplate: atmospheric ? atmosphericTileTemplate(l.id) : rasterUrlTemplate(l.id),
-					opacity: layerState[l.id]?.opacity ?? l.opacity,
-					...(l.maxNativeZoom !== undefined ? { maxZoom: l.maxNativeZoom } : {}),
-					...(l.attribution ? { attribution: l.attribution } : {}),
-				}),
-			),
-		);
+		const atmosphericDay = utcDayKey(ephemerisTime);
+		if (atmospheric) {
+			atmosphericTileDays.set(l.id, atmosphericDay);
+			layerHealth.dispatch(l.id, { type: 'mount' });
+		}
+		void runController(Effect.flatMap(MapLayerController, (c) => c.mount(rasterMountFor(l, atmosphericDay))));
 	}
 
 	function unmountLayer(l: RasterLayerDef): void {
@@ -677,8 +685,36 @@
 			return;
 		}
 		// Clear the atmospheric health pill back to idle on toggle-off.
-		if (l.group === 'atmospheric') layerHealth.dispatch(l.id, { type: 'unmount' });
+		if (l.group === 'atmospheric') {
+			atmosphericTileDays.delete(l.id);
+			layerHealth.dispatch(l.id, { type: 'unmount' });
+		}
 		void runController(Effect.flatMap(MapLayerController, (c) => c.unmount(l.id)));
+	}
+
+	function remountAtmosphericRasterLayersForDay(day: string): void {
+		if (!controllerLayer) return;
+		for (const l of LAYERS) {
+			if (l.group !== 'atmospheric' || !l.upstreamUrlTemplate || !layerState[l.id]?.on) continue;
+			if (atmosphericTileDays.get(l.id) === day) continue;
+			atmosphericTileDays.set(l.id, day);
+			layerHealth.dispatch(l.id, { type: 'mount' });
+			void runController(
+				Effect.flatMap(MapLayerController, (c) =>
+					Effect.gen(function* () {
+						yield* c.unmount(l.id);
+						yield* c.mount(rasterMountFor(l, day));
+					}),
+				),
+			);
+		}
+	}
+
+	function setEphemerisTime(next: Date): void {
+		const previousDay = utcDayKey(ephemerisTime);
+		const nextDay = utcDayKey(next);
+		ephemerisTime = next;
+		if (previousDay !== nextDay) remountAtmosphericRasterLayersForDay(nextDay);
 	}
 
 	function setLayerOpacity(l: RasterLayerDef, op: number): void {
@@ -1205,7 +1241,7 @@
 		bounds={viewBounds}
 		zoom={viewZoom}
 		onTimeChange={(t) => {
-			ephemerisTime = t;
+			setEphemerisTime(t);
 			scheduleHashWrite();
 		}}
 	/>
@@ -1222,7 +1258,7 @@
 			onclick: () => {
 				ephemerisOpen = !ephemerisOpen;
 				if (ephemerisOpen && !decodeHash(window.location.hash).time) {
-					ephemerisTime = new Date();
+					setEphemerisTime(new Date());
 				}
 				scheduleHashWrite();
 			},

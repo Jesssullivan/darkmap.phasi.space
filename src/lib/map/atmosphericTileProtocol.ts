@@ -28,7 +28,7 @@
  * so it unit-tests without MapLibre or a browser.
  */
 
-import { rasterUrlTemplate } from '$lib/layers';
+import { rasterUrlTemplate, type RasterUrlTemplateOptions } from '$lib/layers';
 import type { HealthEvent, LayerHealth } from '$lib/layers/health-state';
 
 /** Custom MapLibre protocol scheme. Atmospheric tile templates are prefixed with `${ATMO_PROTOCOL}://`. */
@@ -44,7 +44,8 @@ export const stripAtmoScheme = (url: string): string =>
 	url.startsWith(SCHEME_PREFIX) ? url.slice(SCHEME_PREFIX.length) : url;
 
 /** Build the scheme-prefixed tile template for an atmospheric layer id. */
-export const atmosphericTileTemplate = (layerId: string): string => withAtmoScheme(rasterUrlTemplate(layerId));
+export const atmosphericTileTemplate = (layerId: string, options: RasterUrlTemplateOptions = {}): string =>
+	withAtmoScheme(rasterUrlTemplate(layerId, options));
 
 /** Extract the `layer` query param from a (possibly schemed, possibly relative) tile URL. */
 export const layerIdFromTileUrl = (url: string): string | undefined => {

@@ -54,6 +54,11 @@ describe('scheme + layer-id helpers', () => {
 		expect(tpl).toContain('&kind=atmospheric');
 	});
 
+	it('atmosphericTileTemplate carries an explicit UTC day when provided', () => {
+		const tpl = atmosphericTileTemplate('clouds-modis-terra', { time: '2026-05-28' });
+		expect(tpl).toContain('&kind=atmospheric&time=2026-05-28');
+	});
+
 	it('layerIdFromTileUrl pulls the layer param from a schemed url', () => {
 		expect(layerIdFromTileUrl(TILE_URL)).toBe('clouds-modis-terra');
 	});
