@@ -49,8 +49,9 @@
 <style>
 	.toolbar {
 		position: fixed;
-		right: 0.75rem;
-		bottom: 0.75rem;
+		/* Clear the notch / home indicator in landscape on notched devices. */
+		right: max(0.75rem, env(safe-area-inset-right));
+		bottom: max(0.75rem, env(safe-area-inset-bottom));
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;

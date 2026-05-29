@@ -83,8 +83,9 @@
 <style>
 	.toasts {
 		position: fixed;
-		left: 1rem;
-		bottom: 1rem;
+		/* Clear the notch / home indicator in landscape on notched devices. */
+		left: max(1rem, env(safe-area-inset-left));
+		bottom: max(1rem, env(safe-area-inset-bottom));
 		display: flex;
 		flex-direction: column-reverse;
 		gap: 0.4rem;

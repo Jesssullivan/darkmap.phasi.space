@@ -458,9 +458,10 @@
 	.sky {
 		position: fixed;
 		/* Sit under the top-center geocoder search input so it doesn't
-		   stack over it on narrow widths. */
-		top: 3.75rem;
-		right: 1rem;
+		   stack over it on narrow widths. `max(…, env())` keeps it clear of
+		   the notch/rounded corner in landscape on notched devices. */
+		top: max(3.75rem, env(safe-area-inset-top));
+		right: max(1rem, env(safe-area-inset-right));
 		width: 9.5rem;
 		background: rgba(8, 10, 16, 0.78);
 		border: 1px solid rgba(255, 255, 255, 0.1);
