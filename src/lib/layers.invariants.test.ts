@@ -8,6 +8,7 @@ import {
 	isImmutableTime,
 	type AtmosphericCapability,
 } from './atmospheric-capabilities';
+import { BASEMAPS } from './basemaps';
 import { LAYERS, rasterUrlTemplate, VIIRS_YEARS, type LayerGroup, type RasterLayerDef } from './layers';
 
 /* ------------------------------------------------------------------------ */
@@ -230,5 +231,28 @@ describe('rasterUrlTemplate', () => {
 	it('does NOT tag non-atmospheric layers with kind=atmospheric', () => {
 		expect(rasterUrlTemplate('viirs_2019')).not.toContain('kind=');
 		expect(rasterUrlTemplate('world_atlas_2015')).not.toContain('kind=');
+	});
+});
+
+describe('BASEMAPS — id space invariants for HealthRegistry sharing (#235 UI)', () => {
+	it('every basemap id is unique within BASEMAPS', () => {
+		const ids = BASEMAPS.map((b) => b.id);
+		const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+		expect(dupes).toEqual([]);
+	});
+
+	it('basemap ids do not collide with LAYERS ids', () => {
+		// Basemaps and overlay layers share the HealthRegistry keyspace. A
+		// collision would let a basemap mount overwrite a real layer's
+		// health (or vice versa) and break the LayerRail pill contract.
+		const layerIds = new Set(LAYERS.map((l) => l.id));
+		const collisions = BASEMAPS.map((b) => b.id).filter((id) => layerIds.has(id));
+		expect(collisions).toEqual([]);
+	});
+
+	it('every basemap id matches the same kebab/snake regex as LAYERS', () => {
+		for (const bm of BASEMAPS) {
+			expect(bm.id, `basemap ${bm.id} id shape`).toMatch(/^[a-z][a-z0-9_-]*$/);
+		}
 	});
 });

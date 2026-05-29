@@ -840,10 +840,18 @@
 		if (elapsed > 16) {
 			console.debug(`basemap swap → ${id} took ${elapsed.toFixed(1)} ms`);
 		}
+		// #235 — basemaps participate in the per-layer health matrix. We
+		// dispatch `mount` here; the MapLibre `sourcedata` handler flips
+		// the state to `rendered` on the first tile, and `error` rewires
+		// to a `tile-error` event keyed on the active basemap id.
+		layerHealth.dispatch(id, { type: 'mount' });
 	}
 
 	function onBasemapChange(id: string): void {
 		if (id === activeBasemap || !BASEMAPS.some((b) => b.id === id)) return;
+		// Dispose health observability for the basemap we're leaving so the
+		// LayerRail pill drops back to idle for the inactive entry.
+		layerHealth.dispatch(activeBasemap, { type: 'unmount' });
 		activeBasemap = id;
 		if (mapInstance) applyBasemapLive(mapInstance, id);
 		scheduleHashWrite();
@@ -921,7 +929,17 @@
 			const sourceId = (ev as { sourceId?: string }).sourceId ?? (ev as { source?: { id?: string } }).source?.id;
 			const err = (ev as { error?: { message?: string; status?: number } }).error;
 			if (!err) return;
-			if (sourceId === BASEMAP_SOURCE_ID) return;
+			// Basemap errors route to the active basemap id (#235). Toast is
+			// suppressed because basemap failures are usually noisy retries
+			// and the LayerRail pill carries the same information.
+			if (sourceId === BASEMAP_SOURCE_ID) {
+				layerHealth.dispatch(activeBasemap, {
+					type: 'tile-error',
+					reason: err.message ?? 'tile load failed',
+					status: err.status,
+				});
+				return;
+			}
 			pushToast(err.message ?? 'tile load failed', sourceId);
 			// #196 — dispatch a tile-error health event for the matching LAYERS row.
 			// Helper skips point-source overlays (which use a -pt-src suffix and
@@ -946,6 +964,14 @@
 				tile?: unknown;
 			};
 			if (evt.tile === undefined) return; // Style or attribution event, not a tile load.
+			// Basemap source dispatches under the active basemap id (#235).
+			if (evt.sourceId === BASEMAP_SOURCE_ID) {
+				const current = layerHealth.getHealth(activeBasemap);
+				if (current.tag === 'loading') {
+					layerHealth.dispatch(activeBasemap, { type: 'tile-ok' });
+				}
+				return;
+			}
 			const layerId = parseLayerIdFromSourceId(evt.sourceId);
 			if (!layerId) return;
 			const current = layerHealth.getHealth(layerId);
@@ -953,6 +979,10 @@
 				layerHealth.dispatch(layerId, { type: 'tile-ok' });
 			}
 		});
+
+		// Initial basemap mounts at map-init time; dispatch so the LayerRail
+		// reflects the basemap lifecycle from frame 1.
+		layerHealth.dispatch(activeBasemap, { type: 'mount' });
 	});
 
 	onDestroy(() => {
