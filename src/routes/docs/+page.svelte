@@ -153,11 +153,9 @@
 		<h2 class="mb-3 font-mono text-lg font-bold">Atmospheric overlays + transmission</h2>
 		<p>
 			The Atmosphere section of the Layer rail surfaces four NASA GIBS raster overlays plus an OpenAQ ground-station
-			PM2.5 heatmap. Drop a pin to see point-source RH / cloud cover / visibility via Open-Meteo, and tap the <code
-				>i</code
-			>
-			chevron on any atmospheric row to open the <em>transmission widget</em>, which renders the spectral transmission
-			curve T(λ) for the active inputs.
+			PM2.5 station-density overlay. Drop a pin to see point-source RH / cloud cover / visibility via Open-Meteo, and
+			tap the <code>i</code> chevron on any atmospheric row to open the <em>transmission widget</em>, which renders the
+			spectral transmission curve T(λ) for the active inputs.
 		</p>
 		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Data sources (V1)</h3>
 		<ul class="mt-2 list-disc space-y-2 pl-6">
@@ -172,9 +170,10 @@
 				point source is wired.
 			</li>
 			<li>
-				<strong>OpenAQ v3</strong> — PM2.5 ground stations in the viewport bbox, CC-BY 4.0. Requires an
-				<code>OPENAQ_API_KEY</code> env on the server; absent that, the proxy returns an empty FeatureCollection so the overlay
-				renders nothing instead of throwing.
+				<strong>OpenAQ v3</strong> — PM2.5 ground stations in the viewport bbox, CC-BY 4.0. The map shows
+				station-observation density, not physical diffusion; null readings are treated as unknown rather than clean air.
+				Requires an <code>OPENAQ_API_KEY</code> env on the server; absent that, the proxy returns an empty FeatureCollection
+				so the overlay renders nothing instead of throwing.
 			</li>
 		</ul>
 
