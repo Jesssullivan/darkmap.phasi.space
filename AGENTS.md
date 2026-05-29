@@ -45,6 +45,13 @@ reviewed static snapshots from `tinyland.dev`.
   `GF_BAZEL_CONFIG=flywheel` it runs `bazelisk --config=flywheel test //...`.
   Use `just test-local` only as a direct Vitest fallback.
 
+## Remote-first testing
+
+- Browserful Playwright e2e and the adapter-node build are **remote-first**.
+  Locally use `just check` / `just ci-quick`; do **not** run `just test-e2e`
+  browserful locally — it requires `LOCAL=1`. CI's e2e lane is the source of
+  truth.
+
 ## Theme & Skeleton
 
 - **Skeleton 4.15.2** (pinned). Do not upgrade casually.
@@ -112,30 +119,23 @@ After creating a new sister site from this scaffold:
 
 ## Flywheel Binding
 
-- Two configs, two contracts (see `docs/CI-SCHEMA.md` §5):
-  - `--config=flywheel` — remote *cache* only. Safe everywhere with
-    cluster reachability. Vendored in `.bazelrc.flywheel`.
-  - `--config=flywheel-executor` — remote *executor* + cache.
-    Proved-class-only, cluster-runner-only. The `flywheel-bazel`
-    composite action in `tinyland-inc/ci-templates` refuses to set
-    this on `ubuntu-latest`.
-- Coexists with darkmap's bespoke `--config=ci-cached` and
-  `--config=executor-backed` profiles which use
-  `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution
-  (no hardcoded URL). Both flows are valid:
-  - `--config=flywheel[-executor]` when the cluster cache DNS is
-    stable (e.g. running on `tinyland-nix` ARC runners).
-  - `--config=ci-cached` / `--config=executor-backed` when the
-    runner pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
-- Proved-for-spoke target classes (mirrored from
-  `tinyland-inc/GloriousFlywheel/config/rbe-target-eligibility.json`):
-  `sveltekit-app-build`, `sveltekit-unit-tests`,
-  `deployment-bundle-packaging`, `docs-site-static-build`. Candidate
-  (still rejected at runtime): `web-playwright-chromium-static-smoke`.
-- **Hard NOs**: no rustfs **RBE state / action-cache** authority; no
-  OpenTofu RBE (`opentofu-validate`/`opentofu-fmt` are blocked); no
-  developer-server RBE (`//app:dev` cannot run on REAPI); cache hits
-  ≠ RBE.
+The normative Flywheel contract — the two config axes
+(`--config=flywheel` cache-only vs `--config=flywheel-executor`
+executor+cache), the proved-for-spoke target-class allowlist, and the
+hard invariants (no RustFS RBE authority, no OpenTofu RBE, no
+devserver RBE, cache hits ≠ RBE) — lives in `docs/CI-SCHEMA.md` §5.
+Read it before touching any Flywheel/RBE surface.
+
+**darkmap-specific binding** (not in §5):
+
+- Coexisting with the §5 Flywheel configs, darkmap keeps bespoke
+  `--config=ci-cached` and `--config=executor-backed` profiles that use
+  `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution (no
+  hardcoded URL). Both flows are valid:
+  - `--config=flywheel[-executor]` when the cluster cache DNS is stable
+    (e.g. running on `tinyland-nix` ARC runners).
+  - `--config=ci-cached` / `--config=executor-backed` when the runner
+    pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
 - Local DX: `nix develop` for the toolchain, `FLYWHEEL=local|cache|executor|auto`
   env knob picks the bazelrc config for the `just flywheel-build` /
   `just flywheel-test` recipes. `auto` probes cluster cache
