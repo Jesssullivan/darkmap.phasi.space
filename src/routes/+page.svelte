@@ -24,7 +24,7 @@
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
-	import { estimatePm25At, pm25ToAod550, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
+	import { estimatePm25At, pm25ToAod550, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -151,6 +151,10 @@
 	// Latest in-viewport OpenAQ stations, cached so a click can sample the
 	// diffusion field without re-fetching. Mirrors the GeoJSON the heatmap uses.
 	let pm25Stations = $state<Pm25Station[]>([]);
+	// The clicked-point PM2.5 estimate, surfaced in the readout so the user
+	// sees the modeled value + how much coverage it rests on. Null when smog
+	// is off or no station is in range (never a fabricated value).
+	let pm25Estimate = $state<Pm25Estimate | null>(null);
 
 	async function refreshTransmission(): Promise<void> {
 		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
@@ -212,10 +216,14 @@
 	 */
 	function applyPm25DerivedAod(lat: number, lon: number): void {
 		if (!layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
+			pm25Estimate = null;
 			transmissionAodSource = undefined;
 			return;
 		}
 		const est = estimatePm25At(pm25Stations, lon, lat);
+		// Surface the estimate in the readout when it rests on real coverage;
+		// `none` means no in-range station — show nothing rather than fabricate.
+		pm25Estimate = est.confidence === 'none' ? null : est;
 		const aod = pm25ToAod550(est.valueUgm3);
 		if (est.confidence === 'none' || aod === null) {
 			transmissionAodSource = undefined;
@@ -575,6 +583,7 @@
 		readoutInflight?.abort();
 		readoutInflight = undefined;
 		readout = undefined;
+		pm25Estimate = null;
 		pointMarker?.remove();
 	}
 
@@ -1306,6 +1315,7 @@
 		data={readout.data}
 		loading={readout.loading}
 		error={readout.error}
+		pm25={pm25Estimate}
 		onclose={closeReadout}
 	/>
 {/if}
