@@ -5,15 +5,17 @@
  * RasterClient does the upstream-layer lookup before calling GetMap.
  *
  * Live GeoServer discovery 2026-05-17 (TIN-1289). Annual VIIRS coverage
- * is 2012-2019 (8 years). Falchi World Atlas comes in two flavours:
- * `WA_2015` (styled) and `WA_2015_raw` (unstyled radiance values).
+ * is 2012-2019 (8 years). Falchi World Atlas ships as the styled
+ * `WA_2015` overlay; the unstyled `WA_2015_raw` radiance grid is NOT a
+ * public overlay — it is read only by the click-to-read point query
+ * (see `server/raster/PointQuery.ts`, which surfaces raw mcd/m²).
  *
  * Layers carry a `group` discriminator so the UI can render a year
  * picker for the VIIRS Annual family instead of 8 separate checkboxes.
  * Single-layer groups (Falchi, etc.) render as a plain toggle.
  */
 
-export type LayerGroup = 'viirs_annual' | 'world_atlas' | 'world_atlas_raw' | 'atmospheric';
+export type LayerGroup = 'viirs_annual' | 'world_atlas' | 'atmospheric';
 
 export interface RasterLayerDef {
 	readonly id: string;
@@ -84,15 +86,6 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		label: 'World Atlas 2015',
 		description: 'Falchi et al. 2016 World Atlas of Artificial Night Sky Brightness (styled).',
 		group: 'world_atlas',
-		defaultEnabled: false,
-		opacity: 0.7,
-	},
-	{
-		id: 'world_atlas_2015_raw',
-		upstreamLayer: 'PostGIS:WA_2015_raw',
-		label: 'World Atlas 2015 (raw)',
-		description: 'Falchi 2016 World Atlas raw radiance (unstyled).',
-		group: 'world_atlas_raw',
 		defaultEnabled: false,
 		opacity: 0.7,
 	},

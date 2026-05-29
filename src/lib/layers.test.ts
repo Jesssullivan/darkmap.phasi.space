@@ -14,9 +14,12 @@ describe('layer manifest — VIIRS annual', () => {
 });
 
 describe('layer manifest — composition', () => {
-	it('LAYERS contains the VIIRS annual union + world atlas pair + atmospheric overlays', () => {
+	it('LAYERS contains the VIIRS annual union + styled world atlas + atmospheric overlays', () => {
+		const worldAtlas = LAYERS.filter((l) => l.group === 'world_atlas').length;
 		const atmospheric = LAYERS.filter((l) => l.group === 'atmospheric').length;
-		expect(LAYERS.length).toBe(VIIRS_YEARS.length + 2 + atmospheric);
+		// One styled World Atlas overlay; the raw radiance grid is point-query-only (#247).
+		expect(worldAtlas).toBe(1);
+		expect(LAYERS.length).toBe(VIIRS_YEARS.length + worldAtlas + atmospheric);
 	});
 
 	it('all ids are unique', () => {

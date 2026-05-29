@@ -33,10 +33,11 @@
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
 
-	// Category partition. VIIRS Annual is its own picker (below); the World
-	// Atlas pair shares the Light Pollution section; atmospheric layers get
-	// their own collapsible group.
-	const lightExtras = $derived(layers.filter((l) => l.group === 'world_atlas' || l.group === 'world_atlas_raw'));
+	// Category partition. VIIRS Annual is its own picker (below); the styled
+	// World Atlas sits in the Light Pollution section; atmospheric layers get
+	// their own collapsible group. (The unstyled WA_2015_raw grid is not a
+	// public overlay — it backs the point-query readout only.)
+	const lightExtras = $derived(layers.filter((l) => l.group === 'world_atlas'));
 	const atmosphericLayers = $derived(layers.filter((l) => l.group === 'atmospheric'));
 
 	let lightOpen = $state(true);
@@ -204,7 +205,7 @@
 					{/if}
 				</li>
 
-				<!-- World Atlas + raw: one toggle + opacity each. -->
+				<!-- World Atlas (styled): one toggle + opacity. -->
 				{#each lightExtras as layer (layer.id)}
 					{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
 					<li>
@@ -242,10 +243,7 @@
 						{#if ls.on && layer.upstreamLayer}
 							{@const ramp = rampFor(layer.upstreamLayer)}
 							{#if ramp}
-								<Legend
-									{ramp}
-									title={layer.label === 'World Atlas 2015 (raw)' ? 'Falchi radiance' : layer.label + ' scale'}
-								/>
+								<Legend {ramp} title="{layer.label} scale" />
 							{/if}
 						{/if}
 					</li>

@@ -17,7 +17,6 @@ describe('source-id → layerId parsing (#196)', () => {
 
 	it('parses World Atlas source ids', () => {
 		expect(parseLayerIdFromSourceId('darkmap-world_atlas_2015-src')).toBe('world_atlas_2015');
-		expect(parseLayerIdFromSourceId('darkmap-world_atlas_2015_raw-src')).toBe('world_atlas_2015_raw');
 	});
 
 	it('parses atmospheric raster source ids', () => {
