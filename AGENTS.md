@@ -18,7 +18,7 @@ reviewed static snapshots from `tinyland.dev`.
   `bazelisk` directly outside the Justfile unless adding a new recipe.
 - **Shell**: `nix develop` (auto-loaded by `direnv`) — never assume host
   toolchain. CI runs `nix develop --command just <recipe>`.
-- **Build**: `just build` produces a static `build/` (adapter-static).
+- **Build**: `just build` runs `pnpm run build` (SvelteKit **adapter-node**) and emits a Node server bundle in `build/`. The server hosts the app plus thin proxy/normalization API routes (`/api/raster`, `/api/geocode`, `/api/atmospheric/*`, point-query) — no DB, no auth, no business data owned.
 - **Check**: `just check` runs lint, typecheck, and Bazel unit tests.
 
 ## Bazel Posture
