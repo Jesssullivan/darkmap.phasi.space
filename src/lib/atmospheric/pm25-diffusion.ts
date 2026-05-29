@@ -146,3 +146,24 @@ export const pm25ToAod550 = (pm25Ugm3: number | null): number | null => {
 	const aod = Math.max(0, pm25Ugm3) * PM25_TO_AOD550_FACTOR;
 	return Math.min(AOD550_MAX, aod);
 };
+
+/** US-AQI PM2.5 category label (µg/m³ breakpoints) — plain-language context. */
+export const pm25AqiCategory = (v: number): string => {
+	if (v < 12) return 'Good';
+	if (v < 35.5) return 'Moderate';
+	if (v < 55.5) return 'Unhealthy for sensitive groups';
+	if (v < 150.5) return 'Unhealthy';
+	if (v < 250.5) return 'Very unhealthy';
+	return 'Hazardous';
+};
+
+/**
+ * Shared phrasing for the PM2.5 coverage captions, so the transmission-widget
+ * AOD source line and the point readout round + pluralize identically. Each
+ * caller supplies its own separator (comma vs middot) around these fragments.
+ */
+export const formatStationCount = (n: number): string => `${n} station${n === 1 ? '' : 's'}`;
+
+/** "nearest <1 km" / "nearest N km", or null when no station is in range. */
+export const formatNearestKm = (km: number | null): string | null =>
+	km === null ? null : `nearest ${km < 1 ? '<1' : Math.round(km)} km`;

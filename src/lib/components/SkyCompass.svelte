@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Effect, Layer } from 'effect';
+	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { Compass, Moon, Sun } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
@@ -73,7 +73,10 @@
 			}).pipe(Effect.provide(layer)),
 		);
 		if (exit._tag === 'Failure') {
-			const err = (exit.cause as unknown as { error?: { reason?: string } }).error;
+			// Cause.failureOption extracts the typed failure for any cause shape
+			// (Fail/Sequential/Parallel); the old `cause.error` cast only worked
+			// for a bare Fail and silently mis-classified the rest as 'error'.
+			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
 			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
 			return;
 		}
@@ -96,7 +99,7 @@
 			}).pipe(Effect.provide(layer)),
 		);
 		if (exit._tag === 'Failure') {
-			const err = (exit.cause as unknown as { error?: { reason?: string } }).error;
+			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
 			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
 			return;
 		}
@@ -164,17 +167,23 @@
 		return clientPromise;
 	};
 
-	let cancelGen = 0;
+	// Each async effect owns its own cancellation counter. Sharing one counter
+	// let a time-scrub (the lightweight cursor effect) bump the generation and
+	// silently abort the in-flight trajectory/horizon build mid-loop, leaving the
+	// sun-arc stale until location/day changed. Separate counters keep them
+	// independent — scrubbing time no longer cancels the trajectory.
+	let trajectoryGen = 0;
+	let cursorGen = 0;
 	const dayKey = $derived(
 		`${time.getUTCFullYear()}-${time.getUTCMonth()}-${time.getUTCDate()}|${location.lat.toFixed(3)},${location.lon.toFixed(3)}`,
 	);
 
 	$effect(() => {
-		const myGen = ++cancelGen;
+		const myGen = ++trajectoryGen;
 		(async () => {
 			const c = await loadClient();
 			const r = await c.at(location, time);
-			if (myGen !== cancelGen) return;
+			if (myGen !== trajectoryGen) return;
 			readout = r;
 			// Sample sun position every 15 min from astro dawn to astro dusk so
 			// the trajectory shows the full visible-light cycle. Fall back to
@@ -191,7 +200,7 @@
 			const STEP_MS = 15 * 60 * 1000;
 			for (let ts = start.getTime(); ts <= end.getTime(); ts += STEP_MS) {
 				const p = await c.positionAt(location, new Date(ts));
-				if (myGen !== cancelGen) return;
+				if (myGen !== trajectoryGen) return;
 				samples.push({ frac: (ts - start.getTime()) / span, sun: p.sun });
 			}
 			trajectory = samples;
@@ -201,29 +210,29 @@
 			// the dot rendering on them. On error, fall back to a flat horizon.
 			c.horizonAt(location)
 				.then((poly) => {
-					if (myGen !== cancelGen) return;
+					if (myGen !== trajectoryGen) return;
 					horizon = poly;
 					horizonError = false;
 				})
 				.catch((e) => {
-					if (myGen !== cancelGen) return;
+					if (myGen !== trajectoryGen) return;
 					horizon = null;
 					horizonError = true;
 					console.warn('SkyCompass: horizon polygon failed, falling back to flat', e);
 				});
 		})().catch((e) => {
-			if (myGen === cancelGen) console.warn('SkyCompass: failed to load', e);
+			if (myGen === trajectoryGen) console.warn('SkyCompass: failed to load', e);
 		});
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		dayKey;
 	});
 
 	$effect(() => {
-		const myGen = ++cancelGen;
+		const myGen = ++cursorGen;
 		(async () => {
 			const c = await loadClient();
 			const p = await c.positionAt(location, time);
-			if (myGen !== cancelGen) return;
+			if (myGen !== cursorGen) return;
 			cursor = p;
 		})().catch(() => undefined);
 		// re-run on time change only — location triggers the heavier effect above
@@ -234,7 +243,9 @@
 	let cursor = $state<SkyPositions | null>(null);
 
 	onDestroy(() => {
-		cancelGen++;
+		// Cancel any in-flight async work in both effects on unmount.
+		trajectoryGen++;
+		cursorGen++;
 	});
 
 	// Compass geometry. SVG viewBox is 0..200; origin at center (100,100),

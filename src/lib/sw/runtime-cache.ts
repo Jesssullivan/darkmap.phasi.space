@@ -73,7 +73,10 @@ export async function cacheFirst(
 export async function networkFirst(deps: RuntimeCacheDeps, request: Request, cacheName: string): Promise<Response> {
 	try {
 		const response = await deps.fetch(request);
-		if (response.ok) {
+		// Mirror cacheFirst's guard: an opaqueredirect response is uncloneable and
+		// cache.put would throw, so skip it (a redirected navigation just isn't
+		// cached rather than silently failing the put).
+		if (response.ok && response.type !== 'opaqueredirect') {
 			const cache = await deps.caches.open(cacheName);
 			await cache.put(request, response.clone()).catch(() => {});
 		}

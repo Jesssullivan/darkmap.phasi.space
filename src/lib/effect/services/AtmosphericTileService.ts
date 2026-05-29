@@ -187,15 +187,14 @@ export const makeAtmosphericTileServiceLive = (
 				let lastNoData: AtmosphericNoDataObservation | undefined;
 				for (const attempt of attempts) {
 					const { url, nativeTile, requestedTime, sourceTime } = attempt;
-					let upstream: Response;
-					try {
-						upstream = yield* Effect.tryPromise({
-							try: () => fetcher.fetch(url),
-							catch: (cause) => new AtmosphericTileError({ reason: 'fetch-failed', cause }),
-						});
-					} catch (cause) {
-						return yield* Effect.fail(new AtmosphericTileError({ reason: 'fetch-failed', cause }));
-					}
+					// Effect.tryPromise already routes a rejected fetch into the typed
+					// failure channel (AtmosphericTileError 'fetch-failed'); yield*
+					// short-circuits via the runtime, so a surrounding try/catch can
+					// never fire — it was dead and is dropped.
+					const upstream = yield* Effect.tryPromise({
+						try: () => fetcher.fetch(url),
+						catch: (cause) => new AtmosphericTileError({ reason: 'fetch-failed', cause }),
+					});
 
 					// 404 from GIBS is a legitimate "no tile for this (z,x,y,time)"
 					// — try older default dates before surfacing no-data. Other
