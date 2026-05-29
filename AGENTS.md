@@ -184,6 +184,11 @@ After creating a new sister site from this scaffold:
   using it for `terraform.tfstate` is legitimate.
 - State key path will move to `spokes/darkmap/terraform.tfstate`
   when M4 lands; current key is per `infra/tofu/backend.hcl`.
+- Public HA-state readiness is machine-readable at
+  `docs/contracts/ha-opentofu-state-live-candidate-status.json`.
+  While #141/TIN-1026 remains blocked on external endpoint provisioning,
+  `just tofu-state-ha-readiness --expect-interim` must pass and
+  `just tofu-state-ha-readiness` must fail with `NO_LIVE_HA_STATE_CANDIDATE`.
 - Protected HA-state migration must follow
   `docs/HA_OPENTOFU_STATE_MIGRATION.md`: generate a reviewable backend config
   first, keep private state snapshots out of git, use OpenTofu backend

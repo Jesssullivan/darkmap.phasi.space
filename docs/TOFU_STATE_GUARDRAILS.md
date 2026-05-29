@@ -15,6 +15,17 @@ and one-stack-at-a-time migration.
 
 The HA endpoint package contract for that next step is documented in
 [`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
+The current public machine-readable status is
+[`contracts/ha-opentofu-state-live-candidate-status.json`](./contracts/ha-opentofu-state-live-candidate-status.json)
+and is validated with:
+
+```bash
+just tofu-state-ha-readiness --expect-interim
+```
+
+That command should pass only with `--expect-interim` while #141/TIN-1026 is
+blocked on external endpoint provisioning. Final HA readiness requires
+`just tofu-state-ha-readiness` to pass without `--expect-interim`.
 
 The repo guardrails are intentionally narrower than that platform work. They
 make failures visible early, preserve evidence, and keep retries bounded. They

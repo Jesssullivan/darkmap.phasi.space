@@ -176,6 +176,11 @@ complete. State failure evidence and the repo/platform recovery boundary are
 documented in [`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
 The next endpoint-package contract is documented in
 [`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
+The public live-candidate status remains
+`NO_LIVE_HA_STATE_CANDIDATE` and is intentionally validated with
+`just tofu-state-ha-readiness --expect-interim` until #141/TIN-1026 supplies a
+filled non-secret endpoint package. Final HA readiness requires
+`just tofu-state-ha-readiness` to pass without `--expect-interim`.
 The scratch S3 proof runbook is documented in
 [`HA_OPENTOFU_STATE_SCRATCH_PROOF.md`](./HA_OPENTOFU_STATE_SCRATCH_PROOF.md).
 The disposable OpenTofu proof runbook is documented in
