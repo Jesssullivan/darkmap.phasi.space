@@ -69,6 +69,20 @@ js_library(
     visibility = ["//visibility:public"],
 )
 
+# Curated HITRAN line archive consumed by the spectral slice's
+# hitran-bands.test.ts. The test resolves it via
+# `resolve(process.cwd(), 'data', 'hitran', 'curated-lines.json')`; the vitest
+# runner's cwd is the runfiles root, and js_library stages the file at its
+# root-package path (`data/hitran/...`), so the same `process.cwd()` lookup
+# resolves identically under `pnpm test` and `bazel test`. Lives in the root
+# Bazel package (no nearer BUILD.bazel), so wrapped here like the cross-slice
+# `$lib/...` sources above.
+js_library(
+    name = "hitran_curated_lines",
+    srcs = ["data/hitran/curated-lines.json"],
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # sveltekit-app-build — RBE-enrolled adapter-node build target
 #

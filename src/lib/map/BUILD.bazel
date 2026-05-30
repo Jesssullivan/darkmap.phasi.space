@@ -1,0 +1,53 @@
+"""Bazel targets for the darkmap map unit-test slice."""
+
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+# All six map *.test.ts slices are node-safe: every `maplibre-gl` reference is
+# an `import type` (erased by the transpiler) and dependencies (Marker, Map
+# surface) are injected as fakes, so none touch window/WebGL/document at module
+# load. Cross-package value imports of `$lib/layers` (BasemapController.ts and
+# atmosphericTileProtocol.ts -> LAYERS / rasterUrlTemplate) resolve to the
+# root-package `src/lib/layers.ts`; aspect_rules_js rejects raw cross-package
+# file labels in `data`, so it is pulled in via the //:lib_layers js_library
+# (matching the atmospheric slice). The `$lib/layers/health-state` references
+# are `import type` only and need no runtime staging.
+filegroup(
+    name = "map_srcs",
+    srcs = glob(["*.ts"]) + [
+        "//:lib_layers",
+    ],
+)
+
+vitest.vitest_test(
+    name = "map_test",
+    data = [
+        ":map_srcs",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/map/BasemapController.test.ts",
+        "src/lib/map/MapLayerController.cancellation.test.ts",
+        "src/lib/map/MapLayerController.test.ts",
+        "src/lib/map/atmosphericTileProtocol.test.ts",
+        "src/lib/map/pm25-style.test.ts",
+        "src/lib/map/point-marker.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)
