@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, Info, Menu, X } from '@lucide/svelte';
+	import { Activity, ChevronDown, ChevronRight, Info, Menu, X } from '@lucide/svelte';
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
@@ -290,6 +290,25 @@
 			</button>
 
 			{#if atmosphereOpen}
+				{#if oninfo}
+					<!-- The transmission sheet is a global spectral tool, not per-layer.
+					     Surface it as a clear CTA so the T(λ) / AOD / Ångström / band-
+					     guidance analysis is discoverable, not hidden behind a tiny
+					     per-row (i). -->
+					<button
+						type="button"
+						class="transmission-cta"
+						aria-label="Open spectral transmission analysis — T(λ), AOD, Ångström, and laser/EO band guidance"
+						onclick={() => oninfo?.(atmosphericLayers[0]?.id ?? 'aerosol-modis-aod')}
+					>
+						<Activity size={15} aria-hidden="true" />
+						<span class="cta-text">
+							<span class="cta-label">Spectral transmission T(λ)</span>
+							<span class="cta-sub">AOD · Ångström · band guidance</span>
+						</span>
+						<ChevronRight size={14} aria-hidden="true" class="cta-caret" />
+					</button>
+				{/if}
 				<ul>
 					{#each atmosphericLayers as layer (layer.id)}
 						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
@@ -517,6 +536,46 @@
 	.atmospheric-row-head .layer-toggle {
 		flex: 1 1 auto;
 	}
+	.transmission-cta {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		width: 100%;
+		margin: 0.1rem 0 0.6rem;
+		padding: 0.55rem 0.7rem;
+		background: rgba(var(--accent-amber-rgb), 0.08);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.3);
+		border-radius: 7px;
+		color: var(--accent-amber);
+		cursor: pointer;
+		text-align: left;
+		transition: background 0.12s ease;
+	}
+	.transmission-cta:hover,
+	.transmission-cta:focus-visible {
+		background: rgba(var(--accent-amber-rgb), 0.16);
+		outline: none;
+	}
+	.transmission-cta .cta-text {
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 auto;
+		min-width: 0;
+		line-height: 1.25;
+	}
+	.transmission-cta .cta-label {
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.transmission-cta .cta-sub {
+		font-size: 0.66rem;
+		opacity: 0.7;
+	}
+	.transmission-cta :global(.cta-caret) {
+		flex: 0 0 auto;
+		opacity: 0.6;
+	}
+
 	.info-btn {
 		flex: 0 0 auto;
 		background: none;
