@@ -29,8 +29,23 @@ export interface OpenAQSensorFeature {
 		readonly locationName: string;
 		readonly value: number | null;
 		readonly locationId?: number;
+		readonly hasReading?: boolean;
+		readonly parameterName?: string;
+		readonly unit?: string;
 	};
 	readonly geometry: { readonly type: 'Point'; readonly coordinates: readonly [number, number] };
+}
+
+export interface OpenAQCollectionMeta {
+	readonly bbox?: OpenAQBbox;
+	readonly fetchedAt?: string;
+	readonly featureCount: number;
+	readonly numericCount: number;
+	readonly nullCount: number;
+	readonly degraded: boolean;
+	readonly capped: boolean;
+	readonly limit?: number;
+	readonly upstreamFound?: number;
 }
 
 export interface OpenAQSensorCollection {
@@ -38,6 +53,7 @@ export interface OpenAQSensorCollection {
 	readonly features: ReadonlyArray<OpenAQSensorFeature>;
 	/** True when the proxy reports `OPENAQ_API_KEY` was missing or upstream returned 401. */
 	readonly degraded?: boolean;
+	readonly meta: OpenAQCollectionMeta;
 }
 
 export class OpenAQError extends Data.TaggedError('OpenAQError')<{
@@ -105,18 +121,78 @@ const parseCollection = (body: unknown): Effect.Effect<OpenAQSensorCollection, O
 		const value = typeof props.value === 'number' && Number.isFinite(props.value) ? props.value : null;
 		const locationName = typeof props.locationName === 'string' ? props.locationName : 'Unknown';
 		const locationId = typeof props.locationId === 'number' ? props.locationId : undefined;
+		const hasReading = typeof props.hasReading === 'boolean' ? props.hasReading : value !== null;
+		const parameterName = typeof props.parameterName === 'string' ? props.parameterName : undefined;
+		const unit = typeof props.unit === 'string' ? props.unit : undefined;
 		features.push({
 			type: 'Feature',
-			properties: { locationName, value, locationId },
+			properties: { locationName, value, locationId, hasReading, parameterName, unit },
 			geometry: { type: 'Point', coordinates: [lon, lat] as const },
 		});
 	}
+	const degraded = obj.degraded === true;
 	return Effect.succeed({
 		type: 'FeatureCollection',
 		features,
-		degraded: obj.degraded === true,
+		degraded,
+		meta: parseMeta(obj.meta, features, degraded),
 	});
 };
+
+export const openAQNumericReadingCount = (collection: OpenAQSensorCollection): number =>
+	Number.isFinite(collection.meta.numericCount)
+		? collection.meta.numericCount
+		: collection.features.filter((f) => f.properties.value !== null).length;
+
+const parseMeta = (
+	raw: unknown,
+	features: ReadonlyArray<OpenAQSensorFeature>,
+	degraded: boolean,
+): OpenAQCollectionMeta => {
+	const rawObj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : undefined;
+	const bbox = parseBbox(rawObj?.bbox);
+	const featureCount = numberOr(rawObj?.featureCount, features.length);
+	const numericCount = numberOr(rawObj?.numericCount, features.filter((f) => f.properties.value !== null).length);
+	const nullCount = numberOr(rawObj?.nullCount, Math.max(0, featureCount - numericCount));
+	return {
+		...(bbox ? { bbox } : {}),
+		...(typeof rawObj?.fetchedAt === 'string' ? { fetchedAt: rawObj.fetchedAt } : {}),
+		featureCount,
+		numericCount,
+		nullCount,
+		degraded,
+		capped: rawObj?.capped === true,
+		...(typeof rawObj?.limit === 'number' && Number.isFinite(rawObj.limit) ? { limit: rawObj.limit } : {}),
+		...(typeof rawObj?.upstreamFound === 'number' && Number.isFinite(rawObj.upstreamFound)
+			? { upstreamFound: rawObj.upstreamFound }
+			: {}),
+	};
+};
+
+const parseBbox = (raw: unknown): OpenAQBbox | undefined => {
+	if (typeof raw !== 'object' || raw === null) return undefined;
+	const obj = raw as Record<string, unknown>;
+	const west = obj.west;
+	const south = obj.south;
+	const east = obj.east;
+	const north = obj.north;
+	if (
+		typeof west !== 'number' ||
+		typeof south !== 'number' ||
+		typeof east !== 'number' ||
+		typeof north !== 'number' ||
+		!Number.isFinite(west) ||
+		!Number.isFinite(south) ||
+		!Number.isFinite(east) ||
+		!Number.isFinite(north)
+	) {
+		return undefined;
+	}
+	return { west, south, east, north };
+};
+
+const numberOr = (raw: unknown, fallback: number): number =>
+	typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
 
 export const OpenAQServiceLive: Layer.Layer<OpenAQService> = Layer.suspend(() =>
 	makeOpenAQServiceLive({ fetch: (url, init) => fetch(url, init) }),

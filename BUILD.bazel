@@ -210,3 +210,36 @@ vitest.vitest_test(
     ],
     visibility = ["//visibility:public"],
 )
+
+# =============================================================================
+# route_api_test — node-safe SvelteKit route-handler tests
+#
+# Thin API route tests stay in the root package while `src/routes/**` has no
+# nearer BUILD.bazel, so adding this target does not create a SvelteKit
+# subpackage boundary for //:app_build. The tests are explicit, mocked, and
+# node-safe; browserful route behavior remains covered by remote Playwright.
+# =============================================================================
+vitest.vitest_test(
+    name = "route_api_test",
+    data = [
+        "src/routes/api/atmospheric/openaq/+server.ts",
+        "src/routes/api/atmospheric/openaq/server.test.ts",
+        ":node_modules",
+        ":package_json",
+        ":vitest_bazel_config",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/routes/api/atmospheric/openaq/server.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)
