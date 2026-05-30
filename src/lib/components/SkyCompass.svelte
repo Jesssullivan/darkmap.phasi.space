@@ -121,7 +121,6 @@
 		}
 	}
 
-	let readout = $state<EphemerisReadout | null>(null);
 	let trajectory = $state<{ frac: number; sun: BodyPosition }[]>([]);
 	let horizon = $state<HorizonPolygon | null>(null);
 	let horizonError = $state(false);
@@ -184,7 +183,6 @@
 			const c = await loadClient();
 			const r = await c.at(location, time);
 			if (myGen !== trajectoryGen) return;
-			readout = r;
 			// Sample sun position every 15 min from astro dawn to astro dusk so
 			// the trajectory shows the full visible-light cycle. Fall back to
 			// the whole UTC day when polar (no twilight events).
@@ -435,9 +433,9 @@
 			{:else if moonHorizonDelta}
 				<span class="horizon">h {fmtAlt(moonHorizonDelta.horizonAlt)}</span>
 			{/if}
-			{#if readout}
-				<span class="phase">{readout.moon.phaseName}</span>
-			{/if}
+			<!-- Moon phase/illumination is shown once, in the EphemerisGantt readout
+			     rendered alongside this compass; the compass row keeps the
+			     position-specific alt/az/horizon and omits the duplicate phase. -->
 		</div>
 		{#if horizonError}
 			<div class="row note">terrain horizon unavailable — flat horizon assumed</div>
@@ -525,10 +523,6 @@
 	}
 	.badge.moon {
 		color: #dde2ff;
-	}
-	.phase {
-		margin-left: auto;
-		opacity: 0.6;
 	}
 	.airmass {
 		opacity: 0.7;
