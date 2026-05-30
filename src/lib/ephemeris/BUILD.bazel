@@ -1,11 +1,24 @@
 """Bazel targets for the darkmap ephemeris service unit-test slice."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
 filegroup(
     name = "ephemeris_srcs",
     srcs = glob(["*.ts"]),
+)
+
+# Implementation sources (no *.test.ts) exposed as a js_library so the root
+# //:app_build (SvelteKit SSR build) can consume them across the package
+# boundary. See the raster package BUILD for the copy_to_bin rationale.
+js_library(
+    name = "ephemeris_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
 )
 
 ts_project(

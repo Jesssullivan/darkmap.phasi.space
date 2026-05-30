@@ -6,7 +6,7 @@ static site is built by `pnpm run build` (vite build) — Bazel does not
 produce build/.
 """
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
@@ -40,7 +40,6 @@ exports_files(
     ],
     visibility = ["//visibility:public"],
 )
-
 # Cross-slice `$lib/...` sources pulled into flywheel-enrolled unit-test
 # slices (atmospheric/cache/sw). These files live in the root Bazel package
 # (no nearer BUILD.bazel). aspect_rules_js requires cross-package inputs to be
@@ -67,5 +66,64 @@ js_library(
 js_library(
     name = "lib_offline_cache_routes",
     srcs = ["src/lib/effect/services/OfflineCacheRoutes.ts"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# sveltekit-app-build — RBE-enrolled adapter-node build target
+#
+# Wraps the canonical `pnpm run build` (vite build + SvelteKit adapter-node)
+# as a hermetic Bazel action so it earns remote-cache + RBE acceleration under
+# the proved `sveltekit-app-build` target class. Modeled on tinyland.dev's
+# //:app_node_build (the proved TS-RBE reference).
+#
+# The runner stages all srcs into an isolated temp workspace, runs
+# `svelte-kit sync` + `vite build`, and copies the adapter-node bundle back to
+# the exec-root `build/` directory, which rules_js captures via out_dirs.
+#
+# tags:
+#   - flywheel-eligible : gates dispatch under --config=flywheel-executor
+#                         (--build_tag_filters=flywheel-eligible).
+#   - manual            : excluded from bare `bazelisk build //...` so the
+#                         8-min app build never runs on incidental wildcards.
+# =============================================================================
+
+js_binary(
+    name = "app_build_tool",
+    entry_point = "scripts/bazel/run-vite-node-build.mjs",
+    visibility = ["//visibility:public"],
+)
+
+js_run_binary(
+    name = "app_build",
+    srcs = glob(
+        [
+            "src/**/*",
+            "static/**/*",
+            "data/**/*",
+        ],
+        allow_empty = True,
+    ) + [
+        # Bazel globs stop at sub-package boundaries, so the root `src/**/*`
+        # glob omits the two nested packages under src/lib. The SvelteKit SSR
+        # build imports their modules (e.g. `$lib/server/raster/RasterClient`),
+        # so pull their source filegroups in explicitly or the build fails with
+        # UNLOADABLE_DEPENDENCY / "No such file or directory".
+        "//src/lib/server/raster:raster_app_srcs",
+        "//src/lib/ephemeris:ephemeris_app_srcs",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "tsconfig.json",
+        "svelte.config.js",
+        "vite.config.ts",
+        ":node_modules",
+    ],
+    out_dirs = ["build"],
+    tool = ":app_build_tool",
+    tags = [
+        "flywheel-eligible",
+        "manual",
+    ],
     visibility = ["//visibility:public"],
 )
