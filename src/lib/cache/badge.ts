@@ -45,7 +45,12 @@ export interface CacheBadgeInputs {
 	readonly storedAtMs?: number;
 }
 
-const fmtAge = (storedAtMs: number, nowMs: number): string => {
+/**
+ * Human "… ago" string for a stored/computed timestamp. Exported so the
+ * EphemerisGantt viewport-summary pill (which this module generalizes) shares
+ * one age formatter — including the >24h day rollover — instead of its own copy.
+ */
+export const fmtAge = (storedAtMs: number, nowMs: number): string => {
 	const ageMin = Math.max(0, Math.round((nowMs - storedAtMs) / 60_000));
 	if (ageMin < 1) return 'just now';
 	if (ageMin < 60) return `${ageMin}m ago`;
