@@ -92,6 +92,7 @@
 
 <button
 	class="rail-toggle"
+	data-tour="rail-toggle"
 	aria-label={drawerOpen ? 'Close layers' : 'Open layers'}
 	aria-expanded={drawerOpen}
 	onclick={() => (drawerOpen = !drawerOpen)}
@@ -127,7 +128,7 @@
 	{/if}
 {/snippet}
 
-<aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers">
+<aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers" data-tour="rail">
 	<header>
 		<h2>Layers</h2>
 		<p>VIIRS · World Atlas · Atmosphere</p>
@@ -159,7 +160,7 @@
 		</div>
 	</section>
 
-	<section class="category" aria-label="Light Pollution">
+	<section class="category" aria-label="Light Pollution" data-tour="light-pollution">
 		<button type="button" class="category-header" aria-expanded={lightOpen} onclick={() => (lightOpen = !lightOpen)}>
 			{#if lightOpen}
 				<ChevronDown size={14} aria-hidden="true" />
@@ -271,10 +272,11 @@
 	</section>
 
 	{#if atmosphericLayers.length > 0}
-		<section class="category" aria-label="Atmosphere">
+		<section class="category" aria-label="Atmosphere" data-tour="atmosphere">
 			<button
 				type="button"
 				class="category-header"
+				data-tour="atmosphere-header"
 				aria-expanded={atmosphereOpen}
 				onclick={() => (atmosphereOpen = !atmosphereOpen)}
 			>

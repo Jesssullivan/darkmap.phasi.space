@@ -46,7 +46,8 @@
 		geometry: RouteGeoJsonGeometry;
 	};
 	type RouteGeoJsonFC = { type: 'FeatureCollection'; features: RouteGeoJsonFeature[] };
-	import { LocateFixed, SunMoon, Upload, X } from '@lucide/svelte';
+	import { Compass, LocateFixed, SunMoon, Upload, X } from '@lucide/svelte';
+	import Tour, { type TourStep } from '$lib/components/Tour.svelte';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
@@ -105,6 +106,50 @@
 	};
 	let ephemerisOpen = $state(false);
 	let ephemerisTime: Date = $state(initialTime());
+
+	// Guided tour — custom, no-dep. Spotlights the rail, the atmospheric overlays
+	// + spectral widget, the click-to-readout map, and the twilight tools.
+	// First-run auto-start (localStorage flag) + a replay button in the toolbar.
+	let tourOpen = $state(false);
+	const TOUR_FLAG = 'darkmap-tour-v1';
+	// On coarse pointers the rail is a drawer — open it before spotlighting rail UI.
+	const ensureRailOpen = (): void => {
+		const toggle = document.querySelector<HTMLButtonElement>('[data-tour="rail-toggle"]');
+		if (toggle && getComputedStyle(toggle).display !== 'none' && toggle.getAttribute('aria-expanded') === 'false') {
+			toggle.click();
+		}
+	};
+	const expandAtmosphere = (): void => {
+		const header = document.querySelector<HTMLButtonElement>('[data-tour="atmosphere-header"]');
+		if (header && header.getAttribute('aria-expanded') !== 'true') header.click();
+	};
+	const tourSteps: readonly TourStep[] = [
+		{
+			anchor: '[data-tour="rail"]',
+			title: 'Layers live here',
+			body: 'Toggle the data layers — VIIRS night-lights and the Falchi World Atlas for light pollution, plus live atmospheric overlays. Pick a basemap up top.',
+			prepare: ensureRailOpen,
+		},
+		{
+			anchor: '[data-tour="atmosphere"]',
+			title: 'Atmosphere + spectral transmission',
+			body: 'Clouds, aerosol (AOD) and water-vapor overlays — and “Spectral transmission T(λ)” opens the AOD / Ångström analysis with laser & EO band guidance.',
+			prepare: () => {
+				ensureRailOpen();
+				expandAtmosphere();
+			},
+		},
+		{
+			anchor: '[data-tour="map"]',
+			title: 'Click anywhere for a readout',
+			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, and modeled PM2.5 — all for that exact spot.',
+		},
+		{
+			anchor: '[data-tour="toolbar"]',
+			title: 'Sun, moon & sharing',
+			body: 'Open the twilight strip for sun/moon timing and the sky compass, follow your GPS, import a route, or copy a shareable link to this exact view.',
+		},
+	];
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- mounted tile date bookkeeping, not reactive UI state
 	const atmosphericTileDays = new Map<string, string>();
 	let viewCenter: { lat: number; lon: number } = $state({
@@ -1178,6 +1223,18 @@
 		layerHealth.dispatch(activeBasemap, { type: 'mount' });
 	});
 
+	// First-run guided tour — its own onMount so it never depends on the map
+	// init succeeding (MapLibre throws without WebGL). Once per browser, after a
+	// short settle; replayable any time from the toolbar "Take the guided tour".
+	onMount(() => {
+		if (!browser || localStorage.getItem(TOUR_FLAG)) return;
+		localStorage.setItem(TOUR_FLAG, '1');
+		const t = setTimeout(() => {
+			tourOpen = true;
+		}, 1200);
+		return () => clearTimeout(t);
+	});
+
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
 		readoutGen++;
@@ -1217,6 +1274,7 @@
 	bind:this={mapEl}
 	class="map"
 	class:drag-over={dragOver}
+	data-tour="map"
 	role="application"
 	aria-label="Light pollution map"
 	ondragover={onMapDragOver}
@@ -1246,6 +1304,7 @@
 	time={ephemerisTime}
 	oninfo={onTransmissionInfo}
 />
+<Tour bind:open={tourOpen} steps={tourSteps} />
 {#if transmissionOpen}
 	<TransmissionSheet
 		curve={transmissionCurve}
@@ -1312,6 +1371,14 @@
 			title: currentRoute ? `Clear ${currentRoute.name}` : 'Import KML / GPX / GeoJSON route',
 			pressed: currentRoute !== null,
 			onclick: triggerRoutePicker,
+		},
+		{
+			id: 'tour',
+			label: 'Take the guided tour',
+			icon: Compass,
+			title: 'Take the guided tour',
+			pressed: tourOpen,
+			onclick: () => (tourOpen = true),
 		},
 	]}
 />
