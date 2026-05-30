@@ -203,6 +203,24 @@ Read it before touching any Flywheel/RBE surface.
   - `spoke-runner-binding` — runner-class ACL (hard-deny).
   - `spoke-blahaj-app-install` — only if Blahaj is to be installed.
 
+## Secrets
+
+The site is static-first and holds exactly one runtime secret today:
+
+- **`OPENAQ_API_KEY`** — OpenAQ v3 key for the Smog (PM2.5) overlay + the
+  PM2.5-diffusion → transmission-AOD bridge. The `/api/atmospheric/openaq`
+  route reads it via `$env/dynamic/private`; the browser never sees it.
+  Without it the proxy soft-degrades (`degraded: true`, empty features) and the
+  smog overlay shows "unavailable" — it does NOT crash. Free key at
+  https://openaq.org.
+
+Provisioning (production, honey): the value lives in the lab sops+age store and
+is materialized as the `darkmap-secrets` k8s Secret in the darkmap namespace.
+`deployment.yaml` consumes it via `secretKeyRef … optional: true`, so the pod
+starts whether or not the secret exists (the same out-of-band model as the
+`ghcr-registry` image-pull secret — provisioning is an operator concern outside
+this public repo). Local dev: copy `.env.example` → `.env` and set the key.
+
 ## Conformance
 
 - `just conformance` runs `scripts/check-conformance.sh` — the
