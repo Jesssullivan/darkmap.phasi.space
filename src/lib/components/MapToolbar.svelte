@@ -30,7 +30,7 @@
 	let { items }: Props = $props();
 </script>
 
-<aside class="toolbar" aria-label="Map overlay toggles">
+<aside class="toolbar" aria-label="Map overlay toggles" data-tour="toolbar">
 	{#each items as it (it.id)}
 		{@const Icon = it.icon}
 		<button
