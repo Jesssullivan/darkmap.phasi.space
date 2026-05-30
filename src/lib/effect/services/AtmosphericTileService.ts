@@ -150,10 +150,21 @@ const computeAttempts = (
 	const nativeTile = clampTileToMaxNativeZoom(requestTile, cap.maxNativeZoom);
 	const explicitTime = timeInput && timeInput.length > 0 ? timeInput : undefined;
 	const requestedTime = explicitTime ?? defaultTimeForCapability(cap, now);
-	const sourceTimes =
-		explicitTime || cap.dateCadence === 'static' || requestedTime === 'default'
-			? [requestedTime]
-			: [requestedTime, addDays(requestedTime, -1), addDays(requestedTime, -2)];
+	// GIBS daily science products publish with an ~18-24h lag, so "today" (and at
+	// the UTC boundary, yesterday) returns an empty no-data tile. The live map
+	// ALWAYS sends an explicit time=today for the "now" view, so gating the
+	// walk-back on `!explicitTime` meant the default view never fell back and
+	// every atmospheric overlay rendered blank. Walk back a couple of days for any
+	// *recent* date — explicit or not — so "now" shows the latest available
+	// imagery; static-cadence layers and the 'default' sentinel keep one attempt,
+	// and older historical scrubs (already published) are requested as-is.
+	const wantsFallback =
+		cap.dateCadence !== 'static' &&
+		requestedTime !== 'default' &&
+		(explicitTime === undefined || isRecentDate(requestedTime, now));
+	const sourceTimes = wantsFallback
+		? [requestedTime, addDays(requestedTime, -1), addDays(requestedTime, -2)]
+		: [requestedTime];
 	return sourceTimes.map((sourceTime) => ({
 		url: expandAtmosphericUrl(layerDef.upstreamUrlTemplate, nativeTile.z, nativeTile.x, nativeTile.y, sourceTime),
 		nativeTile,
@@ -166,6 +177,19 @@ const addDays = (date: string, days: number): string => {
 	const parsed = Date.parse(`${date}T00:00:00.000Z`);
 	if (!Number.isFinite(parsed)) return date;
 	return new Date(parsed + days * DAY_MS).toISOString().slice(0, 10);
+};
+
+/**
+ * Is `date` (YYYY-MM-DD) within the GIBS near-real-time publication-lag window?
+ * Recent dates may not be published yet, so they warrant a walk-back; older
+ * dates are settled and should be requested as-is. Spans 3 days back through 1
+ * day forward to tolerate UTC/local skew at the date boundary.
+ */
+const isRecentDate = (date: string, now: Date): boolean => {
+	const parsed = Date.parse(`${date}T00:00:00.000Z`);
+	if (!Number.isFinite(parsed)) return false;
+	const ageMs = now.getTime() - parsed;
+	return ageMs <= 3 * DAY_MS && ageMs >= -1 * DAY_MS;
 };
 
 export const makeAtmosphericTileServiceLive = (
