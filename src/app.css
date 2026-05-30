@@ -38,6 +38,15 @@
    the native light-dark() function which switches via document color-scheme. */
 @custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
 
+/* Accent amber — single source for the warm highlight used across the map
+   overlays (health pills, active states, sun glyphs, links). The -rgb token
+   holds the channels so translucent tints compose as
+   rgba(var(--accent-amber-rgb), α); --accent-amber is the solid form. */
+:root {
+	--accent-amber-rgb: 255, 209, 102;
+	--accent-amber: rgb(var(--accent-amber-rgb));
+}
+
 [data-mode='light'] {
 	color-scheme: light;
 }
@@ -363,7 +372,7 @@ pre.shiki span {
    globally. Amber crosshair anchoring a PointReadout to its place; dims
    when the readout closes. Color matches the app's amber accent. */
 .darkmap-point-marker {
-	color: #ffd166;
+	color: var(--accent-amber);
 	filter: drop-shadow(0 0 2px rgba(8, 10, 16, 0.9));
 	pointer-events: none;
 	transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -382,7 +391,7 @@ pre.shiki span {
 	width: 24px;
 	height: 24px;
 	margin: -12px 0 0 -12px;
-	border: 1.5px solid #ffd166;
+	border: 1.5px solid var(--accent-amber);
 	border-radius: 999px;
 	animation: darkmap-marker-pulse 900ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
 }

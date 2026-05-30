@@ -75,15 +75,15 @@
 		justify-content: center;
 	}
 	.tool:hover {
-		border-color: rgba(255, 209, 102, 0.65);
-		color: #ffd166;
+		border-color: rgba(var(--accent-amber-rgb), 0.65);
+		color: var(--accent-amber);
 	}
 	.tool[aria-pressed='true'] {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.65);
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.65);
 	}
 	.tool:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 2px;
 	}
 	@media (pointer: coarse) {

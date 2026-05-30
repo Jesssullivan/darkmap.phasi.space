@@ -407,7 +407,7 @@
 		padding: 0.25rem 0.4rem;
 	}
 	.close:hover {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.inputs {
 		display: grid;
@@ -422,7 +422,7 @@
 	}
 	.inputs dd {
 		margin: 0;
-		color: #ffd166;
+		color: var(--accent-amber);
 		font-size: 0.85rem;
 	}
 	.unit {
@@ -450,9 +450,9 @@
 		background: rgba(255, 255, 255, 0.12);
 	}
 	.aerosol-chip.active {
-		background: #ffd166;
+		background: var(--accent-amber);
 		color: #0a0e16;
-		border-color: #ffd166;
+		border-color: var(--accent-amber);
 		font-weight: 600;
 	}
 	.slider-row {
@@ -474,7 +474,7 @@
 	}
 	.slider-row input[type='range'] {
 		width: 100%;
-		accent-color: #ffd166;
+		accent-color: var(--accent-amber);
 	}
 	.slider-row input[type='range']:disabled {
 		opacity: 0.35;
@@ -482,7 +482,7 @@
 	.slider-value {
 		font-size: 0.72rem;
 		font-variant-numeric: tabular-nums;
-		color: #ffd166;
+		color: var(--accent-amber);
 		min-width: 2.5em;
 		text-align: right;
 	}
@@ -533,7 +533,7 @@
 		stroke-width: 1.5;
 	}
 	.band-tick {
-		stroke: rgba(255, 209, 102, 0.35);
+		stroke: rgba(var(--accent-amber-rgb), 0.35);
 		stroke-width: 0.5;
 		stroke-dasharray: 1.5, 1.5;
 	}
@@ -549,17 +549,17 @@
 		padding: 0.2rem 0.45rem;
 		background: rgba(255, 255, 255, 0.05);
 		color: rgba(233, 236, 243, 0.85);
-		border: 1px solid rgba(255, 209, 102, 0.25);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.25);
 		border-radius: 999px;
 		cursor: pointer;
 	}
 	.band-chip:hover {
-		background: rgba(255, 209, 102, 0.1);
+		background: rgba(var(--accent-amber-rgb), 0.1);
 	}
 	.band-chip.active {
-		background: #ffd166;
+		background: var(--accent-amber);
 		color: #0a0e16;
-		border-color: #ffd166;
+		border-color: var(--accent-amber);
 	}
 	.band-detail {
 		margin-top: 0.5rem;
@@ -587,8 +587,8 @@
 		cursor: pointer;
 	}
 	.band-back:hover {
-		color: #ffd166;
-		border-color: #ffd166;
+		color: var(--accent-amber);
+		border-color: var(--accent-amber);
 	}
 	.band-chart {
 		width: 100%;
@@ -647,7 +647,7 @@
 		line-height: 1.4;
 	}
 	.attrib a {
-		color: #ffd166;
+		color: var(--accent-amber);
 		text-decoration: none;
 	}
 	.attrib a:hover {

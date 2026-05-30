@@ -198,7 +198,7 @@
 		color: rgba(233, 236, 243, 0.45);
 	}
 	.search-input:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 2px;
 	}
 	.status {
@@ -232,8 +232,8 @@
 	}
 	li.active,
 	li:hover {
-		background: rgba(255, 209, 102, 0.12);
-		color: #ffd166;
+		background: rgba(var(--accent-amber-rgb), 0.12);
+		color: var(--accent-amber);
 	}
 	.row {
 		display: flex;
