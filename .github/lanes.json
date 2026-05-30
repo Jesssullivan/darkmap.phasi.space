@@ -8,7 +8,7 @@
 	"defaults": {
 		"runner_class": "tinyland-nix",
 		"ttl_hours": 72,
-		"flywheel_target_classes": ["sveltekit-app-build", "sveltekit-unit-tests"]
+		"flywheel_target_classes": ["sveltekit-unit-tests"]
 	},
 	"lanes": [
 		{

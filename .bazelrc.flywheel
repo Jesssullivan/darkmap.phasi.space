@@ -34,8 +34,12 @@ common:flywheel-executor --remote_executor=grpc://gf-reapi-cell.gf-rbe.svc.clust
 common:flywheel-executor --remote_download_minimal
 common:flywheel-executor --jobs=200
 # Worker platform pin: only the gloriousflywheel-rbe-linux-x86_64 image is proved.
-# Spokes that need a different platform must promote via a GloriousFlywheel PR.
-common:flywheel-executor --extra_execution_platforms=@gloriousflywheel//platforms:linux-x86_64
+# GF selects the worker server-side from this exec property (the canonical
+# mechanism — see scripts/bazel-cache-backed.sh and GF's own wrappers). The
+# previous `--extra_execution_platforms=@gloriousflywheel//platforms:...` was
+# dead: `@gloriousflywheel` is not a bazel_dep in MODULE.bazel, so the config
+# failed to load. Spokes needing another platform promote via a GloriousFlywheel PR.
+common:flywheel-executor --remote_default_exec_properties=gf.platform=gloriousflywheel-rbe-linux-x86_64
 # Proved-class gating: only targets tagged `flywheel-eligible` may dispatch.
 # Spoke BUILD.bazel adds `tags = ["flywheel-eligible"]` per-target.
 common:flywheel-executor --build_tag_filters=flywheel-eligible

@@ -46,6 +46,11 @@ vitest.vitest_test(
     ],
     log_level = "info",
     tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
         "gloriousflywheel-cache-candidate",
         "vitest",
     ],

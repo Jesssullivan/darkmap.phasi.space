@@ -90,9 +90,11 @@ test-local:
 test-bazel-local:
     cd {{ root }} && bazelisk test //src/lib/server/raster:raster_test
 
-# Run Playwright E2E tests
+# Run Playwright E2E tests. Remote-first: browserful e2e (full adapter-node
+# build + chromium) belongs in CI's e2e lane, which is the source of truth.
+# Set LOCAL=1 to force a local browserful run.
 test-e2e:
-    cd {{ root }} && pnpm run test:e2e
+    cd {{ root }} && if [ "${LOCAL:-}" = "1" ]; then pnpm run test:e2e; else echo "e2e is remote-first — CI's e2e lane is the source of truth. Run 'LOCAL=1 just test-e2e' to force a local browserful run."; fi
 
 # Run all tests (Bazel unit + e2e)
 test: test-unit test-e2e

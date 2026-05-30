@@ -37,7 +37,10 @@ export default defineConfig({
 			: []),
 	],
 	webServer: {
-		command: 'pnpm run build && HOST=127.0.0.1 PORT=' + port + ' node build/index.js',
+		// Reuse a prebuilt adapter-node bundle when present (CI's e2e lane reuses
+		// the artifact from the build job; locally a rerun skips the ~9min build),
+		// otherwise build it. Either way serve the Node server on `port`.
+		command: '[ -f build/index.js ] || pnpm run build; HOST=127.0.0.1 PORT=' + port + ' node build/index.js',
 		port,
 		timeout: 300_000,
 		reuseExistingServer: !process.env.CI,
