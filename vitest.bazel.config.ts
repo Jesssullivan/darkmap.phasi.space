@@ -25,6 +25,9 @@ export default defineConfig({
 		include: ['src/lib/**/*.test.ts'],
 		environment: 'node',
 		globals: true,
+		// Match vitest.config.ts: the ephemeris/astronomy slices do heavy orbital
+		// math near the 5s default and can flake on timeout under load.
+		testTimeout: 15_000,
 		coverage: {
 			enabled: false,
 		},
