@@ -2,6 +2,17 @@
 
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
+# Task B (deferred #292 typecheck) intentionally SKIPPED for this slice. A
+# ts_project here is invasive: pm25-diffusion.ts imports `$lib/spectral/...` and
+# the test files import `$lib/layers` as VALUES, so tsc must resolve cross-
+# package modules. A prototype confirmed two blocking cascades: (1) ts_project
+# pins --rootDir to this directory, so staged cross-package sources (e.g.
+# spectral/transmission-axes.ts) trip TS6059 "not under rootDir"; relaxing
+# rootDir to src/lib reshapes emit layout repo-wide; (2) the typecheck also
+# compiles the *.test.ts files, whose `$lib/layers` closure surfaces TS2307 /
+# implicit-any errors. The vitest_test below already earns RBE coverage, so per
+# "don't break anything for a typecheck nicety" the typecheck is left deferred.
+
 filegroup(
     name = "atmospheric_srcs",
     srcs = glob(["*.ts"]) + [

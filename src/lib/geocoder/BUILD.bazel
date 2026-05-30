@@ -1,19 +1,29 @@
-"""Bazel targets for the darkmap service-worker runtime-cache unit-test slice."""
+"""Bazel targets for the darkmap geocoder coord-parser unit-test slice."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
+# Implementation sources (no *.test.ts) for the root //:app_build SSR build,
+# which imports `$lib/geocoder/...`. See the raster package BUILD for rationale.
+js_library(
+    name = "geocoder_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# coordParser.ts is pure string parsing — no DOM, no cross-package imports.
 filegroup(
-    name = "sw_srcs",
-    srcs = glob(["*.ts"]) + [
-        "//src/lib/effect/services:offline_cache_routes",
-        "//src/lib/effect/services:offline_cache_service",
-    ],
+    name = "geocoder_srcs",
+    srcs = glob(["*.ts"]),
 )
 
 vitest.vitest_test(
-    name = "sw_test",
+    name = "geocoder_test",
     data = [
-        ":sw_srcs",
+        ":geocoder_srcs",
         "//:node_modules",
         "//:package_json",
         "//:vitest_bazel_config",
@@ -24,7 +34,7 @@ vitest.vitest_test(
         "--reporter=verbose",
         "--config",
         "vitest.bazel.config.ts",
-        "src/lib/sw/runtime-cache.test.ts",
+        "src/lib/geocoder/coordParser.test.ts",
     ],
     log_level = "info",
     tags = [
