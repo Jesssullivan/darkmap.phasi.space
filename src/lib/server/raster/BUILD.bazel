@@ -24,6 +24,16 @@ js_library(
     visibility = ["//visibility:public"],
 )
 
+# Cross-package VALUE source pulled into the effect/services slice
+# (AtmosphericTileService reaches for `$lib/server/raster/TileMath`'s
+# `clampTileToMaxNativeZoom`). TileMath.ts has no cross-package imports, so a
+# standalone js_library bin-copy is sufficient.
+js_library(
+    name = "tile_math",
+    srcs = ["TileMath.ts"],
+    visibility = ["//visibility:public"],
+)
+
 ts_project(
     name = "raster_typecheck",
     srcs = [":raster_srcs"],
@@ -56,6 +66,7 @@ vitest.vitest_test(
         "--config",
         "vitest.bazel.config.ts",
         "src/lib/server/raster/raster.test.ts",
+        "src/lib/server/raster/raster-clients.test.ts",
     ],
     log_level = "info",
     tags = [

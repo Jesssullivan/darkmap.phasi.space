@@ -1,0 +1,66 @@
+"""Bazel targets for the darkmap layer-health/toast unit-test slice."""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+# Implementation sources (no *.test.ts) for the root //:app_build SSR build,
+# which imports `$lib/layers/...` — including HealthRegistry.svelte.ts, which is
+# excluded from the node-safe test filegroup but required by the app. See the
+# raster package BUILD for the copy_to_bin rationale.
+js_library(
+    name = "layers_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# health-state.ts and source-id.ts are pure (no imports). toast-bridge.ts pulls
+# `$lib/basemaps` (BASEMAPS) and `$lib/layers` (LAYERS) as VALUES across the
+# package boundary, staged via the root //:lib_basemaps / //:lib_layers
+# js_library bin-copies (aspect_rules_js rejects raw cross-package file labels
+# in data). HealthRegistry.svelte.ts imports `svelte/reactivity` (Svelte
+# runtime) and is NOT referenced by any enrolled test, so it is excluded from
+# the glob to keep the slice node-safe.
+filegroup(
+    name = "layers_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.svelte.ts"],
+    ) + [
+        "//:lib_basemaps",
+        "//:lib_layers",
+    ],
+)
+
+vitest.vitest_test(
+    name = "layers_test",
+    data = [
+        ":layers_srcs",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/layers/health-state.test.ts",
+        "src/lib/layers/source-id-parsing.test.ts",
+        "src/lib/layers/toast-bridge.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)

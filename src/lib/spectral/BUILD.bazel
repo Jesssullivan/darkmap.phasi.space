@@ -18,6 +18,37 @@ js_library(
     visibility = ["//visibility:public"],
 )
 
+# Cross-package VALUE sources pulled into the effect/services slice
+# (MieScatteringService / TransmissionEstimator / LineByLineService reach for
+# `$lib/spectral/{aerosol-types,mie,analytical,hitran-bands}`). aspect_rules_js
+# rejects raw cross-package file labels in `data`, so each module is bin-copied
+# via its own js_library. Their intra-package `import type ./mie` /
+# `import type ./transmission-axes` references are erased by the transpiler, so
+# no further staging is required at runtime.
+js_library(
+    name = "aerosol_types",
+    srcs = ["aerosol-types.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "mie",
+    srcs = ["mie.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "analytical",
+    srcs = ["analytical.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "hitran_bands",
+    srcs = ["hitran-bands.ts"],
+    visibility = ["//visibility:public"],
+)
+
 ts_project(
     name = "spectral_typecheck",
     srcs = [":spectral_srcs"],

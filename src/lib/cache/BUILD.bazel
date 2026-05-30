@@ -5,8 +5,8 @@ load("@npm//:vitest/package_json.bzl", vitest = "bin")
 filegroup(
     name = "cache_srcs",
     srcs = glob(["*.ts"]) + [
-        "//:lib_cache_policy",
-        "//:lib_offline_cache_service",
+        "//src/lib/effect/services:cache_policy",
+        "//src/lib/effect/services:offline_cache_service",
     ],
 )
 
