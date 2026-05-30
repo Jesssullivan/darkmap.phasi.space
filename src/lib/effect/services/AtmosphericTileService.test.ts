@@ -161,14 +161,31 @@ describe('AtmosphericTileService — no-data classification', () => {
 		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('ok-fallback');
 	});
 
-	it('does not fallback when the caller pins an explicit time', async () => {
+	it('falls back for a RECENT explicit time — the live "now" view pins time=today, which GIBS has not published yet', async () => {
+		// Regression for the blank-atmospheric bug: the walk-back used to be gated
+		// on `!explicitTime`, but the live map ALWAYS pins time=today, so it never
+		// fell back and every overlay rendered an empty no-data tile. A recent
+		// explicit date must now walk back to the latest available imagery.
 		const capture = { urls: [] as string[] };
 		const exit = await runFetch(sequenceFetcher([status404(), okJpeg()], capture), modisTerra, '2026-05-28');
-		if (exit._tag !== 'Success' || exit.value.tag !== 'no-data') throw new Error('expected pinned no-data');
+		if (exit._tag !== 'Success' || exit.value.tag !== 'ok') throw new Error('expected recent-explicit fallback ok');
+
+		expect(capture.urls).toHaveLength(2);
+		expect(capture.urls[0]).toContain('2026-05-28');
+		expect(capture.urls[1]).toContain('2026-05-27');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-time']).toBe('2026-05-28');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-source-time']).toBe('2026-05-27');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('ok-fallback');
+	});
+
+	it('does NOT fall back for an explicit HISTORICAL date — a settled scrub is requested as-is', async () => {
+		const capture = { urls: [] as string[] };
+		const exit = await runFetch(sequenceFetcher([status404(), okJpeg()], capture), modisTerra, '2020-01-01');
+		if (exit._tag !== 'Success' || exit.value.tag !== 'no-data') throw new Error('expected pinned historical no-data');
 
 		expect(capture.urls).toHaveLength(1);
-		expect(exit.value.debugHeaders['x-darkmap-atmospheric-time']).toBe('2026-05-28');
-		expect(exit.value.debugHeaders['x-darkmap-atmospheric-source-time']).toBe('2026-05-28');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-time']).toBe('2020-01-01');
+		expect(exit.value.debugHeaders['x-darkmap-atmospheric-source-time']).toBe('2020-01-01');
 		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('no-data');
 	});
 });
