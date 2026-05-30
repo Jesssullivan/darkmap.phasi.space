@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { X } from '@lucide/svelte';
+	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 	import {
 		formatNearestKm,
@@ -206,7 +207,16 @@
 
 	{#if pm25 && pm25.valueUgm3 !== null}
 		<section>
-			<h4>PM2.5 <span class="modeled-tag">modeled</span></h4>
+			<h4>
+				PM2.5
+				<HelpTooltip
+					text="Modeled, not measured: a Gaussian kernel-diffusion estimate from nearby OpenAQ ground stations (weighted by distance, with a Kish effective-N confidence). It is the surface concentration interpolated to this point — the confidence and station coverage are shown below."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">modeled</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
 			<p class="value">{pm25.valueUgm3.toFixed(1)}<span class="unit"> µg/m³</span></p>
 			<p class="note">{pm25AqiCategory(pm25.valueUgm3)}</p>
 			<p class="note coverage" class:low={pm25.confidence === 'low'}>
