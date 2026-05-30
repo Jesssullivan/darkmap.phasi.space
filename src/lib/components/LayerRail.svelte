@@ -217,7 +217,7 @@
 							<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
 						</div>
 					{/if}
-					<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</p>
+					<div class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</div>
 					{#if viirsOn}
 						<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
 					{/if}
@@ -257,7 +257,7 @@
 								<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
 							</div>
 						{/if}
-						<p class="desc">{layer.description} {@render modelInfo(layer.id)}</p>
+						<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
 						{#if ls.on && layer.upstreamLayer}
 							{@const ramp = rampFor(layer.upstreamLayer)}
 							{#if ramp}
@@ -355,7 +355,7 @@
 									<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
 								</div>
 							{/if}
-							<p class="desc">{layer.description} {@render modelInfo(layer.id)}</p>
+							<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
 						</li>
 					{/each}
 				</ul>
@@ -746,9 +746,15 @@
 		background: rgba(127, 187, 255, 0.14);
 	}
 	:global(.model-card) {
-		max-width: 17rem;
+		max-width: min(17rem, calc(100vw - 4rem));
 		font-size: 0.72rem;
 		line-height: 1.4;
+		overflow-wrap: anywhere;
+	}
+	@media (max-width: 640px) {
+		:global(.model-card) {
+			max-width: min(15.5rem, calc(100vw - 5rem));
+		}
 	}
 	:global(.model-card p) {
 		margin: 0 0 0.3rem 0;

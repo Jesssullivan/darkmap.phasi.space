@@ -34,9 +34,18 @@
 <!-- `strategy: 'fixed'` measures against the visual viewport, not the portaled
      positioner's clipping ancestors — without it floating-ui's shift() lets the
      panel spill ~5px past the screen edge on narrow (mobile) viewports.
-     `overflowPadding: 8` is the Zag default, passed explicitly so the viewport
-     inset is load-bearing at the call site. -->
-<Popover positioning={{ placement: positioning, strategy: 'fixed', overflowPadding: 8 }}>
+     The explicit overflow padding and viewport-fit flags keep that inset
+     load-bearing at the call site. -->
+<Popover
+	positioning={{
+		placement: positioning,
+		strategy: 'fixed',
+		overflowPadding: 12,
+		flip: true,
+		slide: true,
+		fitViewport: true,
+	}}
+>
 	<Popover.Trigger class="help-tooltip-trigger" aria-label="Show help">
 		{@render trigger()}
 	</Popover.Trigger>
@@ -83,7 +92,8 @@
 		line-height: 1.4;
 		/* Cap to the viewport so the portaled popover never overflows the
 		   screen edge on narrow (mobile) widths. */
-		max-width: min(22rem, calc(100vw - 1.5rem));
+		box-sizing: border-box;
+		max-width: min(22rem, calc(100vw - 3rem));
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		backdrop-filter: blur(6px);
 		z-index: 50;
