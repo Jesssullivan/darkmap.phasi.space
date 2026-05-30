@@ -1,18 +1,26 @@
 import { Effect, Exit } from 'effect';
 import { describe, expect, it } from 'vitest';
-import { openAQUrl, OpenAQService, makeOpenAQServiceLive, type OpenAQFetcher } from './OpenAQService';
+import {
+	openAQUrl,
+	openAQNumericReadingCount,
+	OpenAQService,
+	makeOpenAQServiceLive,
+	type OpenAQFetcher,
+} from './OpenAQService';
 
 const BBOX = { west: -74.5, south: 40.5, east: -73.5, north: 41.0 };
 
 const makeBody = (
 	features: ReadonlyArray<{ value: number | null; locationName: string; lon: number; lat: number }>,
 	degraded = false,
+	meta?: Record<string, unknown>,
 ) => ({
 	type: 'FeatureCollection',
 	degraded,
+	...(meta ? { meta } : {}),
 	features: features.map((f) => ({
 		type: 'Feature',
-		properties: { value: f.value, locationName: f.locationName },
+		properties: { value: f.value, locationName: f.locationName, hasReading: f.value !== null, parameterName: 'pm25' },
 		geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
 	})),
 });
@@ -69,8 +77,17 @@ describe('OpenAQService — getSensors', () => {
 		expect(fc.features).toHaveLength(2);
 		expect(fc.features[0].properties.value).toBe(18.2);
 		expect(fc.features[0].properties.locationName).toBe('Bronx');
+		expect(fc.features[0].properties.hasReading).toBe(true);
 		expect(fc.features[1].properties.value).toBeNull();
+		expect(fc.features[1].properties.hasReading).toBe(false);
 		expect(fc.degraded).toBe(false);
+		expect(fc.meta).toMatchObject({
+			featureCount: 2,
+			numericCount: 1,
+			nullCount: 1,
+			degraded: false,
+			capped: false,
+		});
 	});
 
 	it('passes through the degraded flag', async () => {
@@ -78,6 +95,37 @@ describe('OpenAQService — getSensors', () => {
 		if (exit._tag !== 'Success') throw new Error('expected Success');
 		expect(exit.value.degraded).toBe(true);
 		expect(exit.value.features).toHaveLength(0);
+		expect(exit.value.meta.degraded).toBe(true);
+	});
+
+	it('normalizes proxy metadata when present', async () => {
+		const exit = await runWith(
+			fakeOk(
+				makeBody([{ value: 18.2, locationName: 'Bronx', lon: -73.85, lat: 40.85 }], false, {
+					bbox: BBOX,
+					fetchedAt: '2026-05-30T12:00:00.000Z',
+					featureCount: 3,
+					numericCount: 2,
+					nullCount: 1,
+					capped: true,
+					limit: 1000,
+					upstreamFound: 1200,
+				}),
+			),
+		);
+		if (exit._tag !== 'Success') throw new Error('expected Success');
+		expect(exit.value.meta).toEqual({
+			bbox: BBOX,
+			fetchedAt: '2026-05-30T12:00:00.000Z',
+			featureCount: 3,
+			numericCount: 2,
+			nullCount: 1,
+			degraded: false,
+			capped: true,
+			limit: 1000,
+			upstreamFound: 1200,
+		});
+		expect(openAQNumericReadingCount(exit.value)).toBe(2);
 	});
 
 	it('passes abort signals through to the fetcher', async () => {

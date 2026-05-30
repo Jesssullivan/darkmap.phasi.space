@@ -20,9 +20,9 @@ export default defineConfig({
 	},
 	test: {
 		// Each vitest_test target narrows to its own file(s) via positional CLI
-		// args; this include just bounds the candidate set to the enrolled,
-		// node-safe (no DOM/maplibre) slices.
-		include: ['src/lib/**/*.test.ts'],
+		// args; this include bounds the candidate set to the enrolled, node-safe
+		// slices, including thin SvelteKit route-handler tests.
+		include: ['src/lib/**/*.test.ts', 'src/routes/**/*.test.ts'],
 		environment: 'node',
 		globals: true,
 		// Match vitest.config.ts: the ephemeris/astronomy slices do heavy orbital

@@ -34,15 +34,42 @@ interface OpenAQEnvelope {
 const PM25_PARAM_ID = 2;
 const MAX_LIMIT = 1000;
 
-const emptyDegraded = (): Response =>
-	new Response(JSON.stringify({ type: 'FeatureCollection', features: [], degraded: true }), {
-		status: 200,
-		headers: {
-			'content-type': 'application/json',
-			'cache-control': 'public, max-age=60',
-			'x-openaq-degraded': 'true',
+interface OpenAQBbox {
+	readonly west: number;
+	readonly south: number;
+	readonly east: number;
+	readonly north: number;
+}
+
+interface OpenAQCollectionMeta {
+	readonly bbox: OpenAQBbox;
+	readonly fetchedAt: string;
+	readonly featureCount: number;
+	readonly numericCount: number;
+	readonly nullCount: number;
+	readonly degraded: boolean;
+	readonly capped: boolean;
+	readonly limit: number;
+	readonly upstreamFound?: number;
+}
+
+const emptyDegraded = (bbox: OpenAQBbox): Response =>
+	new Response(
+		JSON.stringify({
+			type: 'FeatureCollection',
+			features: [],
+			degraded: true,
+			meta: collectionMeta({ bbox, features: [], degraded: true, capped: false }),
+		}),
+		{
+			status: 200,
+			headers: {
+				'content-type': 'application/json',
+				'cache-control': 'public, max-age=60',
+				'x-openaq-degraded': 'true',
+			},
 		},
-	});
+	);
 
 export const GET: RequestHandler = async ({ url }) => {
 	const bboxStr = url.searchParams.get('bbox');
@@ -55,12 +82,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (west >= east || south >= north) {
 		error(400, 'bbox must have west<east and south<north');
 	}
+	const bbox = { west, south, east, north };
 
 	const apiKey = env.OPENAQ_API_KEY;
 	if (!apiKey) {
 		// Local dev / unconfigured deploy — degrade silently so the overlay
 		// just renders nothing instead of throwing on first paint.
-		return emptyDegraded();
+		return emptyDegraded(bbox);
 	}
 
 	const upstreamParams = new URLSearchParams({
@@ -75,12 +103,12 @@ export const GET: RequestHandler = async ({ url }) => {
 			headers: { accept: 'application/json', 'x-api-key': apiKey },
 		});
 	} catch {
-		return emptyDegraded();
+		return emptyDegraded(bbox);
 	}
 
 	if (upstream.status === 401 || upstream.status === 403) {
 		// Bad key — same soft degradation as the missing-key path.
-		return emptyDegraded();
+		return emptyDegraded(bbox);
 	}
 	if (!upstream.ok) {
 		const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
@@ -97,21 +125,72 @@ export const GET: RequestHandler = async ({ url }) => {
 	const features = (body.results ?? [])
 		.map((loc) => locationToFeature(loc))
 		.filter((f): f is OpenAQGeoJsonFeature => f !== null);
+	const upstreamFound = upstreamFoundCount(body.meta);
+	const capped =
+		features.length >= MAX_LIMIT ||
+		(typeof upstreamFound === 'number' && upstreamFound > features.length && features.length >= MAX_LIMIT);
 
-	return new Response(JSON.stringify({ type: 'FeatureCollection', features, degraded: false }), {
-		status: 200,
-		headers: {
-			'content-type': 'application/json',
-			'cache-control': 'public, max-age=300, s-maxage=300',
+	return new Response(
+		JSON.stringify({
+			type: 'FeatureCollection',
+			features,
+			degraded: false,
+			meta: collectionMeta({ bbox, features, degraded: false, capped, upstreamFound }),
+		}),
+		{
+			status: 200,
+			headers: {
+				'content-type': 'application/json',
+				'cache-control': 'public, max-age=300, s-maxage=300',
+			},
 		},
-	});
+	);
 };
 
 interface OpenAQGeoJsonFeature {
 	type: 'Feature';
-	properties: { locationId?: number; locationName: string; value: number | null };
+	properties: {
+		locationId?: number;
+		locationName: string;
+		value: number | null;
+		hasReading: boolean;
+		parameterName: 'pm25';
+	};
 	geometry: { type: 'Point'; coordinates: [number, number] };
 }
+
+const collectionMeta = ({
+	bbox,
+	features,
+	degraded,
+	capped,
+	upstreamFound,
+}: {
+	readonly bbox: OpenAQBbox;
+	readonly features: ReadonlyArray<OpenAQGeoJsonFeature>;
+	readonly degraded: boolean;
+	readonly capped: boolean;
+	readonly upstreamFound?: number;
+}): OpenAQCollectionMeta => {
+	const numericCount = features.filter((f) => f.properties.hasReading).length;
+	return {
+		bbox,
+		fetchedAt: new Date().toISOString(),
+		featureCount: features.length,
+		numericCount,
+		nullCount: features.length - numericCount,
+		degraded,
+		capped,
+		limit: MAX_LIMIT,
+		...(typeof upstreamFound === 'number' ? { upstreamFound } : {}),
+	};
+};
+
+const upstreamFoundCount = (meta: unknown): number | undefined => {
+	if (typeof meta !== 'object' || meta === null) return undefined;
+	const found = (meta as Record<string, unknown>).found;
+	return typeof found === 'number' && Number.isFinite(found) ? found : undefined;
+};
 
 const locationToFeature = (loc: OpenAQLocation): OpenAQGeoJsonFeature | null => {
 	const lat = loc.coordinates?.latitude;
@@ -133,6 +212,8 @@ const locationToFeature = (loc: OpenAQLocation): OpenAQGeoJsonFeature | null => 
 			locationId: typeof loc.id === 'number' ? loc.id : undefined,
 			locationName: typeof loc.name === 'string' ? loc.name : 'Unknown',
 			value,
+			hasReading: value !== null,
+			parameterName: 'pm25',
 		},
 		geometry: { type: 'Point', coordinates: [lon, lat] },
 	};

@@ -12,7 +12,12 @@
 	} from '$lib/device/GeolocationService';
 	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
 	import { AtmosphericPointService, AtmosphericPointServiceLive } from '$lib/effect/services/AtmosphericPointService';
-	import { OpenAQService, OpenAQServiceLive, type OpenAQSensorCollection } from '$lib/effect/services/OpenAQService';
+	import {
+		OpenAQService,
+		OpenAQServiceLive,
+		openAQNumericReadingCount,
+		type OpenAQSensorCollection,
+	} from '$lib/effect/services/OpenAQService';
 	import {
 		TransmissionEstimator,
 		TransmissionEstimatorLive,
@@ -760,7 +765,7 @@
 	//
 	// MapLibre renders station-observation density, not physical diffusion; null
 	// PM2.5 readings are unknown and excluded from heatmap weight. Below a
-	// 5-feature density threshold, the heatmap looks empty, so circle markers
+	// 5-reading density threshold, the heatmap looks empty, so circle markers
 	// carry the sparse-coverage UX (PR-F). All point overlays bucket through
 	// `darkmap-atmospheric-tile` via the SW route.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping for the moveend handler, not reactive state
@@ -916,11 +921,13 @@
 				(src as { setData: (data: OpenAQSensorCollection) => void }).setData(fc);
 			}
 
-			// Toggle heatmap visibility based on density — at < 5 features the
-			// heatmap is visually empty, so show only the circles for clarity.
+			const numericReadingCount = openAQNumericReadingCount(fc);
+
+			// Toggle heatmap visibility based on numeric PM2.5 density — null
+			// OpenAQ readings are unknown support points, not clean-air readings.
 			const heatId = pointHeatmapId(l.id);
 			if (map.getLayer(heatId)) {
-				map.setLayoutProperty(heatId, 'visibility', fc.features.length >= 5 ? 'visible' : 'none');
+				map.setLayoutProperty(heatId, 'visibility', numericReadingCount >= 5 ? 'visible' : 'none');
 			}
 
 			// Health-state dispatch (#196). degraded:true means OPENAQ_API_KEY is
@@ -930,6 +937,8 @@
 				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'OpenAQ proxy degraded' });
 			} else if (fc.features.length === 0) {
 				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no sensors in viewport' });
+			} else if (numericReadingCount === 0) {
+				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no PM2.5 readings in viewport' });
 			} else {
 				layerHealth.dispatch(l.id, { type: 'tile-ok' });
 			}
