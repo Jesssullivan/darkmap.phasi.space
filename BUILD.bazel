@@ -40,3 +40,32 @@ exports_files(
     ],
     visibility = ["//visibility:public"],
 )
+
+# Cross-slice `$lib/...` sources pulled into flywheel-enrolled unit-test
+# slices (atmospheric/cache/sw). These files live in the root Bazel package
+# (no nearer BUILD.bazel). aspect_rules_js requires cross-package inputs to be
+# copied to the bin tree via a js_library (raw file labels are rejected), so
+# each is wrapped here and consumed from the slice filegroups.
+js_library(
+    name = "lib_layers",
+    srcs = ["src/lib/layers.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "lib_cache_policy",
+    srcs = ["src/lib/effect/services/CachePolicy.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "lib_offline_cache_service",
+    srcs = ["src/lib/effect/services/OfflineCacheService.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "lib_offline_cache_routes",
+    srcs = ["src/lib/effect/services/OfflineCacheRoutes.ts"],
+    visibility = ["//visibility:public"],
+)
