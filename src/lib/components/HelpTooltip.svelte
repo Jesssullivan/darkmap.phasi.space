@@ -89,7 +89,7 @@
 		z-index: 50;
 	}
 	:global(.help-tooltip-content a) {
-		color: #ffd166;
+		color: var(--accent-amber);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}

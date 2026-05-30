@@ -75,9 +75,9 @@
 		color: rgba(233, 236, 243, 0.72);
 	}
 	.cache-pill.stale {
-		border-color: rgba(255, 209, 102, 0.34);
-		background: rgba(255, 209, 102, 0.14);
-		color: #ffd166;
+		border-color: rgba(var(--accent-amber-rgb), 0.34);
+		background: rgba(var(--accent-amber-rgb), 0.14);
+		color: var(--accent-amber);
 	}
 	.cache-pill.error {
 		border-color: rgba(255, 118, 117, 0.42);

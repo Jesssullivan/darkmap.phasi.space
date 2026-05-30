@@ -728,9 +728,9 @@
 		top: -0.15rem;
 		bottom: -0.15rem;
 		width: 2px;
-		background: #ffd166;
+		background: var(--accent-amber);
 		transform: translateX(-50%);
-		box-shadow: 0 0 6px rgba(255, 209, 102, 0.7);
+		box-shadow: 0 0 6px rgba(var(--accent-amber-rgb), 0.7);
 	}
 	.staff {
 		position: absolute;
@@ -758,7 +758,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		background: rgba(255, 209, 102, 0.22);
+		background: rgba(var(--accent-amber-rgb), 0.22);
 		mix-blend-mode: screen;
 		pointer-events: none;
 	}
@@ -814,9 +814,9 @@
 	}
 	.event-chip.sun-up,
 	.event-chip.sun-down {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.32);
-		background: rgba(255, 209, 102, 0.08);
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.32);
+		background: rgba(var(--accent-amber-rgb), 0.08);
 	}
 	.phase-legend {
 		display: flex;
@@ -869,9 +869,9 @@
 		color: rgba(233, 236, 243, 0.72);
 	}
 	.cache-pill.stale {
-		border-color: rgba(255, 209, 102, 0.34);
-		background: rgba(255, 209, 102, 0.14);
-		color: #ffd166;
+		border-color: rgba(var(--accent-amber-rgb), 0.34);
+		background: rgba(var(--accent-amber-rgb), 0.14);
+		color: var(--accent-amber);
 	}
 	.cache-pill.error {
 		border-color: rgba(255, 118, 117, 0.42);
@@ -884,9 +884,9 @@
 		align-items: baseline;
 		padding: 0.05rem 0.4rem;
 		border-radius: 999px;
-		background: rgba(255, 209, 102, 0.12);
-		border: 1px solid rgba(255, 209, 102, 0.3);
-		color: #ffd166;
+		background: rgba(var(--accent-amber-rgb), 0.12);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.3);
+		color: var(--accent-amber);
 		font-variant-numeric: tabular-nums;
 		font-size: 0.62rem;
 	}

@@ -519,14 +519,14 @@
 		width: 1rem;
 	}
 	.badge.sun {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.badge.moon {
 		color: #dde2ff;
 	}
 	.airmass {
 		opacity: 0.7;
-		color: #ffd166;
+		color: var(--accent-amber);
 		font-variant-numeric: tabular-nums;
 	}
 	.horizon {
@@ -546,7 +546,7 @@
 	.compass-btn {
 		background: rgba(8, 10, 16, 0.85);
 		color: #e9ecf3;
-		border: 1px solid rgba(255, 209, 102, 0.45);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.45);
 		border-radius: 999px;
 		padding: 0.3rem 0.65rem;
 		font: inherit;
@@ -556,12 +556,12 @@
 	}
 	.compass-btn:hover,
 	.compass-btn:focus-visible {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.85);
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.85);
 		outline: none;
 	}
 	.compass-status {
-		color: rgba(255, 209, 102, 0.9);
+		color: rgba(var(--accent-amber-rgb), 0.9);
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
 	}

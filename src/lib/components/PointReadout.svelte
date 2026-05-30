@@ -322,7 +322,7 @@
 		padding: 0.25rem 0.5rem;
 	}
 	.close:hover {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	header h3 {
 		margin: 0 0 0.15rem 0;
@@ -341,7 +341,7 @@
 		opacity: 0.78;
 	}
 	.locator-mark {
-		color: #ffd166;
+		color: var(--accent-amber);
 		flex: 0 0 auto;
 	}
 	section {
@@ -360,7 +360,7 @@
 		margin: 0;
 		font-size: 1.3rem;
 		font-weight: 600;
-		color: #ffd166;
+		color: var(--accent-amber);
 		font-variant-numeric: tabular-nums;
 	}
 	.unit {
@@ -389,7 +389,7 @@
 		opacity: 0.6;
 	}
 	.coverage.low {
-		color: #ffd166;
+		color: var(--accent-amber);
 		opacity: 0.85;
 	}
 	.loading {
@@ -423,7 +423,7 @@
 		text-align: left;
 	}
 	.ephemeris-header:hover {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.caret {
 		display: inline-block;
@@ -447,7 +447,7 @@
 	.events dd {
 		margin: 0;
 		text-align: right;
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.atmos-grid {
 		display: grid;
@@ -463,7 +463,7 @@
 	.atmos-grid dd {
 		margin: 0;
 		text-align: right;
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.atmos-grid dd .muted {
 		color: rgba(233, 236, 243, 0.62);

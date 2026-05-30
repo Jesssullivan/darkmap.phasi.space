@@ -1386,7 +1386,7 @@
 		z-index: 5;
 	}
 	.attribution a {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	@media (max-width: 820px) {
 		.attribution {
@@ -1398,21 +1398,21 @@
 		width: 18px;
 		height: 18px;
 		border-radius: 50%;
-		background: #ffd166;
+		background: var(--accent-amber);
 		border: 2px solid rgba(8, 10, 16, 0.85);
-		box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.18);
+		box-shadow: 0 0 0 6px rgba(var(--accent-amber-rgb), 0.18);
 		cursor: pointer;
 	}
 	:global(.follow-marker[data-freshness='stale']) {
-		background: rgba(255, 209, 102, 0.55);
-		box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.08);
+		background: rgba(var(--accent-amber-rgb), 0.55);
+		box-shadow: 0 0 0 6px rgba(var(--accent-amber-rgb), 0.08);
 	}
 	:global(.follow-marker)::after {
 		content: '';
 		position: absolute;
 		inset: -4px;
 		border-radius: 50%;
-		border: 1px solid rgba(255, 209, 102, 0.55);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.55);
 		animation: follow-pulse 2.4s ease-out infinite;
 	}
 	:global(.follow-marker[data-freshness='stale'])::after {

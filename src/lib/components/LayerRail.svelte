@@ -365,7 +365,7 @@
 		gap: 0.5rem;
 	}
 	.rail-toggle:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 2px;
 	}
 	.rail-toggle-label {
@@ -468,13 +468,13 @@
 		background: rgba(255, 255, 255, 0.1);
 	}
 	.basemap-chip.active {
-		background: #ffd166;
+		background: var(--accent-amber);
 		color: #0a0e16;
-		border-color: #ffd166;
+		border-color: var(--accent-amber);
 		font-weight: 600;
 	}
 	.basemap-chip:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 1px;
 	}
 
@@ -503,10 +503,10 @@
 		text-align: left;
 	}
 	.category-header:hover {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.category-header:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 2px;
 	}
 	.atmospheric-row-head {
@@ -530,7 +530,7 @@
 	}
 	.info-btn:hover,
 	.info-btn:focus-visible {
-		color: #ffd166;
+		color: var(--accent-amber);
 		outline: none;
 	}
 	@media (pointer: coarse) {
@@ -560,9 +560,9 @@
 		border-color: rgba(94, 226, 208, 0.35);
 	}
 	.health-pill.health-warn {
-		background: rgba(255, 209, 102, 0.12);
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.35);
+		background: rgba(var(--accent-amber-rgb), 0.12);
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.35);
 	}
 	.health-pill.health-bad {
 		background: rgba(255, 107, 107, 0.15);
@@ -576,9 +576,9 @@
 		font-size: 0.62rem;
 		padding: 0.1rem 0.4rem;
 		border-radius: 999px;
-		background: rgba(255, 209, 102, 0.15);
-		color: #ffd166;
-		border: 1px solid rgba(255, 209, 102, 0.35);
+		background: rgba(var(--accent-amber-rgb), 0.15);
+		color: var(--accent-amber);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.35);
 	}
 
 	ul {
@@ -625,9 +625,9 @@
 		background: rgba(255, 255, 255, 0.1);
 	}
 	.year-chip.active {
-		background: #ffd166;
+		background: var(--accent-amber);
 		color: #0a0e16;
-		border-color: #ffd166;
+		border-color: var(--accent-amber);
 		font-weight: 600;
 	}
 	.year-chip:disabled {
@@ -635,7 +635,7 @@
 		cursor: not-allowed;
 	}
 	.year-chip:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 1px;
 	}
 
@@ -649,7 +649,7 @@
 	}
 	.opacity-row input[type='range'] {
 		width: 100%;
-		accent-color: #ffd166;
+		accent-color: var(--accent-amber);
 		min-height: 1.25rem;
 	}
 	.opacity-pct {
@@ -711,10 +711,10 @@
 		font-variant-numeric: tabular-nums;
 	}
 	:global(.model-src a) {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	input[type='checkbox'] {
-		accent-color: #ffd166;
+		accent-color: var(--accent-amber);
 	}
 
 	@media (pointer: coarse) {
