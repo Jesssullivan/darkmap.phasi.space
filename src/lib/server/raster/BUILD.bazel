@@ -1,11 +1,27 @@
 """Bazel targets for the darkmap raster service unit-test slice."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
 filegroup(
     name = "raster_srcs",
     srcs = glob(["*.ts"]),
+)
+
+# Implementation sources (no *.test.ts) exposed as a js_library so the root
+# //:app_build (SvelteKit SSR build) can consume them across the package
+# boundary. A bare filegroup of another package's source files is rejected by
+# rules_js copy_to_bin ("Expected to find file ... in //, but instead it is in
+# //src/lib/server/raster"); a js_library bin-copies within its own package and
+# is cross-package consumable.
+js_library(
+    name = "raster_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
 )
 
 ts_project(
