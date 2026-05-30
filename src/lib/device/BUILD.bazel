@@ -1,0 +1,56 @@
+"""Bazel targets for the darkmap device-services unit-test slice."""
+
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+filegroup(
+    name = "device_srcs",
+    srcs = glob(["*.ts"]),
+)
+
+ts_project(
+    name = "device_typecheck",
+    srcs = [":device_srcs"],
+    declaration = False,
+    no_emit = True,
+    tsconfig = "tsconfig.bazel.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        "//:node_modules",
+        "//:node_modules/@types/node",
+        "//:node_modules/effect",
+        "//:node_modules/vitest",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+vitest.vitest_test(
+    name = "device_test",
+    data = [
+        ":device_srcs",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/device/GeolocationService.test.ts",
+        "src/lib/device/OrientationService.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)
