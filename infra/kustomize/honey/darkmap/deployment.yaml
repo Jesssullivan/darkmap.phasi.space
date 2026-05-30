@@ -81,6 +81,18 @@ spec:
               value: '0.0.0.0'
             - name: PORT
               value: '3000'
+            # OpenAQ v3 PM2.5 proxy key (the /api/atmospheric/openaq route holds
+            # it server-side; the browser never sees it). `optional: true` so the
+            # pod still starts when the secret is absent — the smog overlay then
+            # degrades to "unavailable" instead of crashing. Provision the
+            # `darkmap-secrets` Secret out-of-band (sops-nix / operator), the same
+            # way the `ghcr-registry` pull secret is. See AGENTS.md "Secrets".
+            - name: OPENAQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: darkmap-secrets
+                  key: OPENAQ_API_KEY
+                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz
