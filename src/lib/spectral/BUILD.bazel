@@ -39,6 +39,10 @@ vitest.vitest_test(
     name = "spectral_test",
     data = [
         ":spectral_srcs",
+        # Runfiles fixture for hitran-bands.test.ts (read via process.cwd());
+        # staged at `data/hitran/curated-lines.json` so the test resolves it
+        # hermetically under `bazel test`. See //:hitran_curated_lines.
+        "//:hitran_curated_lines",
         "//:node_modules",
         "//:package_json",
         "//:vitest_bazel_config",
@@ -52,6 +56,7 @@ vitest.vitest_test(
         "src/lib/spectral/aerosol-types.test.ts",
         "src/lib/spectral/analytical.test.ts",
         "src/lib/spectral/band-guidance.test.ts",
+        "src/lib/spectral/hitran-bands.test.ts",
         "src/lib/spectral/mie.test.ts",
         "src/lib/spectral/smarts-analog.test.ts",
         "src/lib/spectral/voigt.test.ts",
