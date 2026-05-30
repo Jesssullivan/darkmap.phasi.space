@@ -2,6 +2,7 @@
 	import { Effect } from 'effect';
 	import { onDestroy, untrack } from 'svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import { fmtAge, type CacheBadgeView } from '$lib/cache/badge';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
 	import { viewportRangesFor, type ViewportRangeSummarySource } from '$lib/ephemeris/viewportSummaryCache';
 	import {
@@ -416,20 +417,11 @@
 	const fmtDelta = (deltaMin: number): string =>
 		deltaMin < 60 ? `Δ ${Math.round(deltaMin)} min` : `Δ ${(deltaMin / 60).toFixed(1)} h`;
 
-	type RangeBadge = {
-		readonly detail: string;
-		readonly label: string;
-		readonly tone: 'cached' | 'error' | 'live' | 'loading' | 'stale';
-	};
-
-	const fmtAge = (computedAtMs: number): string => {
-		const ageMin = Math.max(0, Math.round((now.getTime() - computedAtMs) / 60_000));
-		if (ageMin < 1) return 'just now';
-		if (ageMin < 60) return `${ageMin}m ago`;
-		return `${Math.round(ageMin / 60)}h ago`;
-	};
-
-	const rangeBadge = $derived.by((): RangeBadge | null => {
+	// The viewport-summary pill IS a cache-state badge — it reuses the shared
+	// CacheBadgeView shape + fmtAge from $lib/cache/badge (the module that
+	// generalized this very pill) while keeping its tile-cover-specific labels
+	// and detail copy, which are more informative than the generic strings.
+	const rangeBadge = $derived.by((): CacheBadgeView | null => {
 		switch (rangeStatus.kind) {
 			case 'idle':
 				return null;
@@ -452,7 +444,7 @@
 					return {
 						label: 'offline cache',
 						tone: 'cached',
-						detail: `Browser reports offline; using the latest local tile-cover summary from ${fmtAge(rangeStatus.computedAtMs)}.`,
+						detail: `Browser reports offline; using the latest local tile-cover summary from ${fmtAge(rangeStatus.computedAtMs, now.getTime())}.`,
 					};
 				}
 				return rangeStatus.source === 'computed'
@@ -464,7 +456,7 @@
 					: {
 							label: 'cache',
 							tone: 'cached',
-							detail: `Reused a local tile-cover summary computed ${fmtAge(rangeStatus.computedAtMs)}.`,
+							detail: `Reused a local tile-cover summary computed ${fmtAge(rangeStatus.computedAtMs, now.getTime())}.`,
 						};
 			case 'stale':
 				return {
