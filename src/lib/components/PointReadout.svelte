@@ -46,9 +46,16 @@
 		/** Clicked-point PM2.5 kernel-diffusion estimate (#275); null when smog off / no station in range. */
 		pm25?: Pm25Estimate | null;
 		onclose: () => void;
+		/**
+		 * Open the spectral-transmission sheet seeded from THIS point + time.
+		 * The transmission tool is point-anchored (V3): the boresight geometry,
+		 * PWV, and AOD all derive from the selected location, so the entry point
+		 * lives here rather than as an independent rail CTA.
+		 */
+		onTransmissionForPoint?: () => void;
 	}
 
-	let { lat, lon, time, data, loading, error, pm25 = null, onclose }: Props = $props();
+	let { lat, lon, time, data, loading, error, pm25 = null, onclose, onTransmissionForPoint }: Props = $props();
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -280,6 +287,21 @@
 			</div>
 		{/if}
 	</section>
+
+	{#if onTransmissionForPoint && data?.atmospheric}
+		<button
+			type="button"
+			class="transmission-link"
+			aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
+			onclick={onTransmissionForPoint}
+		>
+			<span class="cta-text">
+				<span class="cta-label">Spectral transmission T(λ)</span>
+				<span class="cta-sub">directable boresight · AOD · band guidance</span>
+			</span>
+			<span class="cta-caret" aria-hidden="true">→</span>
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -309,6 +331,47 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+	.transmission-link {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		width: 100%;
+		margin: 0.7rem 0 0;
+		padding: 0.55rem 0.7rem;
+		background: rgba(var(--accent-amber-rgb), 0.08);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.3);
+		border-radius: 7px;
+		color: var(--accent-amber);
+		cursor: pointer;
+		text-align: left;
+		font-family: inherit;
+		transition: background 0.12s ease;
+	}
+	.transmission-link:hover,
+	.transmission-link:focus-visible {
+		background: rgba(var(--accent-amber-rgb), 0.16);
+		outline: none;
+	}
+	.transmission-link .cta-text {
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 auto;
+		min-width: 0;
+		line-height: 1.25;
+	}
+	.transmission-link .cta-label {
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.transmission-link .cta-sub {
+		font-size: 0.66rem;
+		opacity: 0.7;
+	}
+	.transmission-link .cta-caret {
+		flex: 0 0 auto;
+		opacity: 0.6;
+		font-size: 0.95rem;
 	}
 	.close {
 		position: absolute;
