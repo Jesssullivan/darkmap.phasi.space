@@ -338,8 +338,9 @@
 <style>
 	.rail-toggle {
 		position: fixed;
-		top: 4.25rem;
-		left: 1rem;
+		/* Stay clear of the notch in landscape (matches the stacking-contract safe-area rule). */
+		top: max(4.25rem, env(safe-area-inset-top));
+		left: max(1rem, env(safe-area-inset-left));
 		z-index: 12;
 		background: rgba(8, 10, 16, 0.85);
 		color: #e9ecf3;

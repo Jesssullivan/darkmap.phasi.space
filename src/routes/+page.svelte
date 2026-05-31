@@ -1582,6 +1582,8 @@
 <Tour bind:open={tourOpen} steps={tourSteps} />
 {#if transmissionOpen}
 	<TransmissionSheet
+		pointLat={readout?.lat}
+		pointLon={readout?.lon}
 		curve={transmissionCurve}
 		loading={transmissionLoading}
 		error={transmissionError}
@@ -1688,7 +1690,7 @@
 	onchange={onRouteFileChange}
 />
 
-{#if readout}
+{#if readout && !transmissionOpen}
 	<PointReadout
 		lat={readout.lat}
 		lon={readout.lon}
