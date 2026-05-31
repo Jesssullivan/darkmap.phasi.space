@@ -220,6 +220,28 @@ js_test(
     visibility = ["//visibility:public"],
 )
 
+js_test(
+    name = "playwright_map_canvas_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-map-canvas-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-map-canvas-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "map-canvas-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # root_lib_test — top-level src/lib unit-test slice
 #
