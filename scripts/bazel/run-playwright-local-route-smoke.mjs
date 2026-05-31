@@ -66,7 +66,11 @@ try {
 		args: ['--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--no-sandbox', '--use-gl=swiftshader'],
 	});
 
-	const context = await browser.newContext({ viewport: VIEWPORT });
+	const context = await browser.newContext({
+		geolocation: { latitude: 42.443, longitude: -76.501 },
+		viewport: VIEWPORT,
+	});
+	await context.grantPermissions(['geolocation'], { origin: baseURL });
 	const page = await context.newPage();
 	const pageErrors = [];
 	const consoleErrors = [];
