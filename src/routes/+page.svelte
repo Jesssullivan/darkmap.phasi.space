@@ -2,6 +2,7 @@
 	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import {
 		classifyPositionFreshness,
@@ -23,6 +24,11 @@
 		POLLUTANT_NAMES,
 		type OpenAQSensorCollection,
 	} from '$lib/effect/services/OpenAQService';
+	import {
+		OpenAQHistoryService,
+		OpenAQHistoryServiceLive,
+		type HistorySeries,
+	} from '$lib/effect/services/OpenAQHistoryService';
 	import {
 		TransmissionEstimator,
 		TransmissionEstimatorLive,
@@ -273,10 +279,25 @@
 	// AQ-1 — clicked-point per-criteria-pollutant diffused estimates (name → estimate),
 	// for the multi-pollutant readout panel. Null when smog off / no coverage.
 	let aqEstimates = $state<Record<string, Pm25Estimate> | null>(null);
+	// V6-1 (TIN-1753) — the most recent point readout's 10 m wind, reused as a
+	// SINGLE representative wind for the whole AQI density field so the rendered
+	// field leans downwind the same way the point readout's kernel already does.
+	// This is a deliberate, documented approximation: one uniform wind over the
+	// entire viewport (real wind varies across a continental view). We reuse the
+	// readout's wind rather than firing a second Open-Meteo fetch — no extra
+	// network call, and it stays consistent with the value the user just saw.
+	// Null until a point with usable wind has been read; the field stays
+	// isotropic (its original behavior) until then.
+	let fieldWind = $state<WindVector | null>(null);
 	// V3-5 — clicked-point pollen + air-quality reading (Open-Meteo CAMS). Null
 	// while loading / on failure / before a point is selected; surfaced in the
 	// readout. A failed fetch never sinks the rest of the readout.
 	let airQualityReading = $state<AirQualityPointReading | null>(null);
+	// V6-2 — recent hourly PM2.5 history of the nearest OpenAQ station (sparkline +
+	// rolling stats in the readout). Null while loading / on failure / no station;
+	// its own isolated Effect so an outage can't sink the readout.
+	let stationHistory = $state<HistorySeries | null>(null);
+	let stationHistoryLoading = $state(false);
 
 	// Built once, not per keystroke — refreshTransmission runs on an 80ms debounce
 	// off every slider/picker change, so rebuilding the merged layer literal each
@@ -346,6 +367,18 @@
 		transmissionOpen = true;
 		void loadTransmissionPin();
 		void refreshTransmission();
+	}
+
+	// Hand off to the dedicated AQ-analysis dashboard (/aq, V6-4), seeded from the
+	// selected point + ephemeris time via the shared URL-hash codec. The map zoom
+	// rides along so a "View on map" return lands where we left.
+	function openAqDashboardForPoint(): void {
+		if (!readout) return;
+		const hash = encodeHash({
+			view: { lat: readout.lat, lon: readout.lon, zoom: mapInstance?.getZoom() ?? 8 },
+			time: ephemerisTime,
+		});
+		void goto(`/aq${hash}`);
 	}
 
 	// Load the per-pin ephemeris (sun/moon alt-az + DEM horizon) for the selected
@@ -922,6 +955,8 @@
 		pm25Estimate = null;
 		aqEstimates = null;
 		airQualityReading = null;
+		stationHistory = null;
+		stationHistoryLoading = false;
 		pointMarker?.remove();
 		// V3 — the sheet is anchored to the selected point; clearing the point
 		// leaves it with nothing to describe, so dismiss it too.
@@ -964,6 +999,23 @@
 			}).pipe(Effect.provide(AirQualityServiceLive)),
 		);
 
+		// V6-2 — nearest-station recent hourly PM2.5 history (sparkline + 24-h mean +
+		// trend). Fully isolated: it resolves on its own timeline and updates state
+		// directly, so a slow/failed history fetch never delays or sinks the readout.
+		// It self-cancels when a newer point is clicked (generation + abort guards).
+		stationHistory = null;
+		stationHistoryLoading = true;
+		void Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OpenAQHistoryService;
+				return yield* svc.getHistory({ lat, lon, param: 'pm25', hours: 24 }, { signal: controller.signal });
+			}).pipe(Effect.provide(OpenAQHistoryServiceLive)),
+		).then((exit) => {
+			if (myGen !== readoutGen || controller.signal.aborted) return;
+			stationHistory = exit._tag === 'Success' ? exit.value.series : null;
+			stationHistoryLoading = false;
+		});
+
 		try {
 			const [featureinfo, atmosphericExit, airQualityExit] = await Promise.all([
 				featureinfoPromise,
@@ -985,6 +1037,13 @@
 					? { speedMps: atmosphericExit.value.windSpeed, directionDeg: atmosphericExit.value.windDirectionDeg }
 					: undefined;
 			refreshPm25Estimate(lat, lon, windReading);
+			// V6-1 — reuse this point's wind as the field's representative (uniform)
+			// wind so the AQI density field leans downwind too. A rebuild repaints the
+			// field with the freshly-known wind orientation.
+			if (windReading && windReading.speedMps > 0) {
+				fieldWind = windReading;
+				renderAqiField();
+			}
 			// V3 — the curve is point-anchored: a new point's PWV / AOD (CAMS or the
 			// PM2.5 bridge) must reseed the open sheet, and the per-pin ephemeris is
 			// reloaded so the boresight's sun/moon snap + terrain occlusion track the
@@ -1370,7 +1429,19 @@
 		// height tracks the viewport aspect, capped so a moveend rebuild stays cheap.
 		const gridW = 64;
 		const gridH = Math.min(64, Math.max(1, Math.round(gridW * (latSpan / lonSpan))));
-		const field = buildAqiField(pm25Stations, bbox, gridW, gridH, { units: pollutantUnits, alpha: 150 });
+		// V6-1 (TIN-1753) — feed a single representative viewport wind (the most
+		// recent point readout's 10 m wind) into the field so it leans downwind,
+		// reusing the AQ-4 anisotropic kernel. This is a documented approximation:
+		// one uniform wind stands in for the whole viewport, which over a large
+		// (e.g. continental) view is only roughly right. Absent / calm wind keeps
+		// the original isotropic field.
+		const fieldParams: DiffusionParams | undefined =
+			fieldWind && fieldWind.speedMps > 0 ? { ...DEFAULT_DIFFUSION, wind: fieldWind } : undefined;
+		const field = buildAqiField(pm25Stations, bbox, gridW, gridH, {
+			units: pollutantUnits,
+			alpha: 150,
+			params: fieldParams,
+		});
 
 		const heatId = pointHeatmapId(SMOG_LAYER_ID);
 		if (field.painted === 0) {
@@ -1853,8 +1924,11 @@
 			{aqEstimates}
 			{pollutantUnits}
 			airQuality={airQualityReading}
+			history={stationHistory}
+			historyLoading={stationHistoryLoading}
 			onclose={closeReadout}
 			onTransmissionForPoint={openTransmissionForPoint}
+			onAqDashboardForPoint={openAqDashboardForPoint}
 		/>
 	{/if}
 

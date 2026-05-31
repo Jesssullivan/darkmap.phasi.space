@@ -15,9 +15,8 @@
  */
 
 import { estimatePollutantAt, type DiffusionParams, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
-import { computeAqi, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
-
-const POLLUTANTS: readonly AqiPollutant[] = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'];
+import { computeAqi, type AqiReading } from '$lib/atmospheric/aqi';
+import { CRITERIA_POLLUTANTS } from '$lib/atmospheric/pollutants';
 
 export interface FieldBbox {
 	readonly west: number;
@@ -77,7 +76,7 @@ export const buildAqiField = (
 		for (let i = 0; i < w; i++) {
 			const lon = bbox.west + ((i + 0.5) / w) * lonSpan;
 			const readings: AqiReading[] = [];
-			for (const p of POLLUTANTS) {
+			for (const p of CRITERIA_POLLUTANTS) {
 				const est = estimatePollutantAt(stations, lon, lat, p, opts.params);
 				if (est.confidence === 'none' || est.valueUgm3 === null) continue;
 				readings.push({ pollutant: p, value: est.valueUgm3, units: units[p] });

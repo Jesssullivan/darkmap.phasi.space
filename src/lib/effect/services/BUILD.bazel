@@ -97,6 +97,7 @@ vitest.vitest_test(
         "src/lib/effect/services/OfflineCacheRoutes.test.ts",
         "src/lib/effect/services/OfflineCacheService.test.ts",
         "src/lib/effect/services/OfflineCacheServiceBrowser.test.ts",
+        "src/lib/effect/services/OpenAQHistoryService.test.ts",
         "src/lib/effect/services/OpenAQService.test.ts",
         "src/lib/effect/services/TransmissionEstimator.test.ts",
     ],

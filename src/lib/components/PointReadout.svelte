@@ -7,8 +7,10 @@
 		formatNearestKm,
 		formatStationCount,
 		pm25AqiCategory,
+		pm25ToAod550,
 		type Pm25Estimate,
 	} from '$lib/atmospheric/pm25-diffusion';
+	import { crossValidate } from '$lib/atmospheric/aq-crossval';
 	import {
 		POLLEN_SPECIES,
 		type AirQualityPointReading,
@@ -16,6 +18,7 @@
 	} from '$lib/effect/services/AirQualityService';
 	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
 	import { computeAqi, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
+	import type { HistorySeries } from '$lib/effect/services/OpenAQHistoryService';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -59,6 +62,10 @@
 		pollutantUnits?: Record<string, string>;
 		/** Clicked-point pollen + air-quality reading (Open-Meteo CAMS, V3-5); null when unavailable. */
 		airQuality?: AirQualityPointReading | null;
+		/** V6-2 — recent hourly history of the nearest OpenAQ station; null when none / loading-failed. */
+		history?: HistorySeries | null;
+		/** V6-2 — true while the history fetch is in flight (shows a quiet placeholder). */
+		historyLoading?: boolean;
 		onclose: () => void;
 		/**
 		 * Open the spectral-transmission sheet seeded from THIS point + time.
@@ -67,6 +74,12 @@
 		 * lives here rather than as an independent rail CTA.
 		 */
 		onTransmissionForPoint?: () => void;
+		/**
+		 * Open the dedicated AQ-analysis dashboard (`/aq`) seeded from THIS point
+		 * + time. The dashboard pulls the full time-series + multi-pollutant +
+		 * source cross-validation for the location (V6-4).
+		 */
+		onAqDashboardForPoint?: () => void;
 	}
 
 	let {
@@ -80,8 +93,11 @@
 		aqEstimates = null,
 		pollutantUnits = {},
 		airQuality = null,
+		history = null,
+		historyLoading = false,
 		onclose,
 		onTransmissionForPoint,
+		onAqDashboardForPoint,
 	}: Props = $props();
 
 	const POLLEN_LABELS: Record<keyof PollenReading, string> = {
@@ -134,6 +150,69 @@
 		}));
 		return computeAqi(readings);
 	});
+
+	// V6-3 — cross-validate the air-quality sources at this point. Pure: lines up
+	// OpenAQ diffused PM2.5 (measured) + its AOD550 bridge against CAMS PM2.5/AOD
+	// (modeled), comparing ONLY where both carry a value. A missing source is no
+	// data, never agreement. GIBS MODIS AOD is visual-only in v1 (no trustworthy
+	// point-decode) — read it off the map, it is not part of the numeric compare.
+	const crossVal = $derived.by(() => {
+		const openaqPm25 = pm25?.valueUgm3 ?? null;
+		return crossValidate({
+			openaqPm25,
+			openaqAod550FromPm25: pm25ToAod550(openaqPm25),
+			camsPm25: airQuality?.pm25 ?? null,
+			camsAod550: airQuality?.aod550 ?? null,
+		});
+	});
+	// Only worth surfacing the section once at least one source is in play.
+	const crossValHasSignal = $derived(crossVal.pairs.length > 0 || (pm25?.valueUgm3 != null && airQuality != null));
+
+	// V6-2 — compact sparkline geometry for the nearest station's hourly history.
+	// Real samples only: each point is plotted at its true position in the window
+	// (x by timestamp, not by index), so a gap shows as a visibly longer segment
+	// rather than a fabricated even spacing. We never draw a point for a missing
+	// hour. A single sample renders as a dot; <1 renders nothing.
+	const SPARK_W = 132;
+	const SPARK_H = 26;
+	const SPARK_PAD = 2;
+	const sparkPoints = $derived.by(() => {
+		const pts = history?.points ?? [];
+		if (pts.length === 0) return [] as { x: number; y: number }[];
+		const xs = pts.map((p) => Date.parse(p.at));
+		const ys = pts.map((p) => p.value);
+		const xMin = Math.min(...xs);
+		const xMax = Math.max(...xs);
+		const yMin = Math.min(...ys);
+		const yMax = Math.max(...ys);
+		const xSpan = xMax - xMin || 1;
+		const ySpan = yMax - yMin || 1;
+		const w = SPARK_W - SPARK_PAD * 2;
+		const h = SPARK_H - SPARK_PAD * 2;
+		return pts.map((p, i) => ({
+			x: SPARK_PAD + ((xs[i] - xMin) / xSpan) * w,
+			// invert y so larger values sit higher
+			y: SPARK_PAD + (1 - (ys[i] - yMin) / ySpan) * h,
+		}));
+	});
+	const sparkPath = $derived(
+		sparkPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+	);
+	const TREND_GLYPH: Record<NonNullable<HistorySeries['trend']>, string> = {
+		rising: '↑',
+		falling: '↓',
+		flat: '→',
+	};
+	const fmtWindowHours = (s: HistorySeries): number =>
+		Math.max(1, Math.round((Date.parse(s.windowTo) - Date.parse(s.windowFrom)) / 3_600_000));
+	const HISTORY_LABELS: Record<string, string> = {
+		pm25: 'PM2.5',
+		pm10: 'PM10',
+		no2: 'NO₂',
+		o3: 'O₃',
+		so2: 'SO₂',
+		co: 'CO',
+	};
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -381,6 +460,66 @@
 		</section>
 	{/if}
 
+	{#if historyLoading || history}
+		<section class="history">
+			<h4>
+				Station {history ? (HISTORY_LABELS[history.parameter] ?? history.parameter) : ''} history
+				<HelpTooltip
+					text="Measured, not modeled: recent hourly-aggregate readings from the single nearest OpenAQ ground sensor (not the diffused field). Only hours the sensor actually reported are drawn — missing hours stay gaps, never interpolated. The 24-h mean is the mean over the real samples only; the trend compares the newer half of the samples against the older half."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag measured">measured</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			{#if historyLoading && !history}
+				<p class="loading">Fetching nearest-station history…</p>
+			{:else if history && history.sampleCount === 0}
+				<p class="note">No hourly samples in the last {fmtWindowHours(history)} h at the nearest station.</p>
+			{:else if history}
+				<div class="spark-row">
+					<svg
+						class="sparkline"
+						width={SPARK_W}
+						height={SPARK_H}
+						viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+						role="img"
+						aria-label={`${history.sampleCount} hourly samples over ${fmtWindowHours(history)} hours`}
+					>
+						{#if sparkPoints.length > 1}
+							<path
+								d={sparkPath}
+								fill="none"
+								stroke="var(--accent-amber)"
+								stroke-width="1.25"
+								stroke-linejoin="round"
+							/>
+						{/if}
+						{#each sparkPoints as p (p.x)}
+							<circle cx={p.x} cy={p.y} r="1.1" fill="var(--accent-amber)" />
+						{/each}
+					</svg>
+					<div class="spark-stats">
+						<span class="spark-mean">
+							{#if history.mean === null}
+								<span class="muted">—</span>
+							{:else}
+								{history.mean.toFixed(history.mean < 10 ? 1 : 0)}
+							{/if}
+							<span class="unit"> {history.units ?? 'µg/m³'}</span>
+							<span class="trend trend-{history.trend}" aria-hidden="true">{TREND_GLYPH[history.trend]}</span>
+						</span>
+						<span class="spark-sub">{fmtWindowHours(history)}-h mean · {history.sampleCount} samples</span>
+					</div>
+				</div>
+				<p class="note">
+					Window {history.windowFrom.slice(0, 16).replace('T', ' ')}–{history.windowTo.slice(11, 16)}Z · nearest station
+					{#if history.stale}· <span class="stale">stale ({history.latestAt?.slice(0, 10)})</span>{/if}
+				</p>
+			{/if}
+		</section>
+	{/if}
+
 	{#if airQuality}
 		<section>
 			<h4>
@@ -428,6 +567,49 @@
 				{/if}
 			</dl>
 			<p class="note">Hour {airQuality.matchedTime}Z · CC-BY Open-Meteo (CAMS)</p>
+		</section>
+	{/if}
+
+	{#if crossValHasSignal}
+		<section class="crossval">
+			<h4>
+				Source cross-check
+				<HelpTooltip
+					text="Lines up the air-quality sources at this point and reports their bias ONLY where both have data. Stations = OpenAQ ground PM2.5 (measured, then kernel-diffused); CAMS = modeled PM2.5 / column AOD. The Stations→AOD figure is an engineering bridge from surface PM2.5, not a measured column. A missing source is shown as no data — never as agreement. GIBS MODIS AOD is a visual cross-check on the map: there is no trustworthy point-decode in v1, so it is not compared numerically."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">derived</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			{#if crossVal.pairs.length === 0}
+				<p class="note">{crossVal.emptyReason}</p>
+			{:else}
+				<dl class="crossval-grid">
+					{#each crossVal.pairs as pair (pair.quantity)}
+						<dt>
+							{pair.quantity === 'pm25' ? 'PM2.5' : 'AOD₅₅₀'}
+							<span class="cv-level" class:conflict={pair.level === 'conflict'} class:differ={pair.level === 'differ'}>
+								{pair.level}
+							</span>
+						</dt>
+						<dd>
+							Δ {pair.bias >= 0 ? '+' : ''}{pair.quantity === 'pm25'
+								? pair.bias.toFixed(1)
+								: pair.bias.toFixed(2)}{pair.units ? ` ${pair.units}` : ''}{pair.relDiff !== null
+								? ` · ${Math.round(pair.relDiff * 100)}%`
+								: ''}
+						</dd>
+						<dd class="cv-note">{pair.note}</dd>
+					{/each}
+				</dl>
+				{#if crossVal.hasConflict}
+					<p class="note cv-conflict-note">
+						Sources disagree across a clean/unhealthy boundary — treat both with caution.
+					</p>
+				{/if}
+			{/if}
+			<p class="note">Numeric: OpenAQ ↔ CAMS only. GIBS MODIS AOD is a visual cross-check (no point-decode in v1).</p>
 		</section>
 	{/if}
 
@@ -497,6 +679,21 @@
 			<span class="cta-text">
 				<span class="cta-label">Spectral transmission T(λ)</span>
 				<span class="cta-sub">directable boresight · AOD · band guidance</span>
+			</span>
+			<span class="cta-caret" aria-hidden="true">→</span>
+		</button>
+	{/if}
+
+	{#if onAqDashboardForPoint && data}
+		<button
+			type="button"
+			class="transmission-link aq-dashboard-link"
+			aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
+			onclick={onAqDashboardForPoint}
+		>
+			<span class="cta-text">
+				<span class="cta-label">Air-quality dashboard</span>
+				<span class="cta-sub">history · multi-pollutant AQI · source cross-check</span>
 			</span>
 			<span class="cta-caret" aria-hidden="true">→</span>
 		</button>
@@ -651,6 +848,57 @@
 		letter-spacing: 0.04em;
 		vertical-align: middle;
 	}
+	.modeled-tag.measured {
+		border-color: rgba(120, 220, 160, 0.4);
+		background: rgba(120, 220, 160, 0.12);
+		color: #b8f0cf;
+	}
+	.spark-row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin-top: 0.15rem;
+	}
+	.sparkline {
+		flex: 0 0 auto;
+		overflow: visible;
+	}
+	.spark-stats {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+		min-width: 0;
+	}
+	.spark-mean {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--accent-amber);
+		font-variant-numeric: tabular-nums;
+	}
+	.spark-mean .muted {
+		color: rgba(233, 236, 243, 0.62);
+	}
+	.spark-sub {
+		font-size: 0.66rem;
+		opacity: 0.6;
+	}
+	.trend {
+		margin-left: 0.2rem;
+		font-size: 0.9rem;
+	}
+	.trend-rising {
+		color: #ff8c6b;
+	}
+	.trend-falling {
+		color: #7fdca0;
+	}
+	.trend-flat {
+		opacity: 0.6;
+	}
+	.stale {
+		color: var(--accent-amber);
+		opacity: 0.9;
+	}
 	.coverage {
 		opacity: 0.6;
 	}
@@ -694,6 +942,49 @@
 	.aqi-dom {
 		font-size: 0.66rem;
 		opacity: 0.7;
+	}
+	.crossval-grid {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.15rem 0.75rem;
+		margin: 0;
+		font-size: 0.74rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.crossval-grid dt {
+		opacity: 0.8;
+	}
+	.crossval-grid dd {
+		margin: 0;
+		text-align: right;
+		color: var(--accent-amber);
+	}
+	.crossval-grid dd.cv-note {
+		grid-column: 1 / -1;
+		text-align: left;
+		color: rgba(233, 236, 243, 0.7);
+		font-size: 0.66rem;
+		margin-bottom: 0.2rem;
+	}
+	.cv-level {
+		margin-left: 0.3rem;
+		font-size: 0.58rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.6;
+	}
+	.cv-level.differ {
+		color: var(--accent-amber);
+		opacity: 0.9;
+	}
+	.cv-level.conflict {
+		color: #ff6b6b;
+		opacity: 1;
+		font-weight: 600;
+	}
+	.cv-conflict-note {
+		color: #ff8f8f;
+		opacity: 0.9;
 	}
 	.loading {
 		opacity: 0.55;
