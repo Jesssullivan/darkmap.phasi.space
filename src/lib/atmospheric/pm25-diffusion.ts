@@ -27,6 +27,12 @@ export interface Pm25Station {
 	readonly lon: number;
 	readonly lat: number;
 	readonly value: number | null;
+	/**
+	 * AQ-1 — per-criteria-pollutant latest reading at this station, keyed by
+	 * OpenAQ parameter name (pm25/pm10/no2/o3/so2/co). `value` mirrors
+	 * `pollutants.pm25` for the existing PM2.5 paths. Absent on test stations.
+	 */
+	readonly pollutants?: Readonly<Record<string, number | null>>;
 }
 
 export interface DiffusionParams {
@@ -124,6 +130,27 @@ export const estimatePm25At = (
 		nearestKm,
 		contributingStations: contributing,
 	};
+};
+
+/**
+ * AQ-1 — kernel-diffuse an arbitrary criteria pollutant at a point by reusing
+ * the same Gaussian estimator over each station's reading for that pollutant.
+ * `valueUgm3` carries the pollutant's value (in its native units); confidence /
+ * coverage are pollutant-specific (a station may report PM2.5 but not O₃).
+ */
+export const estimatePollutantAt = (
+	stations: readonly Pm25Station[],
+	lon: number,
+	lat: number,
+	pollutant: string,
+	params: DiffusionParams = DEFAULT_DIFFUSION,
+): Pm25Estimate => {
+	const view: Pm25Station[] = stations.map((s) => ({
+		lon: s.lon,
+		lat: s.lat,
+		value: pollutant === 'pm25' ? s.value : (s.pollutants?.[pollutant] ?? null),
+	}));
+	return estimatePm25At(view, lon, lat, params);
 };
 
 /**

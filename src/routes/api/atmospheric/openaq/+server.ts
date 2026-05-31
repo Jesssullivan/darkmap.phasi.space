@@ -20,6 +20,7 @@ interface OpenAQLocation {
 	readonly parameters?: ReadonlyArray<{
 		readonly id?: number;
 		readonly name?: string;
+		readonly units?: string;
 		readonly lastValue?: number;
 		readonly latestValue?: number;
 		readonly displayName?: string;
@@ -31,7 +32,11 @@ interface OpenAQEnvelope {
 	readonly meta?: unknown;
 }
 
-const PM25_PARAM_ID = 2;
+// AQ-1 — the criteria pollutants we surface (matched by OpenAQ parameter NAME,
+// which is stable across the API; the numeric ids drift). PM2.5 stays the
+// `value` field so the existing heatmap paint (`['get','value']`) is unchanged.
+const POLLUTANT_NAMES = ['pm25', 'pm10', 'no2', 'o3', 'so2', 'co'] as const;
+type PollutantName = (typeof POLLUTANT_NAMES)[number];
 const MAX_LIMIT = 1000;
 
 const emptyDegraded = (): Response =>
@@ -63,9 +68,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		return emptyDegraded();
 	}
 
+	// No parameters_id filter — we want every criteria pollutant a location
+	// reports, not just PM2.5, so the readout can show the full panel + an AQI.
 	const upstreamParams = new URLSearchParams({
 		bbox: `${west},${south},${east},${north}`,
-		parameters_id: String(PM25_PARAM_ID),
 		limit: String(MAX_LIMIT),
 	});
 
@@ -107,9 +113,20 @@ export const GET: RequestHandler = async ({ url }) => {
 	});
 };
 
+interface PollutantReading {
+	readonly value: number;
+	readonly units?: string;
+}
 interface OpenAQGeoJsonFeature {
 	type: 'Feature';
-	properties: { locationId?: number; locationName: string; value: number | null };
+	properties: {
+		locationId?: number;
+		locationName: string;
+		/** PM2.5 µg/m³ (kept for the existing heatmap paint); null when not reported. */
+		value: number | null;
+		/** Per-criteria-pollutant latest reading, keyed by OpenAQ parameter name. */
+		pollutants: Partial<Record<PollutantName, PollutantReading>>;
+	};
 	geometry: { type: 'Point'; coordinates: [number, number] };
 }
 
@@ -119,20 +136,24 @@ const locationToFeature = (loc: OpenAQLocation): OpenAQGeoJsonFeature | null => 
 	if (typeof lat !== 'number' || typeof lon !== 'number') return null;
 	if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-	let value: number | null = null;
+	const pollutants: Partial<Record<PollutantName, PollutantReading>> = {};
 	for (const p of loc.parameters ?? []) {
-		if (p.id !== PM25_PARAM_ID && p.name !== 'pm25') continue;
+		const name = p.name as PollutantName | undefined;
+		if (!name || !(POLLUTANT_NAMES as readonly string[]).includes(name)) continue;
 		const v = p.lastValue ?? p.latestValue;
-		if (typeof v === 'number' && Number.isFinite(v)) value = v;
-		break;
+		if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+		pollutants[name] = p.units ? { value: v, units: p.units } : { value: v };
 	}
+	// Drop locations that report none of our criteria pollutants.
+	if (Object.keys(pollutants).length === 0) return null;
 
 	return {
 		type: 'Feature',
 		properties: {
 			locationId: typeof loc.id === 'number' ? loc.id : undefined,
 			locationName: typeof loc.name === 'string' ? loc.name : 'Unknown',
-			value,
+			value: pollutants.pm25?.value ?? null,
+			pollutants,
 		},
 		geometry: { type: 'Point', coordinates: [lon, lat] },
 	};
