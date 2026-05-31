@@ -38,7 +38,6 @@
 
 	import {
 		DEFAULT_DIFFUSION,
-		estimatePm25At,
 		estimatePollutantAt,
 		pm25ToAod550,
 		type Pm25Estimate,
@@ -99,20 +98,27 @@
 
 	// ---- Derived analysis (pure; over the tested shaping modules) ----
 
-	const pm25Estimate = $derived.by<Pm25Estimate | null>(() =>
-		selected && stations.length > 0 ? estimatePm25At(stations, selected.lon, selected.lat, DEFAULT_DIFFUSION) : null,
+	// Diffuse every criteria pollutant at the point in ONE pass; pm25Estimate and
+	// perPollutant both read from it. estimatePollutantAt(...,'pm25') maps
+	// `value: s.value` then calls estimatePm25At, so it equals the PM2.5 estimate.
+	const pollutantEstimates = $derived.by<{ pollutant: AqiPollutant; est: Pm25Estimate }[]>(() => {
+		const sel = selected;
+		if (!sel || stations.length === 0) return [];
+		return HISTORY_PARAMS.map((p) => ({
+			pollutant: p as AqiPollutant,
+			est: estimatePollutantAt(stations, sel.lon, sel.lat, p as PollutantName, DEFAULT_DIFFUSION),
+		}));
+	});
+
+	const pm25Estimate = $derived<Pm25Estimate | null>(
+		pollutantEstimates.find((r) => r.pollutant === 'pm25')?.est ?? null,
 	);
 
-	const perPollutant = $derived.by(() => {
-		if (!selected || stations.length === 0)
-			return [] as { pollutant: AqiPollutant; est: Pm25Estimate; units: string | undefined }[];
-		const out: { pollutant: AqiPollutant; est: Pm25Estimate; units: string | undefined }[] = [];
-		for (const p of HISTORY_PARAMS) {
-			const est = estimatePollutantAt(stations, selected.lon, selected.lat, p as PollutantName, DEFAULT_DIFFUSION);
-			if (est.valueUgm3 !== null) out.push({ pollutant: p as AqiPollutant, est, units: pollutantUnits[p] });
-		}
-		return out;
-	});
+	const perPollutant = $derived.by(() =>
+		pollutantEstimates
+			.filter((r) => r.est.valueUgm3 !== null)
+			.map((r) => ({ pollutant: r.pollutant, est: r.est, units: pollutantUnits[r.pollutant] })),
+	);
 
 	const aqiResult = $derived.by<AqiResult | null>(() =>
 		computeAqi(perPollutant.map((r) => ({ pollutant: r.pollutant, value: r.est.valueUgm3 as number, units: r.units }))),

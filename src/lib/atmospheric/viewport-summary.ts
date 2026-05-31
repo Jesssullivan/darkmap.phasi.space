@@ -16,9 +16,8 @@
  */
 
 import { type AqiCategory, type AqiPollutant, aqiCategory, subIndexFor } from './aqi';
-
-/** Criteria pollutants we tally, in display order. */
-export const SUMMARY_POLLUTANTS: readonly AqiPollutant[] = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'];
+import { CRITERIA_POLLUTANTS } from './pollutants';
+import { isFiniteNumber as finite, median } from './stats';
 
 /** Minimal station shape — matches the dashboard's `Pm25Station`. */
 export interface SummaryStation {
@@ -52,38 +51,30 @@ export interface ViewportSummary {
 	readonly pollutantCounts: readonly PollutantCount[];
 }
 
-const finite = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
-
-/** Median of a non-empty numeric array (sorted copy; mean of the middle pair when even). */
-const median = (xs: readonly number[]): number => {
-	const s = [...xs].sort((a, b) => a - b);
-	const mid = Math.floor(s.length / 2);
-	return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
-};
-
 /**
  * Build the area summary from the stations in the bbox. Pure: no fetch, no
  * clock — the caller passes the already-fetched collection.
  */
 export const buildViewportSummary = (stations: ReadonlyArray<SummaryStation>): ViewportSummary => {
+	// Single O(stations) pass: PM2.5 sub-indices + per-pollutant tallies together.
 	const pm25SubIndices: number[] = [];
+	const counts = new Map<AqiPollutant, number>();
 	for (const s of stations) {
-		if (!finite(s.value)) continue;
-		const si = subIndexFor('pm25', s.value, 'µg/m³');
-		if (si !== null) pm25SubIndices.push(si);
+		if (finite(s.value)) {
+			counts.set('pm25', (counts.get('pm25') ?? 0) + 1);
+			const si = subIndexFor('pm25', s.value, 'µg/m³');
+			if (si !== null) pm25SubIndices.push(si);
+		}
+		for (const pollutant of CRITERIA_POLLUTANTS) {
+			if (pollutant === 'pm25') continue; // counted above from `value`
+			if (finite(s.pollutants?.[pollutant])) counts.set(pollutant, (counts.get(pollutant) ?? 0) + 1);
+		}
 	}
 
-	const pollutantCounts: PollutantCount[] = SUMMARY_POLLUTANTS.map((pollutant) => {
-		let count = 0;
-		for (const s of stations) {
-			if (pollutant === 'pm25') {
-				if (finite(s.value)) count++;
-			} else if (finite(s.pollutants?.[pollutant])) {
-				count++;
-			}
-		}
-		return { pollutant, count };
-	}).filter((c) => c.count > 0);
+	const pollutantCounts: PollutantCount[] = CRITERIA_POLLUTANTS.flatMap((pollutant) => {
+		const count = counts.get(pollutant) ?? 0;
+		return count > 0 ? [{ pollutant, count }] : [];
+	});
 
 	const aqi: AqiSpread | null =
 		pm25SubIndices.length > 0
