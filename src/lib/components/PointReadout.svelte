@@ -585,6 +585,7 @@
 		margin: 0 0 0.25rem 0;
 		font-size: 0.7rem;
 		line-height: 1.2;
+		min-height: 0.84rem;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		opacity: 0.65;
