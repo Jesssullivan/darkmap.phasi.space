@@ -325,9 +325,12 @@ inferred from its documented interface.
 ## 8. Figma
 
 Companion file (lens switcher component, the 4 lens map states, the Links "Design a link" surface,
-the Orbit "Plan a pass" surface, and the per-persona storyboard frames). **Link:** _TBD — added when
-the Figma file is generated (Phase 0 deliverable, §workstream 5)._ Mockups inherit the omux theme
-(amber `#ffd166` + cyan accents, dark surfaces) and the EPA 6-band AQI palette.
+the Orbit "Plan a pass" surface, and the per-persona storyboard frames). **Link:**
+https://www.figma.com/design/DYMVqVYzHl8uehosEmWXdt (darkmap — persona lenses, Phase 0). Mockups
+inherit the omux theme (amber `#ffd166` + cyan accents, dark surfaces) and the EPA 6-band AQI
+palette. Built via the `figma-console` / `use_figma` MCP path. The refined **Sky** exemplar (Bortle
+headline + on-demand provenance + right tool-rail) is the template; remaining frames follow the §11
+build-ready specs.
 
 ---
 
@@ -357,3 +360,123 @@ honesty/coverage review.
    vs both.
 5. Is a **task-launcher home** still wanted later as a complement to lenses (deferred from the nav
    decision), or do lens chips fully cover first-touch?
+
+---
+
+## 11. Deep UX research synthesis (SOTA pass)
+
+Synthesized from a multi-agent UX study (5 cited domains — drill-down efficiency, lens/mode
+switching, kiosk/attract-loop data-storytelling, header/sidebar/tool-rail patterns, and a
+finite-state model of the future cycling mode — each adversarially checked for darkmap fit + the
+honesty bar). This refines §3–§5 with build-ready detail; nothing here gates a capability.
+
+### 11.1 Thesis + the lens engine
+
+The redesign's only job is to make existing depth **legible**. One MapLibre canvas; the lens is a
+single reactive rune store (mirror `src/lib/theme.svelte.ts`: `lens = $state<'sky'|'air'|'links'|'orbit'>('sky')`).
+The five surfaces (LayerRail order, PointReadout section order, primary CTA, MapToolbar order,
+basemap default) are **`$derived`** from it — the §3 promotion matrix *is* the derivation map.
+**Canvas state (center/zoom/marker/time) is orthogonal** — the lens never writes it, so a flip
+re-derives only framing and the map stays put by construction. Add `lens?: Lens` to `HashState`
+(`&lens=`), default Sky, remember-last via localStorage.
+
+### 11.2 The 3-tier drill rhythm (one grammar, all lenses)
+
+- **Tier 1 — canvas:** lens re-weights rails + basemap, never gates.
+- **Tier 2 — one map-click → PointReadout** whose TOP slot is exactly *[one decision value +
+  measured/modeled/predicted + coverage label + one primary CTA]*: Sky = Bortle + dark-window +
+  "Plan observation"; Air = driving pollutant + NowCast-labeled AQI + "Air-quality dashboard";
+  Links = T(λ) window + path-AOD + "Design a link"; Orbit = next DEM-gated pass + epoch-age +
+  "Plan a pass". Everything else collapses below the lead behind **value-bearing honesty chips**
+  (e.g. `Transmission · T(550nm)=0.78 · modeled · cov 92%`, `Next pass 21:14 · predicted · TLE epoch 3d`).
+- **Tier 3 — deep tool**, opened by the CTA/chip, **inherits the full query with zero re-entry**:
+  `{lat,lon}` + `et=` instant + lens + basemap + on-layers + (Links) boresight az/el + path-AOD;
+  (Orbit) the DEM-masked horizon already applied. **The click *is* the query.** Net: map→point→tool
+  in two clicks, no re-specification.
+- **Acceptance gate:** switching lens *reorders* the same readout sections + swaps the CTA — it never
+  adds/removes a capability. No per-lens forked components.
+
+### 11.3 Re-weight rules (dim + reorder, never hide/disable)
+
+3-tier opacity: **Tier-1** (active headline value + single CTA) full amber/cyan; **Tier-2**
+(active-lens layers/tools) full opacity, no accent; **Tier-3** (off-lens rows/chips/toolbar items)
+~0.55 opacity + lighter weight, **still keyboard-focusable + clickable**. Forbidden: `aria-disabled`,
+`display:none`, removal. The MapLibre canvas always outranks chrome in contrast. Animate **only the
+diff** (~150–250ms rail reorder + CTA label cross-fade), behind the shipped `prefers-reduced-motion`
+guard; **never animate the map viewport**. Per-lens basemap change is a **subtle default-only nudge**
+— never overrides an explicit user choice, never alters an active overlay's apparent meaning.
+
+### 11.4 The rails
+
+- **Header (top-left):** the persistent lens switcher as icon+label **chips** (◐ Sky · ☁ Air ·
+  📡 Links · 🛰 Orbit), active state **not color-alone** (filled pill + bold label, per the
+  ColorVision-Assist commitment). 4 chips fit the 3–5 segmented ceiling; chips (not a flush segmented
+  control, not tabs). One-action switch + number keys 1–4. Geocoder pill persists to the right. ≤820px:
+  collapse to a compact segmented control / fold into the toolbar — never a keyboard-only palette.
+- **Left LayerRail:** caret accordions by data family — Night-lights (VIIRS measured / Falchi modeled),
+  Atmosphere (cloud/AOD/PWV/smog), Terrain (DEM horizon), Ephemeris (sun/moon/twilight). **Multi-expand**
+  (never auto-collapse a user-opened section); a lens **auto-expands its primary group + scrolls it to
+  top** without collapsing others. **Each accordion header carries the measured/modeled/predicted +
+  coverage chip** (provenance visible even when collapsed). Per-row visibility toggle + opacity slider.
+- **Right tool surfaces (two stacked, not a new column):** (A) the **bottom-right MapToolbar re-fixed
+  as a LABELED tool strip** — icon+label rows (fix the current tooltip-only a11y gap *before* adding
+  ambiguous tool glyphs), the active lens's signature tool promoted to first at Tier-1. (B) the
+  **bottom-right PointReadout** = details-on-demand; the deep tool opens as a **non-occluding docked
+  panel / map-shrinking sheet** (fixing `TransmissionSheet`'s current hide-the-readout) so boresight/
+  DEM-horizon/beam/ground-track stay legible against terrain. Readout capped ~22rem; on mobile the map
+  shrinks rather than being covered.
+- **Time dock (bottom edge):** ONE shared control (NASA Worldview grammar — range + play/pause + step +
+  pace + loop) bound to `et=`, used for both manual scrub and the future cycling engine. **Encodes data
+  availability**: steps real frames only, **holds/skips gaps, never interpolates** (null≠0); each frame
+  renders inline provenance + freshness + basis. Insets off `--toolbar-w-rem`. Promoted to first toolbar
+  slot in Air + Orbit.
+
+### 11.5 Key IA refinements (deltas to act on)
+
+- **Bortle-prominent / provenance on-demand** (operator direction): the Sky lead is a single Bortle
+  headline (large class + SQM beneath), **no inline "modeled" tag by default**; a small `(i)`
+  (existing HelpTooltip) discloses "Falchi 2016 modeled, cross-checked vs VIIRS measured, coverage N%".
+  Measured-vs-modeled is one tap away, never deleted.
+- **Fix the occluding deep tool** (S2): `TransmissionSheet` must stop hiding the readout — dock
+  non-occluding / shrink the map. Overview+detail, never zoom-to-feature, never fisheye.
+- **Label the MapToolbar** (S1, before promoting tool glyphs): transmission/boresight/beam/passes have
+  no universal glyph; add visible labels or default-expanded.
+- **Defer past S4:** Cmd-K command palette + pin/compare (multi-point) — net-new subsystems for an
+  audience of four; the chips + labeled toolbar + carry-the-query drill already deliver ~1 click.
+  Keep only number-keys 1–4.
+
+### 11.6 Cycling mode — finite-state narration engine (IA-readiness contract, NOT a Phase-0 build)
+
+A future hands-off auto-tour is a thin **driver** over the same lens store + shared time dock + the
+shipped `Tour.svelte` plumbing (auto-start/replay/localStorage-suppress/reduced-motion) — **not a
+forked kiosk app**. A Martini-Glass realized as a **stepper** (not scrolljack, not silent autoplay):
+an ordered story walks states on rails; any touch on map/rail/toolbar/geocoder **pauses and stays
+paused** (drops into free exploration). Each state fires the same five-surface re-weight, loads its
+layer, starts one staged animation, and is **gated by a data-readiness guard** (refuses to narrate an
+empty/half-loaded frame or a null-provenance frame). Transport: play/pause + skip + scrub + "step N
+of M" dot-rail + "Skip / Explore freely"; `prefers-reduced-motion` → stepped cross-fades + longer
+dwell (data-state change always preserved, positional motion suppressed); advance never bound to map
+scroll/zoom.
+
+| # | State | Lens | Data (provenance) | Animation | Dwell |
+|---|---|---|---|---|---|
+| S1 | Weather & cloud advection | Air | GIBS MODIS cloud (measured/sat) | day-step loaded GIBS tiles, raster crossfade, gaps held | 12s |
+| S2 | Smog & AQI (driving pollutant) | Air | OpenAQ PM2.5 field + AQI (modeled, NowCast) + cross-val | hourly snapshot cross-fade; sparse = sparse | 10s |
+| S3 | Moon, twilight & DEM datum | Sky | ephemeris moon/twilight (computed) + DEM horizon | dark-window sweep; horizon vs dome | 8s |
+| S4 | Atmospheric link & Tx indices | Links | T(λ) (modeled Mie+HITRAN) + path-AOD→dB + Ångström + beam | beam sweep az/el; loss bars build; fly along beam | 16s |
+| S5 | Animated AQ history | Air | hourly OpenAQ history (measured; gaps stay gaps) + trend | sparkline + field morph via time dock | 10s |
+| S6 | darkmap radiance (Bortle) | Sky | VIIRS measured + Falchi modeled → Bortle/SQM | radiance opacity ramp; Bortle updates | 8s |
+| S7 | DEM-gated pass track (conditional) | Orbit | SGP4 az/el (predicted) gated by DEM horizon; TLE epoch | AOS→LOS marker on polar dome, uncertainty widens; **skipped if no satellite pinned** | 15s |
+
+Honesty rides every frame (the engine refuses a null-provenance frame; gaps never tweened; AQI stays
+NowCast-labeled; Orbit stays "predicted (SGP4) · TLE epoch +Nd" with widening uncertainty; a tour can
+never make a modeled/predicted value sound measured). Then loop → S1.
+
+### 11.7 Build-ready Figma frame specs
+
+The companion Figma file (§8) renders, per `figma_frame_specs`: **Sky (refined — done)**, **Air map
+state**, **Links map state**, **Orbit map state**, **Links — Design a link** (Tx/Rx → loss breakdown
+→ margin dB + go/no-go, non-occluding dock), **Orbit — Plan a pass** (master pass-list ↔ detail polar
+az/el track over the DEM-masked horizon), and **Cycling mode — auto-tour** (transport overlay +
+per-frame provenance). Each carries its lens-led readout section order, the promoted toolbar tool, the
+auto-expanded rail group, the primary CTA, and honest map treatment (no occlusion, subtle basemap).
