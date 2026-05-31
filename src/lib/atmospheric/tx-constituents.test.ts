@@ -77,8 +77,16 @@ describe('buildTxConstituents — other fields', () => {
 		expect(d.source).toBe('default');
 	});
 
-	it('keeps O₃ a default (surface CAMS ozone is not column Dobson)', () => {
+	it('keeps O₃ a default when no climatology value is supplied', () => {
 		expect(buildTxConstituents(base).o3.source).toBe('default');
+		expect(buildTxConstituents(base).o3.value).toBe(350);
+	});
+
+	it('uses the van Heuklon column climatology as a modeled O₃ when supplied', () => {
+		const c = buildTxConstituents({ ...base, o3ColumnDu: 328.3 });
+		expect(c.o3.value).toBe(328.3);
+		expect(c.o3.source).toBe('modeled');
+		expect(c.o3.caption).toMatch(/van Heuklon/);
 	});
 
 	it('labels zenith by whether it is a directed boresight', () => {
