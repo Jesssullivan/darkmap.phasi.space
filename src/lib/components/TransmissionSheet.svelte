@@ -32,8 +32,10 @@
 		// V2-D — live-aerosol controls. Parent owns the state; widget emits.
 		aerosolType?: AerosolType | null;
 		aod?: number;
-		/** Optional caption shown under the AOD slider when AOD is modeled (e.g. from local PM2.5). #275 */
+		/** Optional caption shown under the AOD slider — provenance of the AOD input (measured CAMS / modeled PM2.5 / default). */
 		aodSource?: string;
+		/** Optional caption shown under PWV — provenance of the PWV input (measured Open-Meteo / default). */
+		pwvSource?: string;
 		angstrom?: number;
 		onAerosolTypeChange?: (value: AerosolType | null) => void;
 		onAodChange?: (value: number) => void;
@@ -71,6 +73,7 @@
 		aerosolType = null,
 		aod = 0.15,
 		aodSource = undefined,
+		pwvSource = undefined,
 		angstrom = 1.4,
 		onAerosolTypeChange,
 		onAodChange,
@@ -323,7 +326,10 @@
 					{#snippet trigger()}<span class="param-help" role="img" aria-label="About PWV">?</span>{/snippet}
 				</HelpTooltip>
 			</dt>
-			<dd>{fmt(curve.input.pwvMm, 1)}<span class="unit"> mm</span></dd>
+			<dd>
+				{fmt(curve.input.pwvMm, 1)}<span class="unit"> mm</span>
+				{#if pwvSource}<span class="input-src">{pwvSource}</span>{/if}
+			</dd>
 			<dt>AOD₅₅₀</dt>
 			<dd>{fmt(curve.input.aod550, 2)}</dd>
 			<dt>Ångström</dt>
@@ -464,8 +470,9 @@
 			SBDART. Source: <strong>{curve.source}</strong>.
 		</p>
 		<p class="attrib">
-			Inputs: RH via <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> (CC-BY); PWV
-			falls back to the default until a point source is wired. Aerosol via
+			Inputs are point-anchored with provenance shown per field: PWV via
+			<a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> (CC-BY); AOD₅₅₀ measured from
+			CAMS or modeled from local PM2.5, else a default. Imagery via
 			<a href="https://gibs.earthdata.nasa.gov" target="_blank" rel="noreferrer">NASA GIBS</a> (public domain). Transmission
 			model: SMARTS / SBDART analog.
 		</p>
@@ -604,6 +611,12 @@
 		margin: 0;
 		color: var(--accent-amber);
 		font-size: 0.85rem;
+	}
+	.input-src {
+		display: block;
+		color: rgba(233, 236, 243, 0.5);
+		font-size: 0.6rem;
+		font-weight: 400;
 	}
 	.unit {
 		opacity: 0.6;
