@@ -20,6 +20,8 @@ interface OpenMeteoHourly {
 	readonly cloud_cover_mid?: number[];
 	readonly cloud_cover_high?: number[];
 	readonly visibility?: number[];
+	readonly wind_speed_10m?: number[];
+	readonly wind_direction_10m?: number[];
 }
 
 interface OpenMeteoBody {
@@ -46,7 +48,8 @@ export const GET: RequestHandler = async ({ url }) => {
 	const upstreamParams = new URLSearchParams({
 		latitude: lat.toFixed(4),
 		longitude: lon.toFixed(4),
-		hourly: 'relative_humidity_2m,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility',
+		hourly:
+			'relative_humidity_2m,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,wind_speed_10m,wind_direction_10m',
 		timezone: 'UTC',
 		past_days: '1',
 		forecast_days: '2',
@@ -106,6 +109,12 @@ export const GET: RequestHandler = async ({ url }) => {
 		cloudMid: numberAt(hourly.cloud_cover_mid, bestIdx) ?? 0,
 		cloudHigh: numberAt(hourly.cloud_cover_high, bestIdx) ?? 0,
 		visibility,
+		// AQ-4 — surface 10 m wind so the PM2.5 kernel can orient downwind.
+		// Open-Meteo returns wind_speed_10m in m/s (km/h would need wind_speed_unit).
+		// Nullable: upstream may omit these for some grids; the client falls back
+		// to isotropic diffusion when either is null.
+		windSpeed: numberAt(hourly.wind_speed_10m, bestIdx) ?? null,
+		windDirectionDeg: numberAt(hourly.wind_direction_10m, bestIdx) ?? null,
 	};
 
 	return new Response(JSON.stringify(reading), {

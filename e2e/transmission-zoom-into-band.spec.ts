@@ -1,20 +1,13 @@
 import { expect, test } from '@playwright/test';
+import { openTransmissionSheet } from './transmission-helpers';
 
-// V3b-5: zoom-into-band flow. Opens the transmission sheet, clicks a band
-// chip, asserts the detail panel renders the LBL curve, then the "Back to
-// spectrum" button restores the main view.
+// V3b-5: zoom-into-band flow. Opens the point-anchored transmission sheet,
+// clicks a band chip, asserts the detail panel renders the LBL curve, then the
+// "Back to spectrum" button restores the main view.
 
 test.describe('Atmospheric transmission widget — V3b band zoom', () => {
 	test('clicking an H2O band chip opens the LBL detail panel and back restores', async ({ page }) => {
-		await page.setViewportSize({ width: 1280, height: 800 });
-		await page.goto('/');
-		await page.waitForLoadState('networkidle');
-
-		// Open the LayerRail Atmosphere section + transmission sheet.
-		await page.getByRole('button', { name: /^Atmosphere/i }).click();
-		await page.getByRole('button', { name: /Clouds \(MODIS Terra\).*transmission sheet/i }).click();
-
-		const dialog = page.getByRole('dialog', { name: /Atmospheric transmission/i });
+		const dialog = await openTransmissionSheet(page, { waitForLut: true });
 		await expect(dialog).toBeVisible();
 
 		// Click the H2O ψ (1380 nm) chip — strongest H2O band, easy to verify.

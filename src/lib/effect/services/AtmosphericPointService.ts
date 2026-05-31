@@ -31,6 +31,10 @@ export interface AtmosphericPointReading {
 	readonly cloudHigh: number;
 	/** Visibility, meters. */
 	readonly visibility: number;
+	/** AQ-4 — 10 m wind speed, m/s. Null when the point source omits it. */
+	readonly windSpeed: number | null;
+	/** AQ-4 — 10 m wind direction, degrees (meteorological "blows from"). Null when omitted. */
+	readonly windDirectionDeg: number | null;
 	/** ISO-8601 timestamp of the matched forecast hour. */
 	readonly matchedTime: string;
 }
@@ -111,9 +115,16 @@ const parseReading = (body: unknown): Effect.Effect<AtmosphericPointReading, Atm
 		cloudMid: obj.cloudMid as number,
 		cloudHigh: obj.cloudHigh as number,
 		visibility: obj.visibility as number,
+		// AQ-4 — wind is optional/tolerant: a missing or non-finite value → null,
+		// which the client reads as "no wind" and falls back to isotropic diffusion.
+		windSpeed: nullableNumber(obj.windSpeed),
+		windDirectionDeg: nullableNumber(obj.windDirectionDeg),
 		matchedTime: obj.matchedTime,
 	});
 };
+
+/** Coerce an unknown JSON field to a finite number, or null when absent/invalid. */
+const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /**
  * Live Layer bound to the global `fetch`. SSR-safe: the fetcher closure

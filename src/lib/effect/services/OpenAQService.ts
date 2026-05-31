@@ -23,11 +23,22 @@ export interface OpenAQBbox {
 	readonly north: number;
 }
 
+/** Criteria pollutants surfaced from OpenAQ, keyed by parameter name. */
+export const POLLUTANT_NAMES = ['pm25', 'pm10', 'no2', 'o3', 'so2', 'co'] as const;
+export type PollutantName = (typeof POLLUTANT_NAMES)[number];
+export interface PollutantReading {
+	readonly value: number;
+	readonly units?: string;
+}
+
 export interface OpenAQSensorFeature {
 	readonly type: 'Feature';
 	readonly properties: {
 		readonly locationName: string;
+		/** PM2.5 µg/m³ (drives the existing heatmap paint); null when not reported. */
 		readonly value: number | null;
+		/** Per-criteria-pollutant latest reading (AQ-1). */
+		readonly pollutants: Partial<Record<PollutantName, PollutantReading>>;
 		readonly locationId?: number;
 	};
 	readonly geometry: { readonly type: 'Point'; readonly coordinates: readonly [number, number] };
@@ -105,9 +116,10 @@ const parseCollection = (body: unknown): Effect.Effect<OpenAQSensorCollection, O
 		const value = typeof props.value === 'number' && Number.isFinite(props.value) ? props.value : null;
 		const locationName = typeof props.locationName === 'string' ? props.locationName : 'Unknown';
 		const locationId = typeof props.locationId === 'number' ? props.locationId : undefined;
+		const pollutants = parsePollutants(props.pollutants);
 		features.push({
 			type: 'Feature',
-			properties: { locationName, value, locationId },
+			properties: { locationName, value, pollutants, locationId },
 			geometry: { type: 'Point', coordinates: [lon, lat] as const },
 		});
 	}
@@ -116,6 +128,20 @@ const parseCollection = (body: unknown): Effect.Effect<OpenAQSensorCollection, O
 		features,
 		degraded: obj.degraded === true,
 	});
+};
+
+const parsePollutants = (raw: unknown): Partial<Record<PollutantName, PollutantReading>> => {
+	if (typeof raw !== 'object' || raw === null) return {};
+	const obj = raw as Record<string, unknown>;
+	const out: Partial<Record<PollutantName, PollutantReading>> = {};
+	for (const name of POLLUTANT_NAMES) {
+		const entry = obj[name];
+		if (typeof entry !== 'object' || entry === null) continue;
+		const e = entry as Record<string, unknown>;
+		if (typeof e.value !== 'number' || !Number.isFinite(e.value)) continue;
+		out[name] = typeof e.units === 'string' ? { value: e.value, units: e.units } : { value: e.value };
+	}
+	return out;
 };
 
 export const OpenAQServiceLive: Layer.Layer<OpenAQService> = Layer.suspend(() =>

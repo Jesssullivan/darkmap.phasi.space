@@ -28,13 +28,17 @@ test.describe('Guided tour', () => {
 		await expect(dialog).toContainText(/Layers live here/i);
 		await expect(dialog).toContainText(/1 \/ 4/);
 
-		// Step 2 — the atmosphere/spectral step; its prepare() expands the section.
+		// Step 2 — atmosphere overlays. V3 transmission is point-anchored, so the
+		// tour explains the selected-point path instead of surfacing a LayerRail CTA.
 		await dialog.getByRole('button', { name: /^Next$/ }).click();
 		await expect(dialog).toContainText(/spectral transmission/i);
-		await expect(page.getByRole('button', { name: /Open spectral transmission analysis/i })).toBeVisible();
+		await expect(dialog).toContainText(/point readout/i);
+
+		// Step 3 names the exact clicked-point readout surface.
+		await dialog.getByRole('button', { name: /^Next$/ }).click();
+		await expect(dialog).toContainText(/directable spectral-transmission/i);
 
 		// Advance to the final step → the primary action becomes "Done".
-		await dialog.getByRole('button', { name: /^Next$/ }).click();
 		await dialog.getByRole('button', { name: /^Next$/ }).click();
 		await dialog.getByRole('button', { name: /^Done$/ }).click();
 		await expect(dialog).not.toBeVisible();

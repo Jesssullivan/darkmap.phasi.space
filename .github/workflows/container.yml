@@ -97,6 +97,14 @@ jobs:
         # GitHub Enterprise plan. User-owned private repos return
         # "Feature not available" and fail the step. Skip it cleanly
         # until the repo flips public.
+        #
+        # continue-on-error: the image is already built and pushed by the
+        # step above; attestation is best-effort SLSA provenance. Sigstore's
+        # Rekor transparency log intermittently 404s on tlog-entry fetch
+        # ("InternalError: error fetching tlog entry - (404)"), and a
+        # provenance-service flake must never gate the production deploy
+        # (the Staging deploy workflow_run is gated on this job's success).
+        continue-on-error: true
         if: github.event_name != 'pull_request' && !github.event.repository.private
         uses: actions/attest-build-provenance@v2
         with:

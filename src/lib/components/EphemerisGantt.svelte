@@ -886,7 +886,7 @@
 		opacity: 0.7;
 		color: #e9ecf3;
 	}
-	@media (max-width: 820px) {
+	@media (max-width: 820px), (max-height: 500px) {
 		.gantt {
 			left: 0.75rem;
 			right: var(--map-toolbar-inset-rem, 5rem);

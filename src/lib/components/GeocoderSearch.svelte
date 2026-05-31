@@ -21,10 +21,22 @@
 		bias?: { lat: number; lon: number };
 		debounceMs?: number;
 		placeholder?: string;
+		/**
+		 * Render in normal document flow instead of the map-overlay default
+		 * (fixed, top-centre). The `/aq` dashboard embeds the search inline in
+		 * its header; the map leaves it floating. Default keeps the overlay.
+		 */
+		inline?: boolean;
 		onSelect: (sel: { lat: number; lon: number; label: string }) => void;
 	}
 
-	let { bias, debounceMs = 250, placeholder = 'Search place or paste coords…', onSelect }: Props = $props();
+	let {
+		bias,
+		debounceMs = 250,
+		placeholder = 'Search place or paste coords…',
+		inline = false,
+		onSelect,
+	}: Props = $props();
 
 	let query = $state('');
 	let results = $state<readonly GeocodeResult[]>([]);
@@ -131,7 +143,14 @@
 	};
 </script>
 
-<div class="geocoder" role="combobox" aria-haspopup="listbox" aria-expanded={open} aria-controls="geocoder-listbox">
+<div
+	class="geocoder"
+	class:inline
+	role="combobox"
+	aria-haspopup="listbox"
+	aria-expanded={open}
+	aria-controls="geocoder-listbox"
+>
 	<input
 		type="search"
 		class="search-input"
@@ -176,12 +195,29 @@
 <style>
 	.geocoder {
 		position: fixed;
-		top: 1rem;
+		/* Honor the notch in landscape (matches the stacking-contract safe-area rule). */
+		top: max(1rem, env(safe-area-inset-top));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 11;
 		width: min(28rem, calc(100vw - 6rem));
 		font-family: var(--font-mono, ui-monospace, monospace);
+	}
+	/* Inline variant: sit in normal flow (dashboard header) instead of floating.
+	   `relative` so the dropdown overlays following content rather than pushing it. */
+	.geocoder.inline {
+		position: relative;
+		top: auto;
+		left: auto;
+		transform: none;
+		z-index: auto;
+		width: 100%;
+	}
+	.geocoder.inline .dropdown {
+		position: absolute;
+		left: 0;
+		right: 0;
+		z-index: 20;
 	}
 	.search-input {
 		width: 100%;
