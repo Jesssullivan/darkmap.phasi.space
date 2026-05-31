@@ -47,6 +47,7 @@
 	// non-home route the link navigates back to `/` and scrolls to the section.
 	const navLinks: { href: string; label: string }[] = [
 		{ href: '/', label: 'Overview' },
+		{ href: '/aq', label: 'Air quality' },
 		{ href: '/docs#contact', label: 'Contact' },
 	];
 

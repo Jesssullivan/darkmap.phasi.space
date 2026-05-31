@@ -3,6 +3,7 @@ import { AOD550_AXIS } from '$lib/spectral/transmission-axes';
 import {
 	DEFAULT_DIFFUSION,
 	estimatePm25At,
+	estimatePollutantAt,
 	formatNearestKm,
 	formatStationCount,
 	haversineKm,
@@ -163,6 +164,89 @@ describe('estimatePm25At — distance weighting', () => {
 	});
 });
 
+/* ---------------------- AQ-4 wind-anisotropic kernel ---------------------- */
+
+describe('estimatePm25At — wind anisotropy (AQ-4)', () => {
+	it('is identical to the isotropic default when no wind is supplied', () => {
+		const stations = [station(-100.06, 40.0, 10), station(-100.0, 40.36, 50), station(-99.9, 39.95, 30)];
+		const base = estimatePm25At(stations, -100, 40);
+		// Passing params WITHOUT wind, and params with a zero-speed wind, must both
+		// reproduce the default isotropic estimate byte-for-byte.
+		const noWind = estimatePm25At(stations, -100, 40, { ...DEFAULT_DIFFUSION });
+		const calm = estimatePm25At(stations, -100, 40, {
+			...DEFAULT_DIFFUSION,
+			wind: { directionDeg: 270, speedMps: 0 },
+		});
+		expect(noWind.valueUgm3).toBe(base.valueUgm3);
+		expect(calm.valueUgm3).toBe(base.valueUgm3);
+		expect(calm.effectiveStations).toBe(base.effectiveStations);
+	});
+
+	it('weights a downwind station more than an equally distant crosswind station', () => {
+		// Wind FROM the west (270° meteorological) → blows toward the east.
+		const wind = { directionDeg: 270, speedMps: 6 };
+		// Two stations ~20 km from the query point: one due east (downwind), one
+		// due north (crosswind), both reading the same value.
+		const eastLon = -100 + 20 / (111.32 * Math.cos((40 * Math.PI) / 180));
+		const downwind = estimatePm25At([station(eastLon, 40, 50)], -100, 40, { ...DEFAULT_DIFFUSION, wind });
+		const northLat = 40 + 20 / 111.32;
+		const crosswind = estimatePm25At([station(-100, northLat, 50)], -100, 40, { ...DEFAULT_DIFFUSION, wind });
+		// Mix each far station with a shared neutral near anchor; the downwind
+		// 50-station carries more kernel weight than the crosswind one at equal
+		// great-circle distance, pulling the estimate higher.
+		const near = station(-100.04, 40, 10); // ~3.4 km neutral anchor
+		const downMix = estimatePm25At([near, station(eastLon, 40, 50)], -100, 40, { ...DEFAULT_DIFFUSION, wind });
+		const crossMix = estimatePm25At([near, station(-100, northLat, 50)], -100, 40, { ...DEFAULT_DIFFUSION, wind });
+		expect(downMix.valueUgm3!).toBeGreaterThan(crossMix.valueUgm3!);
+		// Single-station estimates still recover the lone value either way.
+		expect(downwind.valueUgm3!).toBeCloseTo(50, 6);
+		expect(crosswind.valueUgm3!).toBeCloseTo(50, 6);
+	});
+
+	it('elongates more strongly as wind speed rises (monotonic)', () => {
+		// Downwind (east) station + a neutral near anchor; faster wind should
+		// stretch the kernel further downwind and weight the far station more.
+		const eastLon = -100 + 35 / (111.32 * Math.cos((40 * Math.PI) / 180));
+		const near = station(-100.04, 40, 10);
+		const far = station(eastLon, 40, 60);
+		const slow = estimatePm25At([near, far], -100, 40, {
+			...DEFAULT_DIFFUSION,
+			wind: { directionDeg: 270, speedMps: 1 },
+		});
+		const fast = estimatePm25At([near, far], -100, 40, {
+			...DEFAULT_DIFFUSION,
+			wind: { directionDeg: 270, speedMps: 6 },
+		});
+		// Faster wind → far downwind station carries more weight → higher estimate.
+		expect(fast.valueUgm3!).toBeGreaterThan(slow.valueUgm3!);
+	});
+
+	it('respects the maxRadius cutoff on raw great-circle distance even with wind', () => {
+		// Station ~90 km downwind — beyond the 75 km cutoff — must not contribute,
+		// regardless of how the wind would otherwise elongate the kernel.
+		const eastLon = -100 + 90 / (111.32 * Math.cos((40 * Math.PI) / 180));
+		const est = estimatePm25At([station(eastLon, 40, 50)], -100, 40, {
+			...DEFAULT_DIFFUSION,
+			wind: { directionDeg: 270, speedMps: 10 },
+		});
+		expect(est.valueUgm3).toBeNull();
+		expect(est.confidence).toBe('none');
+		expect(est.contributingStations).toBe(0);
+	});
+
+	it('honors a custom anisotropy cap', () => {
+		const eastLon = -100 + 35 / (111.32 * Math.cos((40 * Math.PI) / 180));
+		const near = station(-100.04, 40, 10);
+		const far = station(eastLon, 40, 60);
+		const wind = { directionDeg: 270, speedMps: 6 };
+		const tame = estimatePm25At([near, far], -100, 40, { ...DEFAULT_DIFFUSION, wind, anisotropy: 1.2 });
+		const wild = estimatePm25At([near, far], -100, 40, { ...DEFAULT_DIFFUSION, wind, anisotropy: 4 });
+		// A larger anisotropy cap stretches the kernel further downwind → the far
+		// downwind station carries more weight → higher estimate.
+		expect(wild.valueUgm3!).toBeGreaterThan(tame.valueUgm3!);
+	});
+});
+
 /* ----------------------------- pm25ToAod550 ----------------------------- */
 
 describe('pm25ToAod550', () => {
@@ -190,5 +274,34 @@ describe('pm25ToAod550', () => {
 
 	it('treats a negative reading as 0 floor', () => {
 		expect(pm25ToAod550(-5)).toBe(0);
+	});
+});
+
+describe('estimatePollutantAt (AQ-1)', () => {
+	const stations: Pm25Station[] = [
+		{ lon: 0, lat: 0, value: 10, pollutants: { pm25: 10, no2: 40, o3: null } },
+		{ lon: 0.01, lat: 0.01, value: 12, pollutants: { pm25: 12, no2: 60 } },
+	];
+
+	it('diffuses pm25 via the station value field', () => {
+		const e = estimatePollutantAt(stations, 0, 0, 'pm25');
+		expect(e.valueUgm3).not.toBeNull();
+		expect(e.valueUgm3!).toBeGreaterThan(9);
+		expect(e.valueUgm3!).toBeLessThan(13);
+	});
+
+	it('diffuses a non-pm25 pollutant from the pollutants map', () => {
+		const e = estimatePollutantAt(stations, 0, 0, 'no2');
+		expect(e.valueUgm3).not.toBeNull();
+		expect(e.confidence).not.toBe('none');
+	});
+
+	it('returns none when no station reports the pollutant', () => {
+		expect(estimatePollutantAt(stations, 0, 0, 'so2').confidence).toBe('none');
+	});
+
+	it('skips null pollutant readings (no fabrication)', () => {
+		// Only station 1 has o3 and it is null → no coverage.
+		expect(estimatePollutantAt(stations, 0, 0, 'o3').confidence).toBe('none');
 	});
 });

@@ -27,6 +27,22 @@ export interface Pm25Station {
 	readonly lon: number;
 	readonly lat: number;
 	readonly value: number | null;
+	/**
+	 * AQ-1 — per-criteria-pollutant latest reading at this station, keyed by
+	 * OpenAQ parameter name (pm25/pm10/no2/o3/so2/co). `value` mirrors
+	 * `pollutants.pm25` for the existing PM2.5 paths. Absent on test stations.
+	 */
+	readonly pollutants?: Readonly<Record<string, number | null>>;
+}
+
+/**
+ * AQ-4 — optional wind vector for anisotropic diffusion. Direction uses the
+ * METEOROLOGICAL convention: the compass bearing (degrees clockwise from north)
+ * the wind is blowing FROM. The downwind axis is therefore `directionDeg + 180`.
+ */
+export interface WindVector {
+	readonly directionDeg: number;
+	readonly speedMps: number;
 }
 
 export interface DiffusionParams {
@@ -36,6 +52,19 @@ export interface DiffusionParams {
 	readonly maxRadiusKm: number;
 	/** Effective-sample-size threshold at/above which the estimate is "high" confidence. */
 	readonly minEffectiveStationsHigh: number;
+	/**
+	 * AQ-4 — optional wind. When present with `speedMps > 0`, the Gaussian
+	 * kernel becomes an ellipse stretched along the downwind axis so plumes
+	 * extend the way the air is actually moving. Absent / calm → isotropic,
+	 * byte-for-byte identical to the original behavior.
+	 */
+	readonly wind?: WindVector;
+	/**
+	 * AQ-4 — cap on the along-wind σ multiplier (the kernel's elongation at
+	 * high wind speed). σ_along grows from `bandwidthKm` (calm) toward
+	 * `bandwidthKm * anisotropy` (windy). Default 2.5.
+	 */
+	readonly anisotropy?: number;
 }
 
 /**
@@ -80,10 +109,83 @@ export const haversineKm = (aLon: number, aLat: number, bLon: number, bLat: numb
 const hasReading = (s: Pm25Station): s is Pm25Station & { value: number } =>
 	typeof s.value === 'number' && Number.isFinite(s.value);
 
+/** Default cap on along-wind elongation when `anisotropy` is unspecified. */
+const DEFAULT_ANISOTROPY = 2.5;
+
+/**
+ * Wind speed (m/s) at which the along-wind σ reaches its full elongation cap.
+ * A light ~6 m/s breeze already stretches the plume to the cap; below that the
+ * elongation ramps linearly. This is an engineering heuristic, not a calibrated
+ * dispersion length scale.
+ */
+const WIND_FULL_SCALE_MPS = 6;
+
+/**
+ * AQ-4 — along-wind σ multiplier as a function of wind speed: 1 (calm) ramping
+ * linearly to `anisotropy` at/above {@link WIND_FULL_SCALE_MPS}.
+ */
+const alongWindScale = (speedMps: number, anisotropy: number): number =>
+	1 + (anisotropy - 1) * Math.min(1, Math.max(0, speedMps) / WIND_FULL_SCALE_MPS);
+
+/**
+ * AQ-4 — build the per-station Gaussian-weight kernel. Without usable wind this
+ * is the original isotropic `exp(-0.5 (d/σ)²)`. With wind it is an elliptical
+ * kernel: the station's local east/north offset (equirectangular approximation
+ * about the query latitude) is rotated into along-wind / cross-wind components,
+ * and each axis gets its own σ — cross-wind keeps `bandwidthKm`, along-wind is
+ * stretched by {@link alongWindScale}. The downwind axis points toward
+ * `directionDeg + 180` (meteorological "blows from" convention), so a station
+ * sitting downwind of the query point is weighted more heavily than an equally
+ * distant crosswind station.
+ *
+ * Honest caveat: this is an engineering heuristic to make plumes lean the way
+ * the wind blows, NOT a calibrated Gaussian-plume dispersion model. The σ values
+ * are spatial-correlation bandwidths, not physical dispersion coefficients.
+ */
+const makeKernel = (
+	lon: number,
+	lat: number,
+	params: DiffusionParams,
+): ((stationLon: number, stationLat: number, d: number) => number) => {
+	const sigma = params.bandwidthKm;
+	const wind = params.wind;
+	if (!wind || !(wind.speedMps > 0)) {
+		return (_sLon, _sLat, d) => Math.exp(-0.5 * (d / sigma) ** 2);
+	}
+
+	const anisotropy = params.anisotropy ?? DEFAULT_ANISOTROPY;
+	const sigmaCross = sigma;
+	const sigmaAlong = sigma * alongWindScale(wind.speedMps, anisotropy);
+
+	// Downwind unit vector in (east, north) from the meteorological direction.
+	const downwindDeg = wind.directionDeg + 180;
+	const downwindRad = toRad(downwindDeg);
+	// Compass bearing → (east = sin, north = cos), clockwise from north.
+	const eHat = Math.sin(downwindRad);
+	const nHat = Math.cos(downwindRad);
+	const cosLat = Math.cos(toRad(lat));
+
+	return (stationLon, stationLat) => {
+		// Local equirectangular offsets, km.
+		const dNorthKm = (stationLat - lat) * 111.32;
+		const dEastKm = (stationLon - lon) * 111.32 * cosLat;
+		// Project onto along-wind (parallel to downwind axis) and cross-wind axes.
+		const along = dEastKm * eHat + dNorthKm * nHat;
+		const cross = -dEastKm * nHat + dNorthKm * eHat;
+		const dSq = (along / sigmaAlong) ** 2 + (cross / sigmaCross) ** 2;
+		return Math.exp(-0.5 * dSq);
+	};
+};
+
 /**
  * Estimate PM2.5 at (lon, lat) from the station set using a Gaussian
  * distance kernel. Null-valued stations are excluded entirely — they are
  * "no reading", never zero pollution.
+ *
+ * AQ-4 — when `params.wind` is supplied with a positive speed the kernel is an
+ * ellipse oriented downwind (see {@link makeKernel}); absent/calm wind keeps the
+ * original isotropic behavior unchanged. The `maxRadiusKm` cutoff and the Kish
+ * effective-N confidence are applied to the raw great-circle distance either way.
  */
 export const estimatePm25At = (
 	stations: readonly Pm25Station[],
@@ -91,7 +193,7 @@ export const estimatePm25At = (
 	lat: number,
 	params: DiffusionParams = DEFAULT_DIFFUSION,
 ): Pm25Estimate => {
-	const sigma = params.bandwidthKm;
+	const kernel = makeKernel(lon, lat, params);
 	let sumW = 0;
 	let sumWsq = 0;
 	let sumWV = 0;
@@ -104,7 +206,7 @@ export const estimatePm25At = (
 		if (d > params.maxRadiusKm) continue;
 		contributing += 1;
 		if (nearestKm === null || d < nearestKm) nearestKm = d;
-		const w = Math.exp(-0.5 * (d / sigma) ** 2);
+		const w = kernel(station.lon, station.lat, d);
 		sumW += w;
 		sumWsq += w * w;
 		sumWV += w * station.value;
@@ -124,6 +226,27 @@ export const estimatePm25At = (
 		nearestKm,
 		contributingStations: contributing,
 	};
+};
+
+/**
+ * AQ-1 — kernel-diffuse an arbitrary criteria pollutant at a point by reusing
+ * the same Gaussian estimator over each station's reading for that pollutant.
+ * `valueUgm3` carries the pollutant's value (in its native units); confidence /
+ * coverage are pollutant-specific (a station may report PM2.5 but not O₃).
+ */
+export const estimatePollutantAt = (
+	stations: readonly Pm25Station[],
+	lon: number,
+	lat: number,
+	pollutant: string,
+	params: DiffusionParams = DEFAULT_DIFFUSION,
+): Pm25Estimate => {
+	const view: Pm25Station[] = stations.map((s) => ({
+		lon: s.lon,
+		lat: s.lat,
+		value: pollutant === 'pm25' ? s.value : (s.pollutants?.[pollutant] ?? null),
+	}));
+	return estimatePm25At(view, lon, lat, params);
 };
 
 /**

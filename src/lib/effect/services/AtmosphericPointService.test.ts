@@ -16,6 +16,8 @@ const sampleReading = {
 	cloudMid: 4,
 	cloudHigh: 41,
 	visibility: 18_500,
+	windSpeed: 3.6,
+	windDirectionDeg: 215,
 	matchedTime: '2026-05-27T22:00',
 };
 
@@ -72,7 +74,28 @@ describe('AtmosphericPointService — getReading', () => {
 		expect(exit.value.cloudMid).toBe(4);
 		expect(exit.value.cloudHigh).toBe(41);
 		expect(exit.value.visibility).toBe(18_500);
+		expect(exit.value.windSpeed).toBe(3.6);
+		expect(exit.value.windDirectionDeg).toBe(215);
 		expect(exit.value.matchedTime).toBe('2026-05-27T22:00');
+	});
+
+	it('tolerates missing wind fields by leaving them null (AQ-4)', async () => {
+		const { windSpeed: _ws, windDirectionDeg: _wd, ...noWind } = sampleReading;
+		void _ws;
+		void _wd;
+		const exit = await runWith(fakeOk(noWind));
+		if (exit._tag !== 'Success') throw new Error(`expected Success, got ${JSON.stringify(exit)}`);
+		expect(exit.value.windSpeed).toBeNull();
+		expect(exit.value.windDirectionDeg).toBeNull();
+		// The rest of the reading is unaffected.
+		expect(exit.value.rh).toBe(78);
+	});
+
+	it('coerces a non-finite wind value to null rather than failing (AQ-4)', async () => {
+		const exit = await runWith(fakeOk({ ...sampleReading, windSpeed: 'gusty', windDirectionDeg: null }));
+		if (exit._tag !== 'Success') throw new Error(`expected Success, got ${JSON.stringify(exit)}`);
+		expect(exit.value.windSpeed).toBeNull();
+		expect(exit.value.windDirectionDeg).toBeNull();
 	});
 
 	it('allows PWV to be unavailable while preserving the rest of the reading', async () => {

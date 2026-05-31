@@ -361,11 +361,11 @@ pre.shiki span {
       12      TransmissionSheet    bottom-right (full-width bottom sheet ≤640px)
       12      LayerRail toggle     top-left
 
-   Bottom-stack rule: mobile bottom panels reserve the twilight strip's
-   height (#267) and the toolbar's width, and every edge-anchored panel
-   uses `max(<gap>, env(safe-area-inset-*))` so notched-landscape never
-   clips it. The transmission sheet (z-12) intentionally floats over the
-   readout (z-11) when both are open. */
+   Bottom-stack rule: the page-level `.field-hud` layout owner in
+   `src/routes/+page.svelte` sets the active mobile slot state. Mobile
+   bottom panels reserve the twilight strip's height (#267), the toolbar's
+   width, and every edge-anchored panel uses safe-area aware gaps so
+   notched-landscape never clips it. */
 
 /* ===== Queried-point locator marker =====
    Imperative MapLibre marker (lives outside the Svelte tree), so styled

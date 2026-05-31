@@ -1,0 +1,198 @@
+name: Browser RBE proof
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      consumer_ref:
+        description: 'Consumer commit/ref to prove. Defaults to the workflow SHA.'
+        required: false
+        type: string
+      target:
+        description: 'Bazel browser smoke target to prove.'
+        required: false
+        default: '//:playwright_browser_rbe_smoke_suite'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-rbe-proof-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  GF_REAPI_CELL_IMAGE_DIGEST: ${{ vars.GF_REAPI_CELL_IMAGE_DIGEST || 'sha256:a567696e341f6eb0589ece9efd6014a2133a4f10831bdad31e8dd84055eff8a0' }}
+  GF_REAPI_PROOF_ENABLED: ${{ vars.GF_REAPI_PROOF_ENABLED || 'false' }}
+  GF_REAPI_PROOF_TARGET: ${{ inputs.target || '//:playwright_browser_rbe_smoke_suite' }}
+
+jobs:
+  browser-rbe-proof:
+    name: browser-rbe-proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Resolve proof request
+        id: request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          INPUT_CONSUMER_REF: ${{ inputs.consumer_ref || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || '' }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          target="${GF_REAPI_PROOF_TARGET}"
+          should_run="false"
+          reason=""
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            consumer_ref="${INPUT_CONSUMER_REF:-${GITHUB_SHA_VALUE}}"
+            should_run="true"
+            reason="manual workflow_dispatch"
+          elif [ "${PR_HEAD_REPOSITORY}" != "${REPOSITORY}" ]; then
+            consumer_ref="${PR_HEAD_SHA}"
+            reason="external fork PRs cannot receive the cross-repo GF dispatch secret; run workflow_dispatch after maintainer review"
+          elif [ "${GF_REAPI_PROOF_ENABLED}" = "true" ]; then
+            consumer_ref="${PR_HEAD_SHA}"
+            should_run="true"
+            reason="same-repo PR with GF_REAPI_PROOF_ENABLED=true"
+          else
+            consumer_ref="${PR_HEAD_SHA}"
+            reason="GF_REAPI_PROOF_ENABLED is not true"
+          fi
+
+          {
+            echo "target=${target}"
+            echo "consumer_ref=${consumer_ref}"
+            echo "should_run=${should_run}"
+            echo "reason=${reason}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "### Browser RBE proof request"
+            echo
+            echo "- target: \`${target}\`"
+            echo "- consumer ref: \`${consumer_ref}\`"
+            echo "- should run: \`${should_run}\`"
+            echo "- reason: ${reason}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Require GF dispatch token
+        if: steps.request.outputs.should_run == 'true'
+        shell: bash
+        env:
+          GF_REAPI_PROOF_DISPATCH_TOKEN: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GF_REAPI_PROOF_DISPATCH_TOKEN}" ]; then
+            {
+              echo "::error::GF_REAPI_PROOF_DISPATCH_TOKEN is required to dispatch and verify the GloriousFlywheel proof"
+              echo "Configure a repo secret with Actions read/write access to tinyland-inc/GloriousFlywheel, then rerun this workflow."
+            } >&2
+            exit 1
+          fi
+
+      - name: Dispatch and await GloriousFlywheel proof
+        id: proof
+        if: steps.request.outputs.should_run == 'true'
+        uses: tinyland-inc/ci-templates/.github/actions/flywheel-reapi-proof@v2
+        with:
+          image_digest: ${{ env.GF_REAPI_CELL_IMAGE_DIGEST }}
+          target: ${{ steps.request.outputs.target }}
+          bazel_command: test
+          consumer_repository: Jesssullivan/darkmap.phasi.space
+          consumer_ref: ${{ steps.request.outputs.consumer_ref }}
+          consumer_checkout_authority: github-app
+          force_execution: 'true'
+          wait: 'true'
+          dispatch_token: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
+
+      - name: Verify GF proof artifact
+        if: steps.request.outputs.should_run == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
+          GF_RUN_ID: ${{ steps.proof.outputs.run_id }}
+          GF_RUN_URL: ${{ steps.proof.outputs.run_url }}
+          EXPECTED_TARGET: ${{ steps.request.outputs.target }}
+          EXPECTED_CONSUMER_REF: ${{ steps.request.outputs.consumer_ref }}
+          EXPECTED_IMAGE_DIGEST: ${{ env.GF_REAPI_CELL_IMAGE_DIGEST }}
+        run: |
+          set -euo pipefail
+
+          evidence_dir="${RUNNER_TEMP}/gf-proof-${GF_RUN_ID}"
+          mkdir -p "${evidence_dir}"
+          gh run download "${GF_RUN_ID}" \
+            --repo tinyland-inc/GloriousFlywheel \
+            --name "gf-reapi-cell-proof-${GF_RUN_ID}" \
+            --dir "${evidence_dir}"
+
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          evidence_dir = pathlib.Path(os.environ["RUNNER_TEMP"]) / f"gf-proof-{os.environ['GF_RUN_ID']}"
+          proof_path = evidence_dir / "proof-result.json"
+          if not proof_path.is_file():
+              print(f"::error::missing proof artifact file: {proof_path}", file=sys.stderr)
+              sys.exit(1)
+
+          proof = json.loads(proof_path.read_text())
+          errors = []
+
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  errors.append(message)
+
+          request = proof.get("request") or {}
+          require(proof.get("countable_remote_execution") is True, "countable_remote_execution must be true")
+          require(int(proof.get("remote_processes") or 0) > 0, "remote_processes must be greater than zero")
+          require(proof.get("cache_hits_only") is False, "cache_hits_only must be false")
+          require(proof.get("force_execution") is True, "force_execution must be true")
+          require(proof.get("worker_image_digest") == os.environ["EXPECTED_IMAGE_DIGEST"], "worker_image_digest mismatch")
+          require(request.get("target") == os.environ["EXPECTED_TARGET"], "proof target mismatch")
+          require(request.get("bazel_command") == "test", "bazel_command must be test")
+          require(request.get("consumer_repository") == "Jesssullivan/darkmap.phasi.space", "consumer_repository mismatch")
+          require(request.get("consumer_ref") == os.environ["EXPECTED_CONSUMER_REF"], "consumer_ref mismatch")
+          require(request.get("workflow_run_id") == os.environ["GF_RUN_ID"], "workflow_run_id mismatch")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}", file=sys.stderr)
+              sys.exit(1)
+
+          summary = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a") as handle:
+              handle.write("\n### Verified GF proof artifact\n\n")
+              handle.write(f"- run: {os.environ['GF_RUN_URL']}\n")
+              handle.write(f"- target: `{request.get('target')}`\n")
+              handle.write(f"- consumer ref: `{request.get('consumer_ref')}`\n")
+              handle.write(f"- countable remote execution: `{proof.get('countable_remote_execution')}`\n")
+              handle.write(f"- remote processes: `{proof.get('remote_processes')}`\n")
+              handle.write(f"- process summary: `{proof.get('process_summary')}`\n")
+              handle.write(f"- worker image digest: `{proof.get('worker_image_digest')}`\n")
+
+          print("GF proof artifact verified")
+          PY
+
+      - name: Record skipped proof
+        if: steps.request.outputs.should_run != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "Browser RBE proof was not dispatched."
+            echo "Reason: ${{ steps.request.outputs.reason }}"
+            echo
+            echo "To make this a live PR signal, configure:"
+            echo "- repo variable \`GF_REAPI_PROOF_ENABLED=true\`"
+            echo "- repo secret \`GF_REAPI_PROOF_DISPATCH_TOKEN\` with permission to dispatch and read tinyland-inc/GloriousFlywheel Actions runs"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,6 +1,16 @@
 """Bazel targets for the darkmap cache-state unit-test slice."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+js_library(
+    name = "cache_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "cache_srcs",

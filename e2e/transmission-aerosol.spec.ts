@@ -1,28 +1,14 @@
 import { expect, test } from '@playwright/test';
+import { openTransmissionSheet } from './transmission-helpers';
 
-// V2-E: aerosol picker + slider interaction. Opens the transmission sheet,
-// flips on a live-Mie aerosol type, asserts the source chip updates and the
-// LUT round-trip fires; then drags the AOD slider and asserts the recompute
-// completes without throwing.
+// V2-E: aerosol picker + slider interaction. Opens the point-anchored
+// transmission sheet, flips on a live-Mie aerosol type, asserts the chip state
+// updates and the Ångström slider disables; then drags the AOD slider and
+// asserts the recompute completes without throwing.
 
 test.describe('Atmospheric transmission widget — V2 live aerosol controls', () => {
 	test('selecting an aerosol type updates the source label and re-fetches', async ({ page }) => {
-		await page.setViewportSize({ width: 1280, height: 800 });
-		await page.goto('/');
-		await page.waitForLoadState('networkidle');
-
-		const atmosphereHeader = page.getByRole('button', { name: /^Atmosphere/i });
-		await atmosphereHeader.click();
-
-		const infoBtn = page.getByRole('button', { name: /Clouds \(MODIS Terra\).*transmission sheet/i });
-		const initialLutRequest = page.waitForRequest((req) => req.url().includes('/spectral-lut.json'), {
-			timeout: 10_000,
-		});
-		await infoBtn.click();
-
-		// Initial load — wait for first LUT fetch + dialog render.
-		await initialLutRequest;
-		const dialog = page.getByRole('dialog', { name: /Atmospheric transmission/i });
+		const dialog = await openTransmissionSheet(page, { waitForLut: true });
 		await expect(dialog).toBeVisible();
 
 		// Confirm the "Off" chip is the active default.
@@ -41,14 +27,7 @@ test.describe('Atmospheric transmission widget — V2 live aerosol controls', ()
 	});
 
 	test('AOD slider drag triggers a recompute', async ({ page }) => {
-		await page.setViewportSize({ width: 1280, height: 800 });
-		await page.goto('/');
-		await page.waitForLoadState('networkidle');
-
-		await page.getByRole('button', { name: /^Atmosphere/i }).click();
-		await page.getByRole('button', { name: /Clouds \(MODIS Terra\).*transmission sheet/i }).click();
-
-		const dialog = page.getByRole('dialog', { name: /Atmospheric transmission/i });
+		const dialog = await openTransmissionSheet(page, { waitForLut: true });
 		await expect(dialog).toBeVisible();
 
 		const aodSlider = dialog.getByRole('slider', { name: /AOD550/i });
