@@ -14,6 +14,7 @@
 		type PollenReading,
 	} from '$lib/effect/services/AirQualityService';
 	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
+	import { computeAqi, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -120,6 +121,18 @@
 				}))
 			: [],
 	);
+	// AQ-2 — composite US-EPA AQI from the per-pollutant diffused values. Nowcast
+	// approximation (latest values, not the official averaging windows); pollutants
+	// whose units can't be resolved are skipped rather than guessed.
+	const aqi = $derived.by(() => {
+		if (aqRows.length === 0) return null;
+		const readings: AqiReading[] = aqRows.map((r) => ({
+			pollutant: r.name as AqiPollutant,
+			value: r.est.valueUgm3 as number,
+			units: r.units,
+		}));
+		return computeAqi(readings);
+	});
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -274,6 +287,25 @@
 		{#if !data.viirs && !data.worldAtlas && !data.atmospheric}
 			<p class="loading">No data at this point.</p>
 		{/if}
+	{/if}
+
+	{#if aqi}
+		<section class="aqi">
+			<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
+				<span class="aqi-value">{aqi.aqi}</span>
+				<span class="aqi-meta">
+					<span class="aqi-cat">AQI · {aqi.category.name}</span>
+					<span class="aqi-dom">dominant {POLLUTANT_LABELS[aqi.dominant] ?? aqi.dominant}</span>
+				</span>
+				<HelpTooltip
+					text="US-EPA Air Quality Index, composited as the max sub-index across the modeled criteria pollutants. Nowcast approximation: built from the latest kernel-diffused values, NOT the official averaging windows (PM 24-hr, O₃/CO 8-hr, SO₂/NO₂ 1-hr). Pollutants whose units can't be resolved are skipped."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">≈ nowcast</span>
+					{/snippet}
+				</HelpTooltip>
+			</div>
+		</section>
 	{/if}
 
 	{#if pm25 && pm25.valueUgm3 !== null}
@@ -604,6 +636,35 @@
 	.aq-cov.low {
 		color: var(--accent-amber);
 		opacity: 0.8;
+	}
+	.aqi-badge {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.4rem 0.6rem;
+		border-radius: 8px;
+		border: 1px solid color-mix(in srgb, var(--aqi-color) 55%, transparent);
+		background: color-mix(in srgb, var(--aqi-color) 14%, transparent);
+	}
+	.aqi-value {
+		font-size: 1.4rem;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--aqi-color);
+		font-variant-numeric: tabular-nums;
+	}
+	.aqi-meta {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+	}
+	.aqi-cat {
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.aqi-dom {
+		font-size: 0.66rem;
+		opacity: 0.7;
 	}
 	.loading {
 		opacity: 0.55;
