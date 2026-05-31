@@ -78,9 +78,10 @@ try {
 	await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 	await page.getByRole('button', { name: /open layers/i }).waitFor({ timeout: 20_000 });
 	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
-	await page.getByText(/daylight|night|civil twilight|nautical twilight|astronomical twilight/i).waitFor({
-		timeout: 20_000,
-	});
+	await page
+		.getByText(/daylight|night|civil twilight|nautical twilight|astronomical twilight/i)
+		.first()
+		.waitFor({ timeout: 20_000 });
 
 	const mapCanvasCount = await page.locator('canvas.maplibregl-canvas').count();
 	console.log(`darkmap shell smoke observed ${mapCanvasCount} MapLibre canvas node(s)`);
