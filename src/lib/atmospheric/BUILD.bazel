@@ -48,6 +48,7 @@ vitest.vitest_test(
         "src/lib/atmospheric/aqi.test.ts",
         "src/lib/atmospheric/aqi-field.test.ts",
         "src/lib/atmospheric/model-cards.test.ts",
+        "src/lib/atmospheric/openaq-shape.test.ts",
         "src/lib/atmospheric/ozone-climatology.test.ts",
         "src/lib/atmospheric/pm25-diffusion.test.ts",
         "src/lib/atmospheric/path-constituents.test.ts",
