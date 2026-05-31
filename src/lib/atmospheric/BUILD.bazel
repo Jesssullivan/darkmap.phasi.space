@@ -46,6 +46,7 @@ vitest.vitest_test(
         "--config",
         "vitest.bazel.config.ts",
         "src/lib/atmospheric/aqi.test.ts",
+        "src/lib/atmospheric/aqi-field.test.ts",
         "src/lib/atmospheric/model-cards.test.ts",
         "src/lib/atmospheric/ozone-climatology.test.ts",
         "src/lib/atmospheric/pm25-diffusion.test.ts",

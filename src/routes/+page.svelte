@@ -44,6 +44,7 @@
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
+	import { buildAqiField } from '$lib/atmospheric/aqi-field';
 	import {
 		DEFAULT_DIFFUSION,
 		estimatePm25At,
@@ -1222,6 +1223,7 @@
 			pollutantUnits = {};
 			pm25Estimate = null;
 			aqEstimates = null;
+			removeAqiField();
 			if (transmissionOpen) scheduleTransmissionRefresh();
 		}
 	}
@@ -1298,12 +1300,9 @@
 				(src as { setData: (data: OpenAQSensorCollection) => void }).setData(rendered);
 			}
 
-			// Toggle heatmap visibility based on density — at < 5 features the
-			// heatmap is visually empty, so show only the circles for clarity.
-			const heatId = pointHeatmapId(l.id);
-			if (map.getLayer(heatId)) {
-				map.setLayoutProperty(heatId, 'visibility', rendered.features.length >= 5 ? 'visible' : 'none');
-			}
+			// AQ-3 — render the interpolated AQI density field (replaces the heatmap
+			// blur; renderAqiField hides the heatmap layer when it paints).
+			if (l.id === SMOG_LAYER_ID) renderAqiField();
 
 			// Health-state dispatch (#196). degraded:true means OPENAQ_API_KEY is
 			// unset upstream or returned 401/403 — surface as 'no data' so users
@@ -1331,6 +1330,91 @@
 				if (layer) void refreshPointLayer(layer);
 			}
 		}, 500);
+	}
+
+	// AQ-3 — rendered AQI density field. A coarse viewport grid of composite-AQI
+	// cells (from the same kernel diffusion as the readout) rasterized to a
+	// MapLibre `image` source, replacing the heatmap-blur-over-points. Rebuilt
+	// after each smog refresh (which runs on moveend); transparent where there's
+	// no station coverage, so it only paints over real support.
+	const AQI_FIELD_SRC = 'darkmap-aqi-field-src';
+	const AQI_FIELD_LYR = 'darkmap-aqi-field-lyr';
+	let aqiFieldCanvas: HTMLCanvasElement | undefined;
+
+	function removeAqiField(): void {
+		const map = mapInstance;
+		if (!map) return;
+		if (map.getLayer(AQI_FIELD_LYR)) map.removeLayer(AQI_FIELD_LYR);
+		if (map.getSource(AQI_FIELD_SRC)) map.removeSource(AQI_FIELD_SRC);
+	}
+
+	function renderAqiField(): void {
+		const map = mapInstance;
+		if (!map || !layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
+			removeAqiField();
+			return;
+		}
+		if (!map.isStyleLoaded()) {
+			map.once('styledata', renderAqiField);
+			return;
+		}
+		const b = map.getBounds();
+		const bbox = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+		const lonSpan = bbox.east - bbox.west;
+		const latSpan = bbox.north - bbox.south;
+		if (!(lonSpan > 0) || !(latSpan > 0)) {
+			removeAqiField();
+			return;
+		}
+		// Coarse grid (MapLibre linear-resamples the raster to a smooth field); the
+		// height tracks the viewport aspect, capped so a moveend rebuild stays cheap.
+		const gridW = 64;
+		const gridH = Math.min(64, Math.max(1, Math.round(gridW * (latSpan / lonSpan))));
+		const field = buildAqiField(pm25Stations, bbox, gridW, gridH, { units: pollutantUnits, alpha: 150 });
+
+		const heatId = pointHeatmapId(SMOG_LAYER_ID);
+		if (field.painted === 0) {
+			// No coverage in view — show nothing (honest); the station circles remain.
+			removeAqiField();
+			if (map.getLayer(heatId)) map.setLayoutProperty(heatId, 'visibility', 'none');
+			return;
+		}
+
+		if (!aqiFieldCanvas) aqiFieldCanvas = document.createElement('canvas');
+		aqiFieldCanvas.width = field.width;
+		aqiFieldCanvas.height = field.height;
+		const ctx = aqiFieldCanvas.getContext('2d');
+		if (!ctx) return;
+		const img = ctx.createImageData(field.width, field.height);
+		img.data.set(field.rgba);
+		ctx.putImageData(img, 0, 0);
+		const url = aqiFieldCanvas.toDataURL();
+		const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
+			[bbox.west, bbox.north],
+			[bbox.east, bbox.north],
+			[bbox.east, bbox.south],
+			[bbox.west, bbox.south],
+		];
+
+		const existing = map.getSource(AQI_FIELD_SRC) as import('maplibre-gl').ImageSource | undefined;
+		if (existing) {
+			existing.updateImage({ url, coordinates });
+		} else {
+			map.addSource(AQI_FIELD_SRC, { type: 'image', url, coordinates });
+			// Below the station circles (dots stay on top), above the basemap.
+			const circId = pointCircleId(SMOG_LAYER_ID);
+			map.addLayer(
+				{
+					id: AQI_FIELD_LYR,
+					type: 'raster',
+					source: AQI_FIELD_SRC,
+					paint: { 'raster-opacity': 0.85, 'raster-resampling': 'linear', 'raster-fade-duration': 0 },
+				},
+				map.getLayer(circId) ? circId : undefined,
+			);
+		}
+		// The field replaces the heatmap blur.
+		if (map.getLayer(heatId)) map.setLayoutProperty(heatId, 'visibility', 'none');
 	}
 
 	function onChange(id: string, partial: Partial<LayerState>): void {
