@@ -1964,6 +1964,7 @@
 			bottom: auto !important;
 		}
 		.field-hud[data-transmission='open'] :global(.sheet) {
+			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 			bottom: var(--field-panel-bottom) !important;
 			max-height: var(--field-panel-max-height) !important;
 			border-bottom: 1px solid rgba(255, 255, 255, 0.1);
