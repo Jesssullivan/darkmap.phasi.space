@@ -4,6 +4,15 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
+js_library(
+    name = "spectral_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "spectral_srcs",
     srcs = glob(["*.ts"]),
