@@ -630,6 +630,7 @@
 		background: rgba(8, 10, 16, 0.94);
 		color: #e9ecf3;
 		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		box-sizing: border-box;
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.78rem;
 		overflow-y: auto;

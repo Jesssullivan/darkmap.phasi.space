@@ -288,6 +288,7 @@ async function runMobileHudSmoke(page) {
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ state: 'visible', timeout: 20_000 });
+	console.log(`darkmap mobile-hud readout-open precheck ${JSON.stringify(await collectHudMetrics(page))}`);
 	await readout.getByText(/VIIRS pixel/i).waitFor({ state: 'visible', timeout: 20_000 });
 	await readout
 		.getByRole('button', { name: /open spectral transmission analysis/i })
@@ -369,7 +370,7 @@ async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 
 async function collectHudMetrics(page) {
 	return page.evaluate(() => {
-		const selectors = ['.readout[role="dialog"]', '.sheet', '.toolbar', '.gantt', '.attribution'];
+		const selectors = ['.readout[role="dialog"]', '.readout h4', '.sheet', '.toolbar', '.gantt', '.attribution'];
 		return Object.fromEntries(
 			selectors.map((selector) => {
 				const node = document.querySelector(selector);

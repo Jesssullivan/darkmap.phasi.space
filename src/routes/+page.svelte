@@ -1818,10 +1818,15 @@
 		);
 		--field-panel-max-height: min(
 			48vh,
+			calc(100vh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 4.75rem)
+		);
+		--field-panel-max-height: min(
+			48vh,
 			calc(100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 4.75rem)
 		);
 	}
 	.field-hud[data-transmission='open'][data-readout='open'] {
+		--field-panel-max-height: min(40vh, calc(100vh - var(--field-panel-bottom) - 15.25rem));
 		--field-panel-max-height: min(40vh, calc(100dvh - var(--field-panel-bottom) - 15.25rem));
 	}
 	.attribution {
@@ -1842,6 +1847,9 @@
 		.field-hud :global(.readout[role='dialog']) {
 			bottom: calc(
 				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
+			) !important;
+			max-height: calc(
+				100vh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 5rem
 			) !important;
 			max-height: calc(
 				100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 5rem
@@ -1874,6 +1882,7 @@
 	}
 	@media (max-width: 820px) and (orientation: landscape), (max-width: 820px) and (max-height: 500px) {
 		.field-hud[data-transmission='open'][data-readout='open'] {
+			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
 		}
 		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {

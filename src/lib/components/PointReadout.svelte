@@ -477,6 +477,7 @@
 		color: #e9ecf3;
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: 8px;
+		box-sizing: border-box;
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.85rem;
 		z-index: 11;
@@ -712,6 +713,7 @@
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 			min-width: 0;
 			max-width: none;
+			max-height: calc(100vh - var(--field-bottom-reserve, 7.75rem) - env(safe-area-inset-bottom, 0px) - 7.5rem);
 			max-height: calc(100dvh - var(--field-bottom-reserve, 7.75rem) - env(safe-area-inset-bottom, 0px) - 7.5rem);
 			overflow-y: auto;
 			padding: 0.9rem 1rem 1rem;
