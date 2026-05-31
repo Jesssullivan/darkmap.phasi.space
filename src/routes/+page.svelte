@@ -45,11 +45,14 @@
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import {
+		DEFAULT_DIFFUSION,
 		estimatePm25At,
 		estimatePollutantAt,
 		pm25ToAod550,
+		type DiffusionParams,
 		type Pm25Estimate,
 		type Pm25Station,
+		type WindVector,
 	} from '$lib/atmospheric/pm25-diffusion';
 	import { buildTxConstituents, toTransmissionInput, type TxConstituents } from '$lib/atmospheric/tx-constituents';
 	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
@@ -415,18 +418,21 @@
 	 * AOD fallback. Only when the smog overlay is on + stations are in range;
 	 * never fabricates over sparse data (the estimator returns `none` → nothing).
 	 */
-	function refreshPm25Estimate(lat: number, lon: number): void {
+	function refreshPm25Estimate(lat: number, lon: number, wind?: WindVector): void {
 		if (!layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
 			pm25Estimate = null;
 			aqEstimates = null;
 			return;
 		}
-		const est = estimatePm25At(pm25Stations, lon, lat);
+		// AQ-4 — when the clicked point's atmospheric reading carries a non-calm
+		// wind, orient the diffusion kernel downwind; otherwise stay isotropic.
+		const params: DiffusionParams = wind && wind.speedMps > 0 ? { ...DEFAULT_DIFFUSION, wind } : DEFAULT_DIFFUSION;
+		const est = estimatePm25At(pm25Stations, lon, lat, params);
 		pm25Estimate = est.confidence === 'none' ? null : est;
 		// AQ-1 — diffuse every criteria pollutant the cached stations report.
 		const byPollutant: Record<string, Pm25Estimate> = {};
 		for (const p of POLLUTANT_NAMES) {
-			const e = estimatePollutantAt(pm25Stations, lon, lat, p);
+			const e = estimatePollutantAt(pm25Stations, lon, lat, p, params);
 			if (e.confidence !== 'none') byPollutant[p] = e;
 		}
 		aqEstimates = Object.keys(byPollutant).length > 0 ? byPollutant : null;
@@ -969,7 +975,15 @@
 			readout = { lat, lon, loading: false, data };
 			airQualityReading = airQualityExit._tag === 'Success' ? airQualityExit.value : null;
 			// #275 — local PM2.5 estimate for the readout + the modeled AOD fallback.
-			refreshPm25Estimate(lat, lon);
+			// AQ-4 — thread the clicked point's 10 m wind (when present) so the
+			// kernel leans plumes downwind; falls back to isotropic when absent.
+			const windReading =
+				atmosphericExit._tag === 'Success' &&
+				atmosphericExit.value.windSpeed !== null &&
+				atmosphericExit.value.windDirectionDeg !== null
+					? { speedMps: atmosphericExit.value.windSpeed, directionDeg: atmosphericExit.value.windDirectionDeg }
+					: undefined;
+			refreshPm25Estimate(lat, lon, windReading);
 			// V3 — the curve is point-anchored: a new point's PWV / AOD (CAMS or the
 			// PM2.5 bridge) must reseed the open sheet, and the per-pin ephemeris is
 			// reloaded so the boresight's sun/moon snap + terrain occlusion track the
