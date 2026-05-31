@@ -100,6 +100,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'mobile-layers':
 			await runMobileLayersSmoke(page);
 			return;
+		case 'map-canvas':
+			await runMapCanvasSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -171,6 +174,50 @@ async function runMobileLayersSmoke(page) {
 	await page.getByRole('button', { name: /open layers/i }).waitFor({ timeout: 20_000 });
 
 	console.log(`darkmap mobile-layers smoke opened drawer with ${JSON.stringify(metrics)}`);
+}
+
+async function runMapCanvasSmoke(page) {
+	await page.locator('[data-tour="map"]').waitFor({ state: 'attached', timeout: 20_000 });
+	await page.locator('canvas.maplibregl-canvas').first().waitFor({ state: 'attached', timeout: 30_000 });
+	await page.waitForFunction(
+		() => {
+			const map = document.querySelector('[data-tour="map"]');
+			const canvas = document.querySelector('canvas.maplibregl-canvas');
+			if (!(map instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false;
+			const mapRect = map.getBoundingClientRect();
+			const canvasRect = canvas.getBoundingClientRect();
+			return mapRect.width > 300 && mapRect.height > 500 && canvasRect.width > 300 && canvasRect.height > 500;
+		},
+		null,
+		{ timeout: 30_000 },
+	);
+
+	const metrics = await page.evaluate(() => {
+		const map = document.querySelector('[data-tour="map"]');
+		const canvas = document.querySelector('canvas.maplibregl-canvas');
+		const mapRect = map instanceof HTMLElement ? map.getBoundingClientRect() : null;
+		const canvasRect = canvas instanceof HTMLCanvasElement ? canvas.getBoundingClientRect() : null;
+		const gl =
+			canvas instanceof HTMLCanvasElement
+				? (canvas.getContext('webgl2') ?? canvas.getContext('webgl') ?? canvas.getContext('experimental-webgl'))
+				: null;
+		return {
+			canvasBackingHeight: canvas instanceof HTMLCanvasElement ? canvas.height : 0,
+			canvasBackingWidth: canvas instanceof HTMLCanvasElement ? canvas.width : 0,
+			canvasClass: canvas instanceof HTMLElement ? canvas.className : '',
+			canvasHeight: canvasRect?.height ?? 0,
+			canvasWidth: canvasRect?.width ?? 0,
+			controlCount: document.querySelectorAll('.maplibregl-ctrl').length,
+			glContextAvailable: Boolean(gl),
+			mapHeight: mapRect?.height ?? 0,
+			mapWidth: mapRect?.width ?? 0,
+		};
+	});
+	if (metrics.canvasBackingWidth <= 0 || metrics.canvasBackingHeight <= 0) {
+		throw new Error(`MapLibre canvas has no backing store: ${JSON.stringify(metrics)}`);
+	}
+
+	console.log(`darkmap map-canvas smoke observed ${JSON.stringify(metrics)}`);
 }
 
 function findBuildDir() {
