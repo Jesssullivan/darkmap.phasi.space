@@ -1,43 +1,33 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import {
+	buildStationFeature,
+	selectFreshLocations,
+	type StationFeature,
+	type V3Latest,
+	type V3Location,
+} from '$lib/atmospheric/openaq-shape';
 
 /**
- * OpenAQ v3 PM2.5 proxy. Holds the `OPENAQ_API_KEY` server-side; returns
- * GeoJSON ready for a MapLibre GeoJSON source.
+ * OpenAQ v3 multi-pollutant proxy (TIN-1757). Holds `OPENAQ_API_KEY` server-side;
+ * returns GeoJSON ready for the MapLibre point source + the AQI field.
  *
- * When the key is missing or upstream errors, returns an empty
- * FeatureCollection with `degraded: true` so the client overlay degrades
- * silently to "nothing rendered" instead of erroring on first paint.
+ * OpenAQ v3 reality: `/locations?bbox` returns `sensors[]` + `datetimeLast` but
+ * NO values, and `/parameters/{id}/latest?bbox` ignores the bbox. So we:
+ *   1. fetch `/locations?bbox` (metadata),
+ *   2. pre-filter to fresh, criteria-pollutant locations and cap the set,
+ *   3. fan out bounded-concurrent `/locations/{id}/latest` for the actual values,
+ *   4. join + staleness-filter into features (see `$lib/atmospheric/openaq-shape`).
  *
- * License: OpenAQ data is CC-BY 4.0. Attribution surfaces on the smog
- * overlay's MapLibre attribution chip and the `/docs#atmosphere` page (PR-I).
+ * Missing key / 401 → empty `degraded:true` (overlay renders nothing, not an error).
+ * License: OpenAQ CC-BY 4.0.
  */
 
-interface OpenAQLocation {
-	readonly id?: number;
-	readonly name?: string;
-	readonly coordinates?: { readonly latitude?: number; readonly longitude?: number };
-	readonly parameters?: ReadonlyArray<{
-		readonly id?: number;
-		readonly name?: string;
-		readonly units?: string;
-		readonly lastValue?: number;
-		readonly latestValue?: number;
-		readonly displayName?: string;
-	}>;
-}
-
-interface OpenAQEnvelope {
-	readonly results?: ReadonlyArray<OpenAQLocation>;
-	readonly meta?: unknown;
-}
-
-// AQ-1 — the criteria pollutants we surface (matched by OpenAQ parameter NAME,
-// which is stable across the API; the numeric ids drift). PM2.5 stays the
-// `value` field so the existing heatmap paint (`['get','value']`) is unchanged.
-const POLLUTANT_NAMES = ['pm25', 'pm10', 'no2', 'o3', 'so2', 'co'] as const;
-type PollutantName = (typeof POLLUTANT_NAMES)[number];
-const MAX_LIMIT = 1000;
+const OPENAQ = 'https://api.openaq.org/v3';
+const LOCATIONS_LIMIT = 1000;
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // drop stations/readings older than 24h
+const MAX_LATEST_FETCHES = 50; // cap the per-location /latest fan-out (no bbox-wide latest exists)
+const LATEST_CONCURRENCY = 6;
 
 const emptyDegraded = (): Response =>
 	new Response(JSON.stringify({ type: 'FeatureCollection', features: [], degraded: true }), {
@@ -48,6 +38,35 @@ const emptyDegraded = (): Response =>
 			'x-openaq-degraded': 'true',
 		},
 	});
+
+const authedJson = async (url: string, apiKey: string): Promise<unknown | null> => {
+	try {
+		const r = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': apiKey } });
+		if (!r.ok) return null;
+		return await r.json();
+	} catch {
+		return null;
+	}
+};
+
+/** Run `fn` over `items` with at most `limit` in flight. Order-preserving. */
+const mapWithConcurrency = async <T, R>(
+	items: readonly T[],
+	limit: number,
+	fn: (item: T) => Promise<R>,
+): Promise<R[]> => {
+	const out = new Array<R>(items.length);
+	let next = 0;
+	const worker = async (): Promise<void> => {
+		for (;;) {
+			const idx = next++;
+			if (idx >= items.length) return;
+			out[idx] = await fn(items[idx]);
+		}
+	};
+	await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+	return out;
+};
 
 export const GET: RequestHandler = async ({ url }) => {
 	const bboxStr = url.searchParams.get('bbox');
@@ -62,99 +81,46 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const apiKey = env.OPENAQ_API_KEY;
-	if (!apiKey) {
-		// Local dev / unconfigured deploy — degrade silently so the overlay
-		// just renders nothing instead of throwing on first paint.
-		return emptyDegraded();
-	}
+	if (!apiKey) return emptyDegraded();
 
-	// No parameters_id filter — we want every criteria pollutant a location
-	// reports, not just PM2.5, so the readout can show the full panel + an AQI.
-	const upstreamParams = new URLSearchParams({
-		bbox: `${west},${south},${east},${north}`,
-		limit: String(MAX_LIMIT),
-	});
-
-	let upstream: Response;
+	// 1. Locations in the viewport (metadata + sensors + datetimeLast; no values).
+	const locParams = new URLSearchParams({ bbox: `${west},${south},${east},${north}`, limit: String(LOCATIONS_LIMIT) });
+	let locRes: Response;
 	try {
-		upstream = await fetch(`https://api.openaq.org/v3/locations?${upstreamParams}`, {
+		locRes = await fetch(`${OPENAQ}/locations?${locParams}`, {
 			headers: { accept: 'application/json', 'x-api-key': apiKey },
 		});
 	} catch {
 		return emptyDegraded();
 	}
-
-	if (upstream.status === 401 || upstream.status === 403) {
-		// Bad key — same soft degradation as the missing-key path.
-		return emptyDegraded();
+	if (locRes.status === 401 || locRes.status === 403) return emptyDegraded();
+	if (!locRes.ok) {
+		const status = locRes.status >= 400 && locRes.status < 600 ? locRes.status : 502;
+		error(status, `openaq returned ${locRes.status}`);
 	}
-	if (!upstream.ok) {
-		const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
-		error(status, `openaq returned ${upstream.status}`);
-	}
-
-	let body: OpenAQEnvelope;
+	let locBody: { results?: V3Location[] };
 	try {
-		body = (await upstream.json()) as OpenAQEnvelope;
+		locBody = (await locRes.json()) as { results?: V3Location[] };
 	} catch (e) {
 		error(502, `openaq response not JSON: ${e instanceof Error ? e.message : 'unknown'}`);
 	}
 
-	const features = (body.results ?? [])
-		.map((loc) => locationToFeature(loc))
-		.filter((f): f is OpenAQGeoJsonFeature => f !== null);
+	// 2. Pre-filter to fresh criteria-pollutant locations and cap the /latest fan-out.
+	const nowMs = Date.now();
+	const fresh = selectFreshLocations(locBody.results ?? [], nowMs, STALE_AFTER_MS, MAX_LATEST_FETCHES);
+
+	// 3. Fetch each location's latest values (bounded concurrency) + 4. join/staleness.
+	const features = (
+		await mapWithConcurrency(fresh, LATEST_CONCURRENCY, async (loc): Promise<StationFeature | null> => {
+			const body = (await authedJson(`${OPENAQ}/locations/${loc.id}/latest`, apiKey)) as {
+				results?: V3Latest[];
+			} | null;
+			return buildStationFeature(loc, body?.results ?? [], nowMs, STALE_AFTER_MS);
+		})
+	).filter((f): f is StationFeature => f !== null);
 
 	return new Response(JSON.stringify({ type: 'FeatureCollection', features, degraded: false }), {
 		status: 200,
-		headers: {
-			'content-type': 'application/json',
-			'cache-control': 'public, max-age=300, s-maxage=300',
-		},
+		headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300, s-maxage=300' },
 	});
-};
-
-interface PollutantReading {
-	readonly value: number;
-	readonly units?: string;
-}
-interface OpenAQGeoJsonFeature {
-	type: 'Feature';
-	properties: {
-		locationId?: number;
-		locationName: string;
-		/** PM2.5 µg/m³ (kept for the existing heatmap paint); null when not reported. */
-		value: number | null;
-		/** Per-criteria-pollutant latest reading, keyed by OpenAQ parameter name. */
-		pollutants: Partial<Record<PollutantName, PollutantReading>>;
-	};
-	geometry: { type: 'Point'; coordinates: [number, number] };
-}
-
-const locationToFeature = (loc: OpenAQLocation): OpenAQGeoJsonFeature | null => {
-	const lat = loc.coordinates?.latitude;
-	const lon = loc.coordinates?.longitude;
-	if (typeof lat !== 'number' || typeof lon !== 'number') return null;
-	if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-
-	const pollutants: Partial<Record<PollutantName, PollutantReading>> = {};
-	for (const p of loc.parameters ?? []) {
-		const name = p.name as PollutantName | undefined;
-		if (!name || !(POLLUTANT_NAMES as readonly string[]).includes(name)) continue;
-		const v = p.lastValue ?? p.latestValue;
-		if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-		pollutants[name] = p.units ? { value: v, units: p.units } : { value: v };
-	}
-	// Drop locations that report none of our criteria pollutants.
-	if (Object.keys(pollutants).length === 0) return null;
-
-	return {
-		type: 'Feature',
-		properties: {
-			locationId: typeof loc.id === 'number' ? loc.id : undefined,
-			locationName: typeof loc.name === 'string' ? loc.name : 'Unknown',
-			value: pollutants.pm25?.value ?? null,
-			pollutants,
-		},
-		geometry: { type: 'Point', coordinates: [lon, lat] },
-	};
 };
