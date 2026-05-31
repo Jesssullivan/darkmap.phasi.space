@@ -117,6 +117,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'point-readout':
 			await runPointReadoutSmoke(page);
 			return;
+		case 'mobile-hud':
+			await runMobileHudSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -273,6 +276,122 @@ async function runPointReadoutSmoke(page) {
 		};
 	});
 	console.log(`darkmap point-readout smoke observed ${JSON.stringify(metrics)}`);
+}
+
+async function runMobileHudSmoke(page) {
+	await runMapCanvasSmoke(page);
+	await page.locator('.gantt').waitFor({ state: 'visible', timeout: 20_000 });
+	await page.locator('.toolbar').waitFor({ state: 'visible', timeout: 20_000 });
+
+	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
+	await canvas.click({ position: { x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2) } });
+
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ state: 'visible', timeout: 20_000 });
+	await readout.getByText(/VIIRS pixel/i).waitFor({ state: 'visible', timeout: 20_000 });
+	await readout
+		.getByRole('button', { name: /open spectral transmission analysis/i })
+		.waitFor({ state: 'visible', timeout: 20_000 });
+	await assertHudBoxesDoNotOverlap(page, 'point-readout-open', [
+		['.readout[role="dialog"]', '.toolbar'],
+		['.readout[role="dialog"]', '.gantt'],
+	]);
+
+	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click();
+	const sheet = page.getByRole('dialog', { name: /atmospheric transmission widget/i });
+	await sheet.waitFor({ state: 'visible', timeout: 20_000 });
+	await sheet.getByText(/for -?\d+\.\d+°,\s*-?\d+\.\d+°/).waitFor({ state: 'visible', timeout: 20_000 });
+	const readoutCount = await page.locator('.readout[role="dialog"]').count();
+	if (readoutCount !== 0) {
+		throw new Error(`point readout remained mounted while transmission sheet was open: count=${readoutCount}`);
+	}
+	await assertHudBoxesDoNotOverlap(page, 'transmission-open', [
+		['.sheet', '.toolbar'],
+		['.sheet', '.gantt'],
+	]);
+
+	await page.getByRole('button', { name: /Close transmission sheet/i }).click();
+	await sheet.waitFor({ state: 'hidden', timeout: 20_000 });
+	await readout.waitFor({ state: 'visible', timeout: 20_000 });
+
+	const metrics = await collectHudMetrics(page);
+	console.log(`darkmap mobile-hud smoke observed ${JSON.stringify(metrics)}`);
+}
+
+async function assertHudBoxesDoNotOverlap(page, label, pairs) {
+	const results = await page.evaluate((inputPairs) => {
+		const boxFor = (selector) => {
+			const node = document.querySelector(selector);
+			if (!(node instanceof HTMLElement)) return null;
+			const style = getComputedStyle(node);
+			const rect = node.getBoundingClientRect();
+			if (
+				style.display === 'none' ||
+				style.visibility === 'hidden' ||
+				rect.width <= 0 ||
+				rect.height <= 0 ||
+				rect.bottom <= 0 ||
+				rect.right <= 0 ||
+				rect.top >= window.innerHeight ||
+				rect.left >= window.innerWidth
+			) {
+				return null;
+			}
+			return {
+				bottom: rect.bottom,
+				height: rect.height,
+				left: rect.left,
+				right: rect.right,
+				top: rect.top,
+				width: rect.width,
+			};
+		};
+		return inputPairs.map(([aSelector, bSelector]) => {
+			const a = boxFor(aSelector);
+			const b = boxFor(bSelector);
+			const overlap =
+				a !== null &&
+				b !== null &&
+				!(a.right <= b.left + 2 || b.right <= a.left + 2 || a.bottom <= b.top + 2 || b.bottom <= a.top + 2);
+			return { a, aSelector, b, bSelector, overlap };
+		});
+	}, pairs);
+
+	for (const result of results) {
+		if (!result.a || !result.b) {
+			throw new Error(`missing visible HUD box for ${label}: ${JSON.stringify(result)}`);
+		}
+		if (result.overlap) {
+			throw new Error(`overlapping HUD boxes for ${label}: ${JSON.stringify(result)}`);
+		}
+	}
+}
+
+async function collectHudMetrics(page) {
+	return page.evaluate(() => {
+		const selectors = ['.readout[role="dialog"]', '.sheet', '.toolbar', '.gantt', '.attribution'];
+		return Object.fromEntries(
+			selectors.map((selector) => {
+				const node = document.querySelector(selector);
+				if (!(node instanceof HTMLElement)) return [selector, null];
+				const rect = node.getBoundingClientRect();
+				const style = getComputedStyle(node);
+				return [
+					selector,
+					{
+						bottom: rect.bottom,
+						display: style.display,
+						height: rect.height,
+						left: rect.left,
+						right: rect.right,
+						top: rect.top,
+						visibility: style.visibility,
+						width: rect.width,
+					},
+				];
+			}),
+		);
+	});
 }
 
 async function collectMapDiagnostics(page) {
