@@ -315,6 +315,9 @@ js_test(
 # point at the smallest UI contract. This suite is the operator-facing entry
 # point for GloriousFlywheel proof dispatch: it keeps all browserful work manual,
 # tagged as RBE-candidate, and out of wildcard/local `bazel test //...` runs.
+#
+# test_suite.tags are filters, not just metadata. Keep this list to tags shared
+# by every member target; adding a suite-only tag filters the suite to zero tests.
 # =============================================================================
 test_suite(
     name = "playwright_browser_rbe_smoke_suite",
@@ -325,7 +328,6 @@ test_suite(
         "local-server-route-smoke",
         "manual",
         "playwright",
-        "playwright-browser-rbe-suite",
     ],
     tests = [
         ":playwright_local_route_smoke",
