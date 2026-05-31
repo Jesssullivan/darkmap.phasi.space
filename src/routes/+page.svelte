@@ -12,6 +12,11 @@
 	} from '$lib/device/GeolocationService';
 	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
 	import { AtmosphericPointService, AtmosphericPointServiceLive } from '$lib/effect/services/AtmosphericPointService';
+	import {
+		AirQualityService,
+		AirQualityServiceLive,
+		type AirQualityPointReading,
+	} from '$lib/effect/services/AirQualityService';
 	import { OpenAQService, OpenAQServiceLive, type OpenAQSensorCollection } from '$lib/effect/services/OpenAQService';
 	import {
 		TransmissionEstimator,
@@ -243,6 +248,10 @@
 	// sees the modeled value + how much coverage it rests on. Null when smog
 	// is off or no station is in range (never a fabricated value).
 	let pm25Estimate = $state<Pm25Estimate | null>(null);
+	// V3-5 — clicked-point pollen + air-quality reading (Open-Meteo CAMS). Null
+	// while loading / on failure / before a point is selected; surfaced in the
+	// readout. A failed fetch never sinks the rest of the readout.
+	let airQualityReading = $state<AirQualityPointReading | null>(null);
 
 	// Built once, not per keystroke — refreshTransmission runs on an 80ms debounce
 	// off every slider/picker change, so rebuilding the merged layer literal each
@@ -759,6 +768,7 @@
 		readoutInflight = undefined;
 		readout = undefined;
 		pm25Estimate = null;
+		airQualityReading = null;
 		pointMarker?.remove();
 		// V3 — the sheet is anchored to the selected point; clearing the point
 		// leaves it with nothing to describe, so dismiss it too.
@@ -792,12 +802,26 @@
 			}).pipe(Effect.provide(AtmosphericPointServiceLive)),
 		);
 
+		// V3-5 — pollen + air-quality (CAMS) rides its own isolated Effect so an
+		// outage can't sink the readout; it just leaves the pollen section absent.
+		const airQualityPromise = Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* AirQualityService;
+				return yield* svc.getReading({ lat, lon, time: ephemerisTime }, { signal: controller.signal });
+			}).pipe(Effect.provide(AirQualityServiceLive)),
+		);
+
 		try {
-			const [featureinfo, atmosphericExit] = await Promise.all([featureinfoPromise, atmosphericPromise]);
+			const [featureinfo, atmosphericExit, airQualityExit] = await Promise.all([
+				featureinfoPromise,
+				atmosphericPromise,
+				airQualityPromise,
+			]);
 			if (myGen !== readoutGen || controller.signal.aborted) return;
 			const data: ReadoutData =
 				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
 			readout = { lat, lon, loading: false, data };
+			airQualityReading = airQualityExit._tag === 'Success' ? airQualityExit.value : null;
 			// #275 — drive the transmission AOD from the local PM2.5 estimate.
 			applyPm25DerivedAod(lat, lon);
 			// V3 — the curve is point-anchored: a new point's PWV (and AOD) must
@@ -1544,6 +1568,7 @@
 		loading={readout.loading}
 		error={readout.error}
 		pm25={pm25Estimate}
+		airQuality={airQualityReading}
 		onclose={closeReadout}
 		onTransmissionForPoint={openTransmissionForPoint}
 	/>

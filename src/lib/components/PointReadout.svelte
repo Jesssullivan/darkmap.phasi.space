@@ -8,6 +8,11 @@
 		pm25AqiCategory,
 		type Pm25Estimate,
 	} from '$lib/atmospheric/pm25-diffusion';
+	import {
+		POLLEN_SPECIES,
+		type AirQualityPointReading,
+		type PollenReading,
+	} from '$lib/effect/services/AirQualityService';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -45,6 +50,8 @@
 		error?: string;
 		/** Clicked-point PM2.5 kernel-diffusion estimate (#275); null when smog off / no station in range. */
 		pm25?: Pm25Estimate | null;
+		/** Clicked-point pollen + air-quality reading (Open-Meteo CAMS, V3-5); null when unavailable. */
+		airQuality?: AirQualityPointReading | null;
 		onclose: () => void;
 		/**
 		 * Open the spectral-transmission sheet seeded from THIS point + time.
@@ -55,7 +62,33 @@
 		onTransmissionForPoint?: () => void;
 	}
 
-	let { lat, lon, time, data, loading, error, pm25 = null, onclose, onTransmissionForPoint }: Props = $props();
+	let {
+		lat,
+		lon,
+		time,
+		data,
+		loading,
+		error,
+		pm25 = null,
+		airQuality = null,
+		onclose,
+		onTransmissionForPoint,
+	}: Props = $props();
+
+	const POLLEN_LABELS: Record<keyof PollenReading, string> = {
+		alder: 'Alder',
+		birch: 'Birch',
+		grass: 'Grass',
+		mugwort: 'Mugwort',
+		olive: 'Olive',
+		ragweed: 'Ragweed',
+	};
+	// Species CAMS actually modeled here (value present, incl. a real 0). Null
+	// species are out of season / unsupported — surfaced as "none reported", never 0.
+	const reportedPollen = $derived(
+		airQuality ? POLLEN_SPECIES.filter((s) => airQuality.pollen[s] !== null) : ([] as (keyof PollenReading)[]),
+	);
+	const missingPollenCount = $derived(POLLEN_SPECIES.length - reportedPollen.length);
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -229,6 +262,49 @@
 			<p class="note coverage" class:low={pm25.confidence === 'low'}>
 				{pm25.confidence} confidence · {formatStationCount(pm25.contributingStations)}{fmtNearest(pm25.nearestKm)}
 			</p>
+		</section>
+	{/if}
+
+	{#if airQuality}
+		<section>
+			<h4>
+				Pollen &amp; air quality
+				<HelpTooltip
+					text="Modeled from the CAMS air-quality reanalysis/forecast (Open-Meteo), sampled at this point and hour. Pollen is in grains/m³; a species with no value is out of season or unsupported in this region (shown as “none reported”, not zero). AOD is the CAMS column aerosol optical depth; surface ozone is µg/m³ (not total-column Dobson)."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">modeled</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			{#if reportedPollen.length > 0}
+				<dl>
+					{#each reportedPollen as species (species)}
+						<dt>{POLLEN_LABELS[species]} pollen</dt>
+						<dd>{airQuality.pollen[species]!.toFixed(0)}<span class="unit"> grains/m³</span></dd>
+					{/each}
+				</dl>
+				{#if missingPollenCount > 0}
+					<p class="note">{missingPollenCount} other species not in season — none reported.</p>
+				{/if}
+			{:else}
+				<p class="note">No pollen reported for this hour / region.</p>
+			{/if}
+			<dl>
+				{#if airQuality.aod550 !== null}
+					<dt>AOD₅₅₀</dt>
+					<dd>{airQuality.aod550.toFixed(2)}</dd>
+				{/if}
+				{#if airQuality.dust !== null}
+					<dt>Dust</dt>
+					<dd>{airQuality.dust.toFixed(1)}<span class="unit"> µg/m³</span></dd>
+				{/if}
+				{#if airQuality.ozone !== null}
+					<dt>Surface O₃</dt>
+					<dd>{airQuality.ozone.toFixed(0)}<span class="unit"> µg/m³</span></dd>
+				{/if}
+			</dl>
+			<p class="note">Hour {airQuality.matchedTime}Z · CC-BY Open-Meteo (CAMS)</p>
 		</section>
 	{/if}
 
