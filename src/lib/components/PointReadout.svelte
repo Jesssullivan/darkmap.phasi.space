@@ -51,6 +51,10 @@
 		error?: string;
 		/** Clicked-point PM2.5 kernel-diffusion estimate (#275); null when smog off / no station in range. */
 		pm25?: Pm25Estimate | null;
+		/** AQ-1 — per-criteria-pollutant kernel-diffused estimates (name → estimate); null when none. */
+		aqEstimates?: Record<string, Pm25Estimate> | null;
+		/** AQ-1 — representative units per pollutant name, for labels. */
+		pollutantUnits?: Record<string, string>;
 		/** Clicked-point pollen + air-quality reading (Open-Meteo CAMS, V3-5); null when unavailable. */
 		airQuality?: AirQualityPointReading | null;
 		onclose: () => void;
@@ -71,6 +75,8 @@
 		loading,
 		error,
 		pm25 = null,
+		aqEstimates = null,
+		pollutantUnits = {},
 		airQuality = null,
 		onclose,
 		onTransmissionForPoint,
@@ -93,6 +99,27 @@
 	// V3-9 — geometric-optics optical depth from the pollen load. Informational:
 	// it is ~1e-4–1e-3 even at heavy counts, i.e. negligible for transmission.
 	const pollenTau = $derived(airQuality ? pollenOpticalDepth(airQuality.pollen) : null);
+
+	// AQ-1 — criteria-pollutant display order + labels for the diffused panel.
+	const POLLUTANT_LABELS: Record<string, string> = {
+		pm25: 'PM2.5',
+		pm10: 'PM10',
+		no2: 'NO₂',
+		o3: 'O₃',
+		so2: 'SO₂',
+		co: 'CO',
+	};
+	const POLLUTANT_ORDER = ['pm25', 'pm10', 'no2', 'o3', 'so2', 'co'];
+	const aqRows = $derived(
+		aqEstimates
+			? POLLUTANT_ORDER.filter((p) => aqEstimates[p]?.valueUgm3 != null).map((p) => ({
+					name: p,
+					label: POLLUTANT_LABELS[p] ?? p,
+					est: aqEstimates[p],
+					units: pollutantUnits[p] ?? 'µg/m³',
+				}))
+			: [],
+	);
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -285,6 +312,34 @@
 			<p class="note coverage" class:low={pm25.confidence === 'low'}>
 				{pm25.confidence} confidence · {formatStationCount(pm25.contributingStations)}{fmtNearest(pm25.nearestKm)}
 			</p>
+		</section>
+	{/if}
+
+	{#if aqRows.some((r) => r.name !== 'pm25')}
+		<section>
+			<h4>
+				Other pollutants
+				<HelpTooltip
+					text="Modeled, not measured: each criteria pollutant kernel-diffused from nearby OpenAQ ground stations (same Gaussian estimate as PM2.5). Coverage and confidence are per-pollutant — a station may report PM2.5 but not O₃. Units are the OpenAQ provider units."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">modeled</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			<dl>
+				{#each aqRows as row (row.name)}
+					{#if row.name !== 'pm25'}
+						<dt>{row.label}</dt>
+						<dd>
+							{row.est.valueUgm3!.toFixed(row.est.valueUgm3! < 10 ? 1 : 0)}<span class="unit"> {row.units}</span>
+							<span class="aq-cov" class:low={row.est.confidence === 'low'}>
+								· {formatStationCount(row.est.contributingStations)}{fmtNearest(row.est.nearestKm)}
+							</span>
+						</dd>
+					{/if}
+				{/each}
+			</dl>
 		</section>
 	{/if}
 
@@ -560,6 +615,14 @@
 	.coverage.low {
 		color: var(--accent-amber);
 		opacity: 0.85;
+	}
+	.aq-cov {
+		font-size: 0.62rem;
+		opacity: 0.5;
+	}
+	.aq-cov.low {
+		color: var(--accent-amber);
+		opacity: 0.8;
 	}
 	.loading {
 		opacity: 0.55;

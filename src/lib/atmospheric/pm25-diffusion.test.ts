@@ -3,6 +3,7 @@ import { AOD550_AXIS } from '$lib/spectral/transmission-axes';
 import {
 	DEFAULT_DIFFUSION,
 	estimatePm25At,
+	estimatePollutantAt,
 	formatNearestKm,
 	formatStationCount,
 	haversineKm,
@@ -190,5 +191,34 @@ describe('pm25ToAod550', () => {
 
 	it('treats a negative reading as 0 floor', () => {
 		expect(pm25ToAod550(-5)).toBe(0);
+	});
+});
+
+describe('estimatePollutantAt (AQ-1)', () => {
+	const stations: Pm25Station[] = [
+		{ lon: 0, lat: 0, value: 10, pollutants: { pm25: 10, no2: 40, o3: null } },
+		{ lon: 0.01, lat: 0.01, value: 12, pollutants: { pm25: 12, no2: 60 } },
+	];
+
+	it('diffuses pm25 via the station value field', () => {
+		const e = estimatePollutantAt(stations, 0, 0, 'pm25');
+		expect(e.valueUgm3).not.toBeNull();
+		expect(e.valueUgm3!).toBeGreaterThan(9);
+		expect(e.valueUgm3!).toBeLessThan(13);
+	});
+
+	it('diffuses a non-pm25 pollutant from the pollutants map', () => {
+		const e = estimatePollutantAt(stations, 0, 0, 'no2');
+		expect(e.valueUgm3).not.toBeNull();
+		expect(e.confidence).not.toBe('none');
+	});
+
+	it('returns none when no station reports the pollutant', () => {
+		expect(estimatePollutantAt(stations, 0, 0, 'so2').confidence).toBe('none');
+	});
+
+	it('skips null pollutant readings (no fabrication)', () => {
+		// Only station 1 has o3 and it is null → no coverage.
+		expect(estimatePollutantAt(stations, 0, 0, 'o3').confidence).toBe('none');
 	});
 });

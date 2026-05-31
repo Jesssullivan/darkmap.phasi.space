@@ -17,7 +17,12 @@
 		AirQualityServiceLive,
 		type AirQualityPointReading,
 	} from '$lib/effect/services/AirQualityService';
-	import { OpenAQService, OpenAQServiceLive, type OpenAQSensorCollection } from '$lib/effect/services/OpenAQService';
+	import {
+		OpenAQService,
+		OpenAQServiceLive,
+		POLLUTANT_NAMES,
+		type OpenAQSensorCollection,
+	} from '$lib/effect/services/OpenAQService';
 	import {
 		TransmissionEstimator,
 		TransmissionEstimatorLive,
@@ -39,7 +44,13 @@
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
-	import { estimatePm25At, pm25ToAod550, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
+	import {
+		estimatePm25At,
+		estimatePollutantAt,
+		pm25ToAod550,
+		type Pm25Estimate,
+		type Pm25Station,
+	} from '$lib/atmospheric/pm25-diffusion';
 	import { buildTxConstituents, toTransmissionInput, type TxConstituents } from '$lib/atmospheric/tx-constituents';
 	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
@@ -248,10 +259,16 @@
 	// Latest in-viewport OpenAQ stations, cached so a click can sample the
 	// diffusion field without re-fetching. Mirrors the GeoJSON the heatmap uses.
 	let pm25Stations = $state<Pm25Station[]>([]);
+	// AQ-1 — representative units per criteria pollutant, harvested from the
+	// in-viewport stations (OpenAQ normalizes units per parameter), for readout labels.
+	let pollutantUnits = $state<Record<string, string>>({});
 	// The clicked-point PM2.5 estimate, surfaced in the readout so the user
 	// sees the modeled value + how much coverage it rests on. Null when smog
 	// is off or no station is in range (never a fabricated value).
 	let pm25Estimate = $state<Pm25Estimate | null>(null);
+	// AQ-1 — clicked-point per-criteria-pollutant diffused estimates (name → estimate),
+	// for the multi-pollutant readout panel. Null when smog off / no coverage.
+	let aqEstimates = $state<Record<string, Pm25Estimate> | null>(null);
 	// V3-5 — clicked-point pollen + air-quality reading (Open-Meteo CAMS). Null
 	// while loading / on failure / before a point is selected; surfaced in the
 	// readout. A failed fetch never sinks the rest of the readout.
@@ -401,10 +418,18 @@
 	function refreshPm25Estimate(lat: number, lon: number): void {
 		if (!layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
 			pm25Estimate = null;
+			aqEstimates = null;
 			return;
 		}
 		const est = estimatePm25At(pm25Stations, lon, lat);
 		pm25Estimate = est.confidence === 'none' ? null : est;
+		// AQ-1 — diffuse every criteria pollutant the cached stations report.
+		const byPollutant: Record<string, Pm25Estimate> = {};
+		for (const p of POLLUTANT_NAMES) {
+			const e = estimatePollutantAt(pm25Stations, lon, lat, p);
+			if (e.confidence !== 'none') byPollutant[p] = e;
+		}
+		aqEstimates = Object.keys(byPollutant).length > 0 ? byPollutant : null;
 	}
 	function onAngstromChange(value: number): void {
 		transmissionAngstrom = value;
@@ -888,6 +913,7 @@
 		readoutInflight = undefined;
 		readout = undefined;
 		pm25Estimate = null;
+		aqEstimates = null;
 		airQualityReading = null;
 		pointMarker?.remove();
 		// V3 — the sheet is anchored to the selected point; clearing the point
@@ -1179,7 +1205,9 @@
 		// AOD cascade stops using it; recompute the open sheet.
 		if (l.id === SMOG_LAYER_ID) {
 			pm25Stations = [];
+			pollutantUnits = {};
 			pm25Estimate = null;
+			aqEstimates = null;
 			if (transmissionOpen) scheduleTransmissionRefresh();
 		}
 	}
@@ -1224,24 +1252,43 @@
 				return;
 			}
 			const fc: OpenAQSensorCollection = exit.value;
-			// #275 — cache stations so a clicked point can sample the diffusion field.
+			// #275 / AQ-1 — cache stations (with every criteria pollutant) so a
+			// clicked point can diffuse each pollutant. `value` stays PM2.5.
 			if (l.id === SMOG_LAYER_ID) {
 				pm25Stations = fc.features.map((f) => ({
 					lon: f.geometry.coordinates[0],
 					lat: f.geometry.coordinates[1],
 					value: f.properties.value,
+					pollutants: Object.fromEntries(
+						Object.entries(f.properties.pollutants ?? {}).map(([name, r]) => [name, r?.value ?? null]),
+					),
 				}));
+				const units: Record<string, string> = {};
+				for (const f of fc.features) {
+					for (const [name, r] of Object.entries(f.properties.pollutants ?? {})) {
+						if (r?.units && !units[name]) units[name] = r.units;
+					}
+				}
+				pollutantUnits = units;
 			}
+			// AQ-1 — the smog overlay stays PM2.5-only: render just the stations that
+			// report PM2.5 (others are cached for the readout but would otherwise show
+			// as "no PM2.5" slate dots and dilute the layer). AQ-3 reworks this into an
+			// AQI density field.
+			const rendered: OpenAQSensorCollection = {
+				...fc,
+				features: fc.features.filter((f) => f.properties.value !== null),
+			};
 			const src = map.getSource(pointSourceId(l.id));
 			if (src && 'setData' in src && typeof src.setData === 'function') {
-				(src as { setData: (data: OpenAQSensorCollection) => void }).setData(fc);
+				(src as { setData: (data: OpenAQSensorCollection) => void }).setData(rendered);
 			}
 
 			// Toggle heatmap visibility based on density — at < 5 features the
 			// heatmap is visually empty, so show only the circles for clarity.
 			const heatId = pointHeatmapId(l.id);
 			if (map.getLayer(heatId)) {
-				map.setLayoutProperty(heatId, 'visibility', fc.features.length >= 5 ? 'visible' : 'none');
+				map.setLayoutProperty(heatId, 'visibility', rendered.features.length >= 5 ? 'visible' : 'none');
 			}
 
 			// Health-state dispatch (#196). degraded:true means OPENAQ_API_KEY is
@@ -1249,8 +1296,8 @@
 			// know the overlay is intentionally blank rather than broken.
 			if (fc.degraded === true) {
 				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'OpenAQ proxy degraded' });
-			} else if (fc.features.length === 0) {
-				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no sensors in viewport' });
+			} else if (rendered.features.length === 0) {
+				layerHealth.dispatch(l.id, { type: 'tile-empty', reason: 'no PM2.5 sensors in viewport' });
 			} else {
 				layerHealth.dispatch(l.id, { type: 'tile-ok' });
 			}
@@ -1705,6 +1752,8 @@
 			loading={readout.loading}
 			error={readout.error}
 			pm25={pm25Estimate}
+			{aqEstimates}
+			{pollutantUnits}
 			airQuality={airQualityReading}
 			onclose={closeReadout}
 			onTransmissionForPoint={openTransmissionForPoint}

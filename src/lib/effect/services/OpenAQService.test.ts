@@ -139,3 +139,36 @@ describe('OpenAQService — getSensors', () => {
 		expect(failReason(exit)).toBe('parse-failed');
 	});
 });
+
+describe('OpenAQService — multi-pollutant parsing (AQ-1)', () => {
+	it('passes through per-pollutant readings keyed by parameter name', async () => {
+		const body = {
+			type: 'FeatureCollection',
+			degraded: false,
+			features: [
+				{
+					type: 'Feature',
+					properties: {
+						locationName: 'Test',
+						value: 12,
+						pollutants: { pm25: { value: 12, units: 'µg/m³' }, no2: { value: 20 }, bogus: { value: 9 } },
+					},
+					geometry: { type: 'Point', coordinates: [-74, 40.7] },
+				},
+			],
+		};
+		const exit = await runWith(fakeOk(body));
+		if (exit._tag !== 'Success') throw new Error('expected Success');
+		const p = exit.value.features[0].properties.pollutants;
+		expect(p.pm25).toEqual({ value: 12, units: 'µg/m³' });
+		expect(p.no2).toEqual({ value: 20 });
+		// Unknown parameter names are dropped.
+		expect((p as Record<string, unknown>).bogus).toBeUndefined();
+	});
+
+	it('defaults to an empty pollutants map when absent', async () => {
+		const exit = await runWith(fakeOk(makeBody([{ value: 5, locationName: 'X', lon: -74, lat: 40.7 }])));
+		if (exit._tag !== 'Success') throw new Error('expected Success');
+		expect(exit.value.features[0].properties.pollutants).toEqual({});
+	});
+});
