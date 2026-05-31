@@ -93,6 +93,34 @@ viewport matrix. Each slice serves the declared `//:app_build` adapter-node
 output inside the Bazel test action and uses the Chromium binary pinned in the
 GF worker image.
 
+### PR Proof Workflow
+
+`.github/workflows/browser-rbe-proof.yml` is the repo-local PR status for this
+proof path. It dispatches `tinyland-inc/GloriousFlywheel`
+`gf-reapi-cell-proof.yml`, waits for the GF run, downloads the uploaded proof
+artifact, and verifies the machine-readable `proof-result.json`.
+
+The workflow intentionally does not run Playwright locally. It only orchestrates
+and verifies the GF proof.
+
+Operator setup:
+
+- Set repo variable `GF_REAPI_PROOF_ENABLED=true`.
+- Set repo secret `GF_REAPI_PROOF_DISPATCH_TOKEN` to a token that can dispatch
+  and read Actions runs/artifacts in `tinyland-inc/GloriousFlywheel`.
+- Optional: set repo variable `GF_REAPI_CELL_IMAGE_DIGEST` when the proved GF
+  browser worker image digest changes. The workflow defaults to the digest
+  proved during the darkmap browser-RBE tranche.
+
+Same-repo PRs run automatically after the variable and secret are present.
+External fork PRs do not receive the cross-repo dispatch secret; after
+maintainer review, run the workflow manually with `workflow_dispatch` against
+the reviewed commit SHA.
+
+Branch protection should not require `browser-rbe-proof` until the variable and
+secret are configured. Once required, treat a skipped workflow as missing proof
+unless the PR is an external fork awaiting a maintainer-triggered dispatch.
+
 Dispatch the suite from `tinyland-inc/GloriousFlywheel`:
 
 ```bash
