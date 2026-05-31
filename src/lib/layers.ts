@@ -142,7 +142,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		pointSourceUrl: '/api/atmospheric/openaq',
 		label: 'Smog (PM2.5)',
 		description:
-			'OpenAQ ground-station PM2.5 observations, viewport-scoped. Dense station heatmap, sparse markers, unknown readings excluded.',
+			'OpenAQ ground-station PM2.5 observations, viewport-scoped. Dense station heatmap, sparse markers, unknown readings excluded. The density field leans downwind using a single representative wind (from your last point readout) applied uniformly across the view — an approximation, since real wind varies across the map.',
 		group: 'atmospheric',
 		defaultEnabled: false,
 		opacity: 0.7,
