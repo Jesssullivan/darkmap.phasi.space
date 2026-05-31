@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { X } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
@@ -198,6 +199,11 @@
 		if (readoutPanel && resetKey !== lastScrollResetKey) {
 			lastScrollResetKey = resetKey;
 			readoutPanel.scrollTop = 0;
+			void tick().then(() => {
+				if (readoutPanel && resetKey === lastScrollResetKey) {
+					readoutPanel.scrollTop = 0;
+				}
+			});
 		}
 	});
 
@@ -575,8 +581,10 @@
 		border-top: 1px solid rgba(255, 255, 255, 0.06);
 	}
 	section h4 {
+		display: block;
 		margin: 0 0 0.25rem 0;
 		font-size: 0.7rem;
+		line-height: 1.2;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		opacity: 0.65;
