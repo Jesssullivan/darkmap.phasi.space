@@ -8,6 +8,12 @@
 		pm25AqiCategory,
 		type Pm25Estimate,
 	} from '$lib/atmospheric/pm25-diffusion';
+	import {
+		POLLEN_SPECIES,
+		type AirQualityPointReading,
+		type PollenReading,
+	} from '$lib/effect/services/AirQualityService';
+	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -45,10 +51,48 @@
 		error?: string;
 		/** Clicked-point PM2.5 kernel-diffusion estimate (#275); null when smog off / no station in range. */
 		pm25?: Pm25Estimate | null;
+		/** Clicked-point pollen + air-quality reading (Open-Meteo CAMS, V3-5); null when unavailable. */
+		airQuality?: AirQualityPointReading | null;
 		onclose: () => void;
+		/**
+		 * Open the spectral-transmission sheet seeded from THIS point + time.
+		 * The transmission tool is point-anchored (V3): the boresight geometry,
+		 * PWV, and AOD all derive from the selected location, so the entry point
+		 * lives here rather than as an independent rail CTA.
+		 */
+		onTransmissionForPoint?: () => void;
 	}
 
-	let { lat, lon, time, data, loading, error, pm25 = null, onclose }: Props = $props();
+	let {
+		lat,
+		lon,
+		time,
+		data,
+		loading,
+		error,
+		pm25 = null,
+		airQuality = null,
+		onclose,
+		onTransmissionForPoint,
+	}: Props = $props();
+
+	const POLLEN_LABELS: Record<keyof PollenReading, string> = {
+		alder: 'Alder',
+		birch: 'Birch',
+		grass: 'Grass',
+		mugwort: 'Mugwort',
+		olive: 'Olive',
+		ragweed: 'Ragweed',
+	};
+	// Species CAMS actually modeled here (value present, incl. a real 0). Null
+	// species are out of season / unsupported — surfaced as "none reported", never 0.
+	const reportedPollen = $derived(
+		airQuality ? POLLEN_SPECIES.filter((s) => airQuality.pollen[s] !== null) : ([] as (keyof PollenReading)[]),
+	);
+	const missingPollenCount = $derived(POLLEN_SPECIES.length - reportedPollen.length);
+	// V3-9 — geometric-optics optical depth from the pollen load. Informational:
+	// it is ~1e-4–1e-3 even at heavy counts, i.e. negligible for transmission.
+	const pollenTau = $derived(airQuality ? pollenOpticalDepth(airQuality.pollen) : null);
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -225,6 +269,56 @@
 		</section>
 	{/if}
 
+	{#if airQuality}
+		<section>
+			<h4>
+				Pollen &amp; air quality
+				<HelpTooltip
+					text="Modeled from the CAMS air-quality reanalysis/forecast (Open-Meteo), sampled at this point and hour. Pollen is in grains/m³; a species with no value is out of season or unsupported in this region (shown as “none reported”, not zero). AOD is the CAMS column aerosol optical depth; surface ozone is µg/m³ (not total-column Dobson)."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">modeled</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			{#if reportedPollen.length > 0}
+				<dl>
+					{#each reportedPollen as species (species)}
+						<dt>{POLLEN_LABELS[species]} pollen</dt>
+						<dd>{airQuality.pollen[species]!.toFixed(0)}<span class="unit"> grains/m³</span></dd>
+					{/each}
+				</dl>
+				{#if missingPollenCount > 0}
+					<p class="note">{missingPollenCount} other species not in season — none reported.</p>
+				{/if}
+				{#if pollenTau && pollenTau.tau > 0}
+					<p class="note">
+						Optical depth τ ≈ {pollenTau.tau.toExponential(1)}{pollenTau.negligible
+							? ' — negligible for transmission'
+							: ''}
+					</p>
+				{/if}
+			{:else}
+				<p class="note">No pollen reported for this hour / region.</p>
+			{/if}
+			<dl>
+				{#if airQuality.aod550 !== null}
+					<dt>AOD₅₅₀</dt>
+					<dd>{airQuality.aod550.toFixed(2)}</dd>
+				{/if}
+				{#if airQuality.dust !== null}
+					<dt>Dust</dt>
+					<dd>{airQuality.dust.toFixed(1)}<span class="unit"> µg/m³</span></dd>
+				{/if}
+				{#if airQuality.ozone !== null}
+					<dt>Surface O₃</dt>
+					<dd>{airQuality.ozone.toFixed(0)}<span class="unit"> µg/m³</span></dd>
+				{/if}
+			</dl>
+			<p class="note">Hour {airQuality.matchedTime}Z · CC-BY Open-Meteo (CAMS)</p>
+		</section>
+	{/if}
+
 	<section class="ephemeris-section">
 		<button
 			class="ephemeris-header"
@@ -280,6 +374,21 @@
 			</div>
 		{/if}
 	</section>
+
+	{#if onTransmissionForPoint && data?.atmospheric}
+		<button
+			type="button"
+			class="transmission-link"
+			aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
+			onclick={onTransmissionForPoint}
+		>
+			<span class="cta-text">
+				<span class="cta-label">Spectral transmission T(λ)</span>
+				<span class="cta-sub">directable boresight · AOD · band guidance</span>
+			</span>
+			<span class="cta-caret" aria-hidden="true">→</span>
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -309,6 +418,47 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+	.transmission-link {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		width: 100%;
+		margin: 0.7rem 0 0;
+		padding: 0.55rem 0.7rem;
+		background: rgba(var(--accent-amber-rgb), 0.08);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.3);
+		border-radius: 7px;
+		color: var(--accent-amber);
+		cursor: pointer;
+		text-align: left;
+		font-family: inherit;
+		transition: background 0.12s ease;
+	}
+	.transmission-link:hover,
+	.transmission-link:focus-visible {
+		background: rgba(var(--accent-amber-rgb), 0.16);
+		outline: none;
+	}
+	.transmission-link .cta-text {
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 auto;
+		min-width: 0;
+		line-height: 1.25;
+	}
+	.transmission-link .cta-label {
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.transmission-link .cta-sub {
+		font-size: 0.66rem;
+		opacity: 0.7;
+	}
+	.transmission-link .cta-caret {
+		flex: 0 0 auto;
+		opacity: 0.6;
+		font-size: 0.95rem;
 	}
 	.close {
 		position: absolute;

@@ -12,6 +12,11 @@
 	} from '$lib/device/GeolocationService';
 	import { RouteImportService, RouteImportServiceLive, type ImportedRoute } from '$lib/routes/RouteImportService';
 	import { AtmosphericPointService, AtmosphericPointServiceLive } from '$lib/effect/services/AtmosphericPointService';
+	import {
+		AirQualityService,
+		AirQualityServiceLive,
+		type AirQualityPointReading,
+	} from '$lib/effect/services/AirQualityService';
 	import { OpenAQService, OpenAQServiceLive, type OpenAQSensorCollection } from '$lib/effect/services/OpenAQService';
 	import {
 		TransmissionEstimator,
@@ -20,18 +25,23 @@
 	} from '$lib/effect/services/TransmissionEstimator';
 	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
 	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
+	import {
+		checkOcclusion,
+		elevationToZenithDeg,
+		lookAngleAirmass,
+		normalizeAzimuthDeg,
+	} from '$lib/transmission/slant-geometry';
+	import type { LookTarget } from '$lib/transmission/look-angle';
+	import { computePinEphemeris, type PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
+	import { beamCenterline, beamSamplePoints, beamSectorPolygon } from '$lib/map/beam-footprint';
+	import { aggregatePath, type PathProfile } from '$lib/atmospheric/path-constituents';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
-	import {
-		estimatePm25At,
-		formatNearestKm,
-		formatStationCount,
-		pm25ToAod550,
-		type Pm25Estimate,
-		type Pm25Station,
-	} from '$lib/atmospheric/pm25-diffusion';
+	import { estimatePm25At, pm25ToAod550, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
+	import { buildTxConstituents, toTransmissionInput, type TxConstituents } from '$lib/atmospheric/tx-constituents';
+	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -132,8 +142,8 @@
 		},
 		{
 			anchor: '[data-tour="atmosphere"]',
-			title: 'Atmosphere + spectral transmission',
-			body: 'Clouds, aerosol (AOD) and water-vapor overlays — and “Spectral transmission T(λ)” opens the AOD / Ångström analysis with laser & EO band guidance.',
+			title: 'Atmosphere overlays',
+			body: 'Clouds, aerosol (AOD) and water-vapor overlays. To analyze spectral transmission T(λ) for a spot, click the map and open it from the point readout.',
 			prepare: () => {
 				ensureRailOpen();
 				expandAtmosphere();
@@ -142,7 +152,7 @@
 		{
 			anchor: '[data-tour="map"]',
 			title: 'Click anywhere for a readout',
-			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, and modeled PM2.5 — all for that exact spot.',
+			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, modeled PM2.5 — and a directable spectral-transmission T(λ) analysis for that exact spot.',
 		},
 		{
 			anchor: '[data-tour="toolbar"]',
@@ -194,12 +204,47 @@
 	let transmissionAerosolType = $state<AerosolType | null>(null);
 	let transmissionAod = $state(0.15);
 	let transmissionAngstrom = $state(1.4);
+	// V3 — the transmission path is a directable boresight. Elevation above the
+	// horizon (90° = local zenith, the default) sets the slant-path zenith angle
+	// and airmass; O₃ is a real input (was a hardcoded 350 DU). The azimuth dial +
+	// sun/moon targeting + terrain occlusion arrive with the LookAngleControl (V3-4);
+	// here the boresight stays at zenith but the geometry is no longer hardcoded.
+	let transmissionElevationDeg = $state(90);
+	let transmissionAzimuthDeg = $state(0);
+	let transmissionLookTarget = $state<LookTarget>('zenith');
+	let transmissionO3 = $state(350);
+	// V3-4 — per-pin ephemeris (sun/moon alt-az + DEM horizon polygon) backing the
+	// boresight: drives "aim at sun/moon" and terrain occlusion. Lifted to page
+	// level (PointReadout computes its own, memoised — so this shares the cache).
+	let transmissionPin = $state<PinEphemerisReadout | null>(null);
+	let transmissionPinGen = 0;
+	// True when the boresight is below the local terrain horizon — no line-of-sight
+	// path, so the curve is suppressed (honest: a blocked path has no T(λ)).
+	let transmissionBlocked = $state(false);
 	let transmissionRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
-	// #275 — when the smog overlay is on, a clicked point's AOD input can be
-	// driven by the local PM2.5 kernel-diffusion estimate. `transmissionAodSource`
-	// captions the widget so users know the AOD is modeled (with confidence),
-	// not measured. Cleared when the user drags the slider manually.
-	let transmissionAodSource = $state<string | undefined>(undefined);
+
+	// Boresight geometry derived from the current look-angle (display + occlusion).
+	const lookZenithDeg = $derived(elevationToZenithDeg(transmissionElevationDeg));
+	const lookAirmass = $derived(lookAngleAirmass(transmissionElevationDeg));
+	const lookOcclusion = $derived.by(() => {
+		const polygon = transmissionPin?.polygon;
+		if (!polygon) return { occluded: false, horizonAltitudeDeg: null as number | null };
+		return checkOcclusion({ azimuthDeg: transmissionAzimuthDeg, elevationDeg: transmissionElevationDeg }, polygon);
+	});
+	const sunAvailable = $derived((transmissionPin?.flat.sun.altitudeDeg ?? -1) > 0);
+	const moonAvailable = $derived((transmissionPin?.flat.moon.altitudeDeg ?? -1) > 0);
+	// V3-6 — the AOD fed to the curve resolves through a source cascade (measured
+	// CAMS → modeled PM2.5 bridge → default slider) in buildTxConstituents; a
+	// manual drag pins it. `transmissionAodManual` tracks that explicit override;
+	// `transmissionConstituents` carries the per-field provenance for the sheet.
+	let transmissionAodManual = $state(false);
+	let transmissionConstituents = $state<TxConstituents | undefined>(undefined);
+	// V3-7 — directable-area footprint: an azimuth sector + centerline drawn from
+	// the selected point along the boresight. Visualization only (doesn't change
+	// the curve). Azimuth comes from the boresight; beamwidth + range are local.
+	let beamShow = $state(false);
+	let beamBeamwidthDeg = $state(20);
+	let beamRangeKm = $state(25);
 	// Latest in-viewport OpenAQ stations, cached so a click can sample the
 	// diffusion field without re-fetching. Mirrors the GeoJSON the heatmap uses.
 	let pm25Stations = $state<Pm25Station[]>([]);
@@ -207,6 +252,10 @@
 	// sees the modeled value + how much coverage it rests on. Null when smog
 	// is off or no station is in range (never a fabricated value).
 	let pm25Estimate = $state<Pm25Estimate | null>(null);
+	// V3-5 — clicked-point pollen + air-quality reading (Open-Meteo CAMS). Null
+	// while loading / on failure / before a point is selected; surfaced in the
+	// readout. A failed fetch never sinks the rest of the readout.
+	let airQualityReading = $state<AirQualityPointReading | null>(null);
 
 	// Built once, not per keystroke — refreshTransmission runs on an 80ms debounce
 	// off every slider/picker change, so rebuilding the merged layer literal each
@@ -214,14 +263,35 @@
 	const TRANSMISSION_LAYER = Layer.merge(TransmissionEstimatorLive, MieScatteringServiceLive);
 
 	async function refreshTransmission(): Promise<void> {
-		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
-		const input = {
-			pwvMm: pwv,
-			aod550: transmissionAod,
+		// V3-4 — a terrain-occluded boresight has no line-of-sight path; show the
+		// blocked state rather than a curve computed at a meaningless airmass.
+		if (lookOcclusion.occluded) {
+			transmissionBlocked = true;
+			transmissionLoading = false;
+			transmissionError = undefined;
+			transmissionCurve = undefined;
+			return;
+		}
+		transmissionBlocked = false;
+		// V3-6 — resolve every constituent with honest provenance in one place.
+		const constituents = buildTxConstituents({
+			pwvMm: readout?.data?.atmospheric?.pwv ?? null,
+			camsAod550: airQualityReading?.aod550 ?? null,
+			pm25Estimate,
+			manualAod550: transmissionAod,
+			manualAodActive: transmissionAodManual,
 			angstrom: transmissionAngstrom,
-			o3Du: 350,
-			zenithDeg: 30,
-		};
+			o3Du: transmissionO3,
+			// Column O₃ from the van Heuklon climatology for the selected point + date.
+			o3ColumnDu: readout ? columnOzoneDu(readout.lat, readout.lon, ephemerisTime) : null,
+			zenithDeg: elevationToZenithDeg(transmissionElevationDeg),
+			zenithDirected: transmissionLookTarget !== 'zenith',
+		});
+		transmissionConstituents = constituents;
+		// Reflect the resolved AOD back into the slider when not a manual override,
+		// so the control shows the value actually used (CAMS / PM2.5 / default).
+		if (!transmissionAodManual) transmissionAod = constituents.aod550.value;
+		const input = toTransmissionInput(constituents);
 		transmissionLoading = true;
 		transmissionError = undefined;
 		const aerosolType = transmissionAerosolType;
@@ -247,9 +317,66 @@
 		transmissionRecomputeTimer = setTimeout(() => void refreshTransmission(), 80);
 	}
 
-	function onTransmissionInfo(_layerId: string): void {
+	// V3 — the spectral-transmission sheet is point-anchored: it opens from the
+	// PointReadout for the currently selected location and seeds its inputs from
+	// that point. (The old independent LayerRail CTA / per-row (i) entry points
+	// were removed; the tool is meaningless without a selected point.)
+	function openTransmissionForPoint(): void {
 		transmissionOpen = true;
+		void loadTransmissionPin();
 		void refreshTransmission();
+	}
+
+	// Load the per-pin ephemeris (sun/moon alt-az + DEM horizon) for the selected
+	// point + time. Generation-guarded like the readout fetch so a stale point's
+	// result can't clobber a newer one. Memoised in computePinEphemeris.
+	async function loadTransmissionPin(): Promise<void> {
+		if (!readout) {
+			transmissionPin = null;
+			return;
+		}
+		const gen = ++transmissionPinGen;
+		const { lat, lon } = readout;
+		try {
+			const pin = await computePinEphemeris({ lat, lon }, ephemerisTime);
+			if (gen === transmissionPinGen) {
+				transmissionPin = pin;
+				// A live sun/moon target re-snaps once geometry resolves.
+				if (transmissionLookTarget === 'sun' || transmissionLookTarget === 'moon') reaimFromEphemeris();
+			}
+		} catch {
+			if (gen === transmissionPinGen) transmissionPin = null;
+		}
+	}
+
+	// Snap the boresight to the sun's or moon's current alt-az. Below-horizon
+	// altitudes clamp to 0 so the occlusion/blocked path is surfaced honestly.
+	function reaimFromEphemeris(): void {
+		if (!transmissionPin) return;
+		const body = transmissionLookTarget === 'moon' ? transmissionPin.flat.moon : transmissionPin.flat.sun;
+		transmissionAzimuthDeg = normalizeAzimuthDeg(body.azimuthDeg);
+		transmissionElevationDeg = Math.max(0, body.altitudeDeg);
+	}
+
+	function onLookTargetChange(t: LookTarget): void {
+		transmissionLookTarget = t;
+		if (t === 'zenith') {
+			transmissionAzimuthDeg = 0;
+			transmissionElevationDeg = 90;
+		} else if (t === 'sun' || t === 'moon') {
+			reaimFromEphemeris();
+		}
+		scheduleTransmissionRefresh();
+	}
+	function onLookAzimuthChange(v: number): void {
+		transmissionAzimuthDeg = v;
+		transmissionLookTarget = 'manual';
+		scheduleTransmissionRefresh();
+	}
+	function onLookElevationChange(v: number): void {
+		transmissionElevationDeg = v;
+		transmissionLookTarget = 'manual';
+		scheduleTransmissionRefresh();
 	}
 
 	function onAerosolTypeChange(value: AerosolType | null): void {
@@ -258,38 +385,26 @@
 	}
 	function onAodChange(value: number): void {
 		transmissionAod = value;
-		// Manual override — the AOD is no longer the PM2.5-derived estimate.
-		transmissionAodSource = undefined;
+		// Manual override pins the AOD over the CAMS / PM2.5 source cascade.
+		transmissionAodManual = true;
 		scheduleTransmissionRefresh();
 	}
 
 	const SMOG_LAYER_ID = 'smog-openaq-pm25';
 
 	/**
-	 * #275 — derive the transmission AOD input from the local PM2.5 field at a
-	 * clicked point. Only when the smog overlay is enabled and stations are in
-	 * range; honest about confidence and never fabricates over sparse data
-	 * (the diffusion estimator returns `none` and we leave AOD untouched).
+	 * #275 — compute the local PM2.5 kernel-diffusion estimate at a clicked point.
+	 * Surfaced in the readout AND consumed by buildTxConstituents as the modeled
+	 * AOD fallback. Only when the smog overlay is on + stations are in range;
+	 * never fabricates over sparse data (the estimator returns `none` → nothing).
 	 */
-	function applyPm25DerivedAod(lat: number, lon: number): void {
+	function refreshPm25Estimate(lat: number, lon: number): void {
 		if (!layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
 			pm25Estimate = null;
-			transmissionAodSource = undefined;
 			return;
 		}
 		const est = estimatePm25At(pm25Stations, lon, lat);
-		// Surface the estimate in the readout when it rests on real coverage;
-		// `none` means no in-range station — show nothing rather than fabricate.
 		pm25Estimate = est.confidence === 'none' ? null : est;
-		const aod = pm25ToAod550(est.valueUgm3);
-		if (est.confidence === 'none' || aod === null) {
-			transmissionAodSource = undefined;
-			return;
-		}
-		transmissionAod = aod;
-		const near = formatNearestKm(est.nearestKm);
-		transmissionAodSource = `modeled from local PM2.5 — ${est.confidence} confidence (${formatStationCount(est.contributingStations)}${near ? `, ${near}` : ''})`;
-		if (transmissionOpen) scheduleTransmissionRefresh();
 	}
 	function onAngstromChange(value: number): void {
 		transmissionAngstrom = value;
@@ -310,10 +425,13 @@
 			return;
 		}
 		transmissionBandLoading = true;
+		// Slant-path airmass for the current boresight (≈1.0 at zenith). null only
+		// at/below the horizon, where there is no path — fall back to 1 defensively.
+		const airmass = lookAngleAirmass(transmissionElevationDeg) ?? 1;
 		const exit = await Effect.runPromiseExit(
 			Effect.gen(function* () {
 				const svc = yield* LineByLineService;
-				return yield* svc.estimateInBand({ bandId, airmass: 1 });
+				return yield* svc.estimateInBand({ bandId, airmass });
 			}).pipe(Effect.provide(LineByLineServiceLive)),
 		);
 		transmissionBandLoading = false;
@@ -329,7 +447,131 @@
 		transmissionOpen = false;
 		transmissionBandId = null;
 		transmissionBandCurve = undefined;
+		// Reset the boresight to the zenith default so the next open starts honestly
+		// straight up rather than inheriting a stale look-angle.
+		transmissionElevationDeg = 90;
+		transmissionAzimuthDeg = 0;
+		transmissionLookTarget = 'zenith';
+		transmissionPin = null;
+		transmissionBlocked = false;
+		// Drop the manual AOD override so the next point re-resolves from its own
+		// measured/modeled sources.
+		transmissionAodManual = false;
+		beamShow = false;
+		removeBeamOverlay();
 	}
+
+	// V3-7 — directable-area footprint overlay (MapLibre GeoJSON), mirroring the
+	// OpenAQ manual-source lifecycle (this controller is raster-only).
+	const BEAM_SRC = 'darkmap-beam-src';
+	const BEAM_FILL = 'darkmap-beam-fill-lyr';
+	const BEAM_LINE = 'darkmap-beam-line-lyr';
+	const BEAM_AMBER = '#ffd166';
+
+	// Inline GeoJSON shape (no @types/geojson — see the route overlay above).
+	type BeamFeature = {
+		type: 'Feature';
+		geometry: ReturnType<typeof beamSectorPolygon> | ReturnType<typeof beamCenterline>;
+		properties: { kind: 'sector' | 'centerline' };
+	};
+	type BeamFC = { type: 'FeatureCollection'; features: BeamFeature[] };
+
+	function beamFeatureCollection(): BeamFC | null {
+		if (!readout) return null;
+		const params = {
+			origin: { lon: readout.lon, lat: readout.lat },
+			azimuthDeg: transmissionAzimuthDeg,
+			beamwidthDeg: beamBeamwidthDeg,
+			rangeKm: beamRangeKm,
+		};
+		return {
+			type: 'FeatureCollection',
+			features: [
+				{ type: 'Feature', geometry: beamSectorPolygon(params), properties: { kind: 'sector' } },
+				{ type: 'Feature', geometry: beamCenterline(params), properties: { kind: 'centerline' } },
+			],
+		};
+	}
+
+	function removeBeamOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		if (map.getLayer(BEAM_LINE)) map.removeLayer(BEAM_LINE);
+		if (map.getLayer(BEAM_FILL)) map.removeLayer(BEAM_FILL);
+		if (map.getSource(BEAM_SRC)) map.removeSource(BEAM_SRC);
+	}
+
+	function syncBeamOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		const data = beamShow && transmissionOpen ? beamFeatureCollection() : null;
+		if (!data) {
+			removeBeamOverlay();
+			return;
+		}
+		if (!map.isStyleLoaded()) {
+			map.once('styledata', syncBeamOverlay);
+			return;
+		}
+		const existing = map.getSource(BEAM_SRC) as import('maplibre-gl').GeoJSONSource | undefined;
+		if (existing) {
+			existing.setData(data);
+			return;
+		}
+		map.addSource(BEAM_SRC, { type: 'geojson', data });
+		map.addLayer({
+			id: BEAM_FILL,
+			type: 'fill',
+			source: BEAM_SRC,
+			filter: ['==', ['get', 'kind'], 'sector'],
+			paint: { 'fill-color': BEAM_AMBER, 'fill-opacity': 0.12 },
+		});
+		map.addLayer({
+			id: BEAM_LINE,
+			type: 'line',
+			source: BEAM_SRC,
+			paint: { 'line-color': BEAM_AMBER, 'line-width': 1.5, 'line-opacity': 0.75 },
+		});
+	}
+
+	function onBeamToggle(show: boolean): void {
+		beamShow = show;
+	}
+	function onBeamwidthChange(v: number): void {
+		beamBeamwidthDeg = v;
+	}
+	function onBeamRangeChange(v: number): void {
+		beamRangeKm = v;
+	}
+
+	// Keep the footprint in sync with the boresight + beam params. Reading the
+	// state inside syncBeamOverlay registers the dependencies; when the overlay is
+	// hidden it only tracks beamShow/transmissionOpen and stays cheap.
+	$effect(() => {
+		syncBeamOverlay();
+	});
+
+	// V3-10 — AOD variation along the beam centerline, sampled from the cached
+	// PM2.5 kernel-diffusion field (no extra fetches). Null when the beam is off,
+	// no point is selected, or no stations are cached. Informational: the column
+	// LUT doesn't path-integrate — this answers "does haze change down my beam?".
+	const beamPathAod = $derived.by((): PathProfile | null => {
+		if (!beamShow || !transmissionOpen || !readout || pm25Stations.length === 0) return null;
+		const points = beamSamplePoints(
+			{
+				origin: { lon: readout.lon, lat: readout.lat },
+				azimuthDeg: transmissionAzimuthDeg,
+				beamwidthDeg: beamBeamwidthDeg,
+				rangeKm: beamRangeKm,
+			},
+			8,
+		);
+		const samples = points.map((pt) => {
+			const est = estimatePm25At(pm25Stations, pt.lon, pt.lat);
+			return est.confidence === 'none' ? null : pm25ToAod550(est.valueUgm3);
+		});
+		return aggregatePath(samples);
+	});
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
 	// the page-side lifecycle: a toolbar toggle starts watchPosition, drops
@@ -646,7 +888,11 @@
 		readoutInflight = undefined;
 		readout = undefined;
 		pm25Estimate = null;
+		airQualityReading = null;
 		pointMarker?.remove();
+		// V3 — the sheet is anchored to the selected point; clearing the point
+		// leaves it with nothing to describe, so dismiss it too.
+		if (transmissionOpen) closeTransmission();
 	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
@@ -676,14 +922,36 @@
 			}).pipe(Effect.provide(AtmosphericPointServiceLive)),
 		);
 
+		// V3-5 — pollen + air-quality (CAMS) rides its own isolated Effect so an
+		// outage can't sink the readout; it just leaves the pollen section absent.
+		const airQualityPromise = Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* AirQualityService;
+				return yield* svc.getReading({ lat, lon, time: ephemerisTime }, { signal: controller.signal });
+			}).pipe(Effect.provide(AirQualityServiceLive)),
+		);
+
 		try {
-			const [featureinfo, atmosphericExit] = await Promise.all([featureinfoPromise, atmosphericPromise]);
+			const [featureinfo, atmosphericExit, airQualityExit] = await Promise.all([
+				featureinfoPromise,
+				atmosphericPromise,
+				airQualityPromise,
+			]);
 			if (myGen !== readoutGen || controller.signal.aborted) return;
 			const data: ReadoutData =
 				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
 			readout = { lat, lon, loading: false, data };
-			// #275 — drive the transmission AOD from the local PM2.5 estimate.
-			applyPm25DerivedAod(lat, lon);
+			airQualityReading = airQualityExit._tag === 'Success' ? airQualityExit.value : null;
+			// #275 — local PM2.5 estimate for the readout + the modeled AOD fallback.
+			refreshPm25Estimate(lat, lon);
+			// V3 — the curve is point-anchored: a new point's PWV / AOD (CAMS or the
+			// PM2.5 bridge) must reseed the open sheet, and the per-pin ephemeris is
+			// reloaded so the boresight's sun/moon snap + terrain occlusion track the
+			// new location.
+			if (transmissionOpen) {
+				void loadTransmissionPin();
+				scheduleTransmissionRefresh();
+			}
 		} catch (e) {
 			if (myGen !== readoutGen || controller.signal.aborted) return;
 			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };
@@ -791,6 +1059,12 @@
 		const nextDay = utcDayKey(next);
 		ephemerisTime = next;
 		if (previousDay !== nextDay) remountAtmosphericRasterLayersForDay(nextDay);
+		// V3-4 — sun/moon boresight geometry is time-dependent; reload the pin
+		// ephemeris (which re-snaps a live target) and recompute the open sheet.
+		if (transmissionOpen) {
+			void loadTransmissionPin();
+			scheduleTransmissionRefresh();
+		}
 	}
 
 	function setLayerOpacity(l: RasterLayerDef, op: number): void {
@@ -901,10 +1175,12 @@
 		pointFetchGen.set(l.id, (pointFetchGen.get(l.id) ?? 0) + 1);
 		pointFetchInflight.get(l.id)?.abort();
 		pointFetchInflight.delete(l.id);
-		// #275 — drop the cached stations + any PM2.5-derived AOD caption.
+		// #275 — drop the cached stations + the PM2.5 estimate so the transmission
+		// AOD cascade stops using it; recompute the open sheet.
 		if (l.id === SMOG_LAYER_ID) {
 			pm25Stations = [];
-			transmissionAodSource = undefined;
+			pm25Estimate = null;
+			if (transmissionOpen) scheduleTransmissionRefresh();
 		}
 	}
 
@@ -1302,24 +1578,26 @@
 	basemap={activeBasemap}
 	onbasemapchange={onBasemapChange}
 	time={ephemerisTime}
-	oninfo={onTransmissionInfo}
 />
 <Tour bind:open={tourOpen} steps={tourSteps} />
 <div
 	class="field-hud"
 	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
-	data-readout={readout ? 'open' : 'closed'}
+	data-readout={readout && !transmissionOpen ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
 >
 	{#if transmissionOpen}
 		<TransmissionSheet
+			pointLat={readout?.lat}
+			pointLon={readout?.lon}
 			curve={transmissionCurve}
 			loading={transmissionLoading}
 			error={transmissionError}
 			onclose={closeTransmission}
 			aerosolType={transmissionAerosolType}
 			aod={transmissionAod}
-			aodSource={transmissionAodSource}
+			aodSource={transmissionConstituents?.aod550.caption}
+			pwvSource={transmissionConstituents?.pwv.caption}
 			angstrom={transmissionAngstrom}
 			{onAerosolTypeChange}
 			{onAodChange}
@@ -1329,6 +1607,27 @@
 			bandLoading={transmissionBandLoading}
 			bandError={transmissionBandError}
 			{onBandSelect}
+			lookAzimuthDeg={transmissionAzimuthDeg}
+			lookElevationDeg={transmissionElevationDeg}
+			lookTarget={transmissionLookTarget}
+			{lookZenithDeg}
+			{lookAirmass}
+			lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
+			lookOccluded={lookOcclusion.occluded}
+			blocked={transmissionBlocked}
+			{sunAvailable}
+			{moonAvailable}
+			lookHorizon={transmissionPin?.polygon ?? null}
+			{onLookTargetChange}
+			{onLookAzimuthChange}
+			{onLookElevationChange}
+			showBeam={beamShow}
+			beamwidthDeg={beamBeamwidthDeg}
+			{beamRangeKm}
+			{onBeamToggle}
+			{onBeamwidthChange}
+			{onBeamRangeChange}
+			pathAod={beamPathAod}
 		/>
 	{/if}
 
@@ -1397,7 +1696,7 @@
 		onchange={onRouteFileChange}
 	/>
 
-	{#if readout}
+	{#if readout && !transmissionOpen}
 		<PointReadout
 			lat={readout.lat}
 			lon={readout.lon}
@@ -1406,7 +1705,9 @@
 			loading={readout.loading}
 			error={readout.error}
 			pm25={pm25Estimate}
+			airQuality={airQualityReading}
 			onclose={closeReadout}
+			onTransmissionForPoint={openTransmissionForPoint}
 		/>
 	{/if}
 

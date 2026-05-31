@@ -17,14 +17,12 @@
 
 import { Context, Data, Effect, Layer } from 'effect';
 import type { LatLon } from './EphemerisClient';
+import { type HorizonPolygon, type HorizonSample, horizonAtAzimuth } from './horizonAtAzimuth';
 import { destinationPoint } from './terrarium';
 
-export interface HorizonSample {
-	readonly azimuthDeg: number;
-	readonly altitudeDeg: number;
-}
-
-export type HorizonPolygon = readonly HorizonSample[];
+// Re-exported from the pure `horizonAtAzimuth` module so existing
+// consumers importing from `HorizonProvider` keep working.
+export { type HorizonPolygon, type HorizonSample, horizonAtAzimuth };
 
 export class HorizonError extends Data.TaggedError('HorizonError')<{
 	readonly reason: string;
@@ -218,30 +216,6 @@ export const chainElevationLookups = (
 			};
 		}),
 	);
-
-/**
- * Look up the horizon altitude at a specific azimuth via linear
- * interpolation between the two nearest samples. Returns the
- * interpolated altitude in degrees. The polygon is assumed to be
- * sorted by azimuth ascending and to cover the full 0..360 range
- * (matching what `polygonAt` returns).
- */
-export const horizonAtAzimuth = (polygon: HorizonPolygon, azimuthDeg: number): number => {
-	if (polygon.length === 0) return 0;
-	const az = ((azimuthDeg % 360) + 360) % 360;
-	for (let i = 0; i < polygon.length; i++) {
-		const a = polygon[i];
-		const b = polygon[(i + 1) % polygon.length];
-		const aAz = a.azimuthDeg;
-		// Treat the last segment as wrapping past 360.
-		const bAz = b.azimuthDeg <= aAz ? b.azimuthDeg + 360 : b.azimuthDeg;
-		if (az >= aAz && az <= bAz) {
-			const t = (az - aAz) / Math.max(1e-9, bAz - aAz);
-			return a.altitudeDeg + t * (b.altitudeDeg - a.altitudeDeg);
-		}
-	}
-	return polygon[0].altitudeDeg;
-};
 
 /**
  * Test/preview Layer. Supplies a synthetic ElevationLookup that the
