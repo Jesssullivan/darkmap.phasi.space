@@ -1989,6 +1989,9 @@
 		.field-hud[data-transmission='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
+		.field-hud[data-transmission='open'] :global(.sheet) {
+			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
+		}
 	}
 	:global(.follow-marker) {
 		width: 18px;

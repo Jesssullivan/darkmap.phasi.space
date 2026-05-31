@@ -243,6 +243,28 @@ js_test(
 )
 
 js_test(
+    name = "playwright_mobile_hud_matrix_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-mobile-hud-matrix-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-mobile-hud-matrix-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "mobile-hud-matrix-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
     name = "playwright_map_canvas_smoke",
     data = [
         ":app_build",
