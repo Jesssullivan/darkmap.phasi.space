@@ -657,10 +657,14 @@
 	h3 {
 		margin: 0;
 		font-size: 0.85rem;
+		line-height: 1.25;
 	}
 	.point-coords {
+		display: block;
 		margin: 0.1rem 0 0;
 		font-size: 0.66rem;
+		line-height: 1.2;
+		min-height: 0.8rem;
 		color: rgba(233, 236, 243, 0.55);
 		font-variant-numeric: tabular-nums;
 	}

@@ -301,6 +301,7 @@ async function runMobileHudSmoke(page) {
 	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click();
 	const sheet = page.getByRole('dialog', { name: /atmospheric transmission widget/i });
 	await sheet.waitFor({ state: 'visible', timeout: 20_000 });
+	console.log(`darkmap mobile-hud transmission-open precheck ${JSON.stringify(await collectHudMetrics(page))}`);
 	await sheet.getByText(/for -?\d+\.\d+°,\s*-?\d+\.\d+°/).waitFor({ state: 'visible', timeout: 20_000 });
 	const readoutCount = await page.locator('.readout[role="dialog"]').count();
 	if (readoutCount !== 0) {
@@ -370,7 +371,15 @@ async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 
 async function collectHudMetrics(page) {
 	return page.evaluate(() => {
-		const selectors = ['.readout[role="dialog"]', '.readout h4', '.sheet', '.toolbar', '.gantt', '.attribution'];
+		const selectors = [
+			'.readout[role="dialog"]',
+			'.readout h4',
+			'.sheet',
+			'.sheet .point-coords',
+			'.toolbar',
+			'.gantt',
+			'.attribution',
+		];
 		return Object.fromEntries(
 			selectors.map((selector) => {
 				const node = document.querySelector(selector);
@@ -515,6 +524,14 @@ async function installNetworkGuards(page, baseURL) {
 				await route.fulfill({
 					status: 200,
 					headers: { 'content-type': 'image/png', 'x-darkmap-atmospheric-outcome': 'ok' },
+					body: TRANSPARENT_PNG,
+				});
+				return;
+			}
+			if (url.pathname === '/api/elevation') {
+				await route.fulfill({
+					status: 200,
+					contentType: 'image/png',
 					body: TRANSPARENT_PNG,
 				});
 				return;
