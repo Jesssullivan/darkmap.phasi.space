@@ -76,8 +76,11 @@
 
 	let selected = $state<Selected | null>(null);
 
-	// Point readings (one generation per selection; a newer pick wins).
+	// Point readings (one generation per selection; a newer pick wins). The
+	// generation guard blocks stale STATE writes; the AbortController also cancels
+	// the stale in-flight HTTP requests (mirrors the map page's readout fetch).
 	let gen = 0;
+	let pointController: AbortController | undefined;
 	let loadingPoint = $state(false);
 	let stations = $state<Pm25Station[]>([]);
 	let pollutantUnits = $state<Record<string, string>>({});
@@ -88,6 +91,7 @@
 
 	// History (its own generation: pollutant + window are independently selectable).
 	let histGen = 0;
+	let historyController: AbortController | undefined;
 	let historyParam = $state<HistoryPollutantName>('pm25');
 	let historyHours = $state(24);
 	let history = $state<HistorySeries | null>(null);
@@ -96,7 +100,7 @@
 	// ---- Derived analysis (pure; over the tested shaping modules) ----
 
 	const pm25Estimate = $derived.by<Pm25Estimate | null>(() =>
-		stations.length > 0 ? estimatePm25At(stations, selected!.lon, selected!.lat, DEFAULT_DIFFUSION) : null,
+		selected && stations.length > 0 ? estimatePm25At(stations, selected.lon, selected.lat, DEFAULT_DIFFUSION) : null,
 	);
 
 	const perPollutant = $derived.by(() => {
@@ -153,10 +157,15 @@
 		selectPoint({ lat: s.lat, lon: s.lon, label: s.label, time: selected?.time ?? new Date() });
 	}
 
-	// ---- Data loads (isolated; each failure degrades its own panel only) ----
+	// ---- Data loads (isolated; each failure degrades its own panel only, and a
+	//      new selection aborts the prior load's in-flight requests) ----
 
 	async function loadPoint(sel: Selected): Promise<void> {
 		const my = ++gen;
+		pointController?.abort(); // cancel the previous point's in-flight requests
+		const controller = new AbortController();
+		pointController = controller;
+		const { signal } = controller;
 		loadingPoint = true;
 		openaqReached = false;
 		camsReached = false;
@@ -170,17 +179,17 @@
 			Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const svc = yield* OpenAQService;
-					return yield* svc.getSensors(bbox);
+					return yield* svc.getSensors(bbox, { signal });
 				}).pipe(Effect.provide(OpenAQServiceLive)),
 			),
 			Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const svc = yield* AirQualityService;
-					return yield* svc.getReading({ lat: sel.lat, lon: sel.lon, time: sel.time });
+					return yield* svc.getReading({ lat: sel.lat, lon: sel.lon, time: sel.time }, { signal });
 				}).pipe(Effect.provide(AirQualityServiceLive)),
 			),
 		]);
-		if (my !== gen) return;
+		if (my !== gen || signal.aborted) return;
 
 		if (openaqExit._tag === 'Success') {
 			const fc: OpenAQSensorCollection = openaqExit.value;
@@ -214,15 +223,22 @@
 
 	async function loadHistory(sel: Selected): Promise<void> {
 		const my = ++histGen;
+		historyController?.abort(); // cancel the previous param/window's in-flight request
+		const controller = new AbortController();
+		historyController = controller;
+		const { signal } = controller;
 		history = null;
 		historyLoading = true;
 		const exit = await Effect.runPromiseExit(
 			Effect.gen(function* () {
 				const svc = yield* OpenAQHistoryService;
-				return yield* svc.getHistory({ lat: sel.lat, lon: sel.lon, param: historyParam, hours: historyHours });
+				return yield* svc.getHistory(
+					{ lat: sel.lat, lon: sel.lon, param: historyParam, hours: historyHours },
+					{ signal },
+				);
 			}).pipe(Effect.provide(OpenAQHistoryServiceLive)),
 		);
-		if (my !== histGen) return;
+		if (my !== histGen || signal.aborted) return;
 		history = exit._tag === 'Success' ? exit.value.series : null;
 		historyLoading = false;
 	}
