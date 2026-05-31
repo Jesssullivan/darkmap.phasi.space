@@ -176,7 +176,8 @@
 <style>
 	.geocoder {
 		position: fixed;
-		top: 1rem;
+		/* Honor the notch in landscape (matches the stacking-contract safe-area rule). */
+		top: max(1rem, env(safe-area-inset-top));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 11;

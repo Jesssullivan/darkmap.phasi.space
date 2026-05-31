@@ -25,6 +25,9 @@
 	import type { HorizonPolygon } from '$lib/ephemeris/horizonAtAzimuth';
 
 	interface Props {
+		/** Selected point coords — shown in the header since the readout is hidden while the sheet is open. */
+		pointLat?: number;
+		pointLon?: number;
 		curve: TransmissionCurve | undefined;
 		loading: boolean;
 		error?: string;
@@ -75,6 +78,8 @@
 	}
 
 	let {
+		pointLat = undefined,
+		pointLon = undefined,
 		curve,
 		loading,
 		error,
@@ -219,7 +224,12 @@
 
 <div class="sheet" role="dialog" aria-label="Atmospheric transmission widget">
 	<header>
-		<h3>Atmospheric transmission</h3>
+		<div class="title">
+			<h3>Atmospheric transmission</h3>
+			{#if pointLat !== undefined && pointLon !== undefined}
+				<p class="point-coords">for {pointLat.toFixed(4)}°, {pointLon.toFixed(4)}°</p>
+			{/if}
+		</div>
 		<button class="close" type="button" aria-label="Close transmission sheet" onclick={onclose}>
 			<X size={16} aria-hidden="true" />
 		</button>
@@ -646,6 +656,12 @@
 	h3 {
 		margin: 0;
 		font-size: 0.85rem;
+	}
+	.point-coords {
+		margin: 0.1rem 0 0;
+		font-size: 0.66rem;
+		color: rgba(233, 236, 243, 0.55);
+		font-variant-numeric: tabular-nums;
 	}
 	.close {
 		background: none;
