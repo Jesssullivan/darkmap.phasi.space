@@ -630,6 +630,7 @@
 		background: rgba(8, 10, 16, 0.94);
 		color: #e9ecf3;
 		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		box-sizing: border-box;
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.78rem;
 		overflow-y: auto;
@@ -653,13 +654,26 @@
 		justify-content: space-between;
 		margin-bottom: 0.4rem;
 	}
+	.title {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
 	h3 {
 		margin: 0;
 		font-size: 0.85rem;
+		line-height: 1.25;
 	}
 	.point-coords {
+		display: block;
+		width: 100%;
+		max-width: 100%;
 		margin: 0.1rem 0 0;
 		font-size: 0.66rem;
+		line-height: 1.2;
+		min-height: 0.8rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		color: rgba(233, 236, 243, 0.55);
 		font-variant-numeric: tabular-nums;
 	}

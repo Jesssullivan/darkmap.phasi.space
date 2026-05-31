@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { X } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
@@ -164,6 +165,8 @@
 	let ephemeris: PinEphemerisReadout | null = $state(null);
 	let ephemerisLoading = $state(false);
 	let ephemerisError: string | null = $state(null);
+	let readoutPanel: HTMLDivElement | undefined = $state();
+	let lastScrollResetKey = '';
 
 	async function loadEphemeris(): Promise<void> {
 		ephemerisLoading = true;
@@ -195,6 +198,28 @@
 		ephemerisError = null;
 	});
 
+	$effect(() => {
+		const resetKey = [
+			lat.toFixed(5),
+			lon.toFixed(5),
+			time.getUTCFullYear(),
+			time.getUTCMonth(),
+			time.getUTCDate(),
+			loading ? 'loading' : 'ready',
+			data ? 'data' : 'empty',
+			error ?? '',
+		].join('|');
+		if (readoutPanel && resetKey !== lastScrollResetKey) {
+			lastScrollResetKey = resetKey;
+			readoutPanel.scrollTop = 0;
+			void tick().then(() => {
+				if (readoutPanel && resetKey === lastScrollResetKey) {
+					readoutPanel.scrollTop = 0;
+				}
+			});
+		}
+	});
+
 	const fmtClock = (d: Date | null): string => {
 		if (!d) return '—';
 		const hh = d.getUTCHours().toString().padStart(2, '0');
@@ -210,7 +235,7 @@
 	};
 </script>
 
-<div class="readout" role="dialog" aria-label="Point readout">
+<div bind:this={readoutPanel} class="readout" role="dialog" aria-label="Point readout">
 	<button class="close" type="button" aria-label="Close readout" onclick={onclose}>
 		<X size={16} aria-hidden="true" />
 	</button>
@@ -490,6 +515,7 @@
 		color: #e9ecf3;
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: 8px;
+		box-sizing: border-box;
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.85rem;
 		z-index: 11;
@@ -587,8 +613,11 @@
 		border-top: 1px solid rgba(255, 255, 255, 0.06);
 	}
 	section h4 {
+		display: block;
 		margin: 0 0 0.25rem 0;
 		font-size: 0.7rem;
+		line-height: 1.2;
+		min-height: 0.84rem;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		opacity: 0.65;
@@ -754,6 +783,7 @@
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 			min-width: 0;
 			max-width: none;
+			max-height: calc(100vh - var(--field-bottom-reserve, 7.75rem) - env(safe-area-inset-bottom, 0px) - 7.5rem);
 			max-height: calc(100dvh - var(--field-bottom-reserve, 7.75rem) - env(safe-area-inset-bottom, 0px) - 7.5rem);
 			overflow-y: auto;
 			padding: 0.9rem 1rem 1rem;
