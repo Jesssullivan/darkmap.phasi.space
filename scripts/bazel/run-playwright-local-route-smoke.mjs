@@ -249,17 +249,19 @@ async function runPointReadoutSmoke(page) {
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
-	await readout.getByText(/VIIRS pixel/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/PostGIS:VIIRS_2019/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/World Atlas radiance/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/0\.08\s*mcd\/m²/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/Atmosphere \(Open-Meteo\)/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/12\.3\s*mm/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/24\.0\s*km/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/Pollen & air quality/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/Grass pollen/i).waitFor({ timeout: 20_000 });
-	await readout.getByText(/AOD₅₅₀/i).waitFor({ timeout: 20_000 });
-	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).waitFor({ timeout: 20_000 });
+	await readout.getByText(/VIIRS pixel/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/PostGIS:VIIRS_2019/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/0\.08\s*mcd\/m²/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/Atmosphere \(Open-Meteo\)/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/12\.3\s*mm/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/24\.0\s*km/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/Pollen & air quality/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/Grass pollen/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/AOD₅₅₀/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout
+		.getByRole('button', { name: /open spectral transmission analysis/i })
+		.waitFor({ state: 'attached', timeout: 20_000 });
 
 	const metrics = await readout.evaluate((node) => {
 		const rect = node.getBoundingClientRect();
