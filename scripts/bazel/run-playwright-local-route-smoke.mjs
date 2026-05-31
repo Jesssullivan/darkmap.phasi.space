@@ -245,7 +245,12 @@ async function runPointReadoutSmoke(page) {
 	await runMapCanvasSmoke(page);
 
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	await canvas.click({ position: { x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2) } });
+	await canvas.click({
+		position: {
+			x: Math.round(VIEWPORT.width / 2),
+			y: Math.round(VIEWPORT.height / 2),
+		},
+	});
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
