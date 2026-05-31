@@ -114,6 +114,11 @@ test.describe('AQ dashboard (/aq)', () => {
 		// Cross-check panel: a comparison exists and the only-where-both caption is present.
 		await expect(page.getByRole('heading', { name: 'Source cross-check' })).toBeVisible();
 		await expect(page.getByText(/compared only where both reported a value/i)).toBeVisible();
+
+		// Area overview: station count + the observed-sample (not full coverage) caption.
+		await expect(page.getByRole('heading', { name: 'Area overview' })).toBeVisible();
+		await expect(page.getByText(/reporting PM2\.5/i)).toBeVisible();
+		await expect(page.getByText(/an observed sample, not full-area coverage/i)).toBeVisible();
 	});
 
 	test('an empty history window reads as no samples, not a fabricated line', async ({ page }) => {
