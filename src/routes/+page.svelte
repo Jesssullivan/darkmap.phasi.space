@@ -1941,7 +1941,7 @@
 	.attribution a {
 		color: var(--accent-amber);
 	}
-	@media (max-width: 820px) {
+	@media (max-width: 820px), (max-height: 500px) {
 		.field-hud :global(.readout[role='dialog']) {
 			bottom: calc(
 				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
@@ -1978,7 +1978,7 @@
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 		}
 	}
-	@media (max-width: 820px) and (orientation: landscape), (max-width: 820px) and (max-height: 500px) {
+	@media (max-width: 820px) and (orientation: landscape), (max-height: 500px) {
 		.field-hud[data-transmission='open'][data-readout='open'] {
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
