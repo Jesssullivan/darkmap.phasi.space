@@ -201,7 +201,9 @@ async function runMapCanvasSmoke(page) {
 		);
 	} catch (err) {
 		const diagnostics = await collectMapDiagnostics(page);
-		throw new Error(`MapLibre canvas did not attach: ${err?.message ?? err}; diagnostics=${JSON.stringify(diagnostics)}`);
+		throw new Error(
+			`MapLibre canvas did not attach: ${err?.message ?? err}; diagnostics=${JSON.stringify(diagnostics)}`,
+		);
 	}
 
 	const metrics = await page.evaluate(() => {
