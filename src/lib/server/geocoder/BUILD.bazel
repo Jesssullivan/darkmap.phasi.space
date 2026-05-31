@@ -1,0 +1,52 @@
+"""Bazel targets for the darkmap server-side geocoder unit-test slice."""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+# Implementation sources (no *.test.ts) for the root //:app_build SSR build,
+# which imports `$lib/server/geocoder/...`. See raster package BUILD for why.
+js_library(
+    name = "geocoder_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# GeocoderClient.ts (Effect service) and cache.ts (TtlCache) are server-side,
+# node-safe, with no DOM and no cross-package imports.
+filegroup(
+    name = "geocoder_srcs",
+    srcs = glob(["*.ts"]),
+)
+
+vitest.vitest_test(
+    name = "geocoder_test",
+    data = [
+        ":geocoder_srcs",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/server/geocoder/GeocoderClient.test.ts",
+        "src/lib/server/geocoder/cache.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)

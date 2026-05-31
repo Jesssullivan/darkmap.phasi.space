@@ -1,4 +1,4 @@
-# darkmap.tinyland.dev Bazel Configuration
+# darkmap.phasi.space Bazel Configuration
 #
 # Bazel 8 + Bzlmod. Mirrors elders.tinyland.dev's two-registry chain:
 # tinyland-inc/bazel-registry first, then BCR. Site build remains
@@ -41,14 +41,12 @@ common:ci-cached --remote_upload_local_results=true
 common:ci-cached --remote_local_fallback
 common:ci-cached --remote_timeout=120
 common:ci-cached --remote_retries=3
-common:ci-cached --experimental_remote_cache_compression
 
 common:executor-backed --remote_cache_async
 common:executor-backed --remote_upload_local_results=true
 common:executor-backed --remote_local_fallback
 common:executor-backed --remote_timeout=300
 common:executor-backed --remote_retries=3
-common:executor-backed --experimental_remote_cache_compression
 
 # Debug knob — blank a wrapper-supplied endpoint.
 build:no-remote-cache --remote_cache=

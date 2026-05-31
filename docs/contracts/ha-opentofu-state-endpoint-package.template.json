@@ -1,0 +1,60 @@
+{
+	"name": "managed-ha-opentofu-state-proof",
+	"posture": "proof_ready",
+	"candidate_contract": "docs/contracts/ha-opentofu-state-managed-s3-candidate.json",
+	"endpoint_url": "https://state-proof.example.invalid",
+	"region": "us-east-1",
+	"network_audience": "replace-me: tailnet operators or repo-managed proof runner audience",
+	"credential_source": "replace-me: dedicated state-only secret authority; no Attic, Bazel, BCR, RBE, or CAS credentials",
+	"rotation_owner": "replace-me: team or operator group that owns credential rotation",
+	"restore_owner": "replace-me: team or operator group that owns state restore tests",
+	"credential_injection": {
+		"endpoint_env": "TOFU_HA_STATE_ENDPOINT",
+		"region_env": "TOFU_HA_STATE_REGION",
+		"access_key_env": "TOFU_HA_STATE_ACCESS_KEY",
+		"secret_key_env": "TOFU_HA_STATE_SECRET_KEY"
+	},
+	"scratch_bucket": "darkmap-ha-state-proof",
+	"scratch_bucket_policy": [
+		"replace-me: allow create/list/read/write/delete for darkmap-ha-state-proof only",
+		"deny tofu-state and protected stack prefixes"
+	],
+	"protected_state_denials": [
+		"deny tofu-state bucket",
+		"deny tofu-state/darkmap-tinyland-dev/terraform.tfstate",
+		"deny spokes/darkmap/terraform.tfstate",
+		"deny attic/terraform.tfstate",
+		"deny arc-runners/terraform.tfstate",
+		"deny tinyland-infra/gitlab-runners/terraform.tfstate",
+		"deny tinyland-infra/runner-dashboard/terraform.tfstate"
+	],
+	"bucket_recovery": {
+		"versioning": "replace-me: enabled or equivalent object-generation history",
+		"retention_or_backup": "replace-me: retained backup independent from Attic and Bazel cache storage",
+		"restore_test": "replace-me: scratch and disposable OpenTofu restore test method"
+	},
+	"state_locking": "OpenTofu S3 backend use_lockfile proof is required before protected state migration",
+	"maintenance_proof": {
+		"restart_or_managed_maintenance": "replace-me: maintenance event preserves head/list/read/write",
+		"node_or_failure_domain": "replace-me: multi-zone, quorum, or managed equivalent failure-domain event"
+	},
+	"observability": [
+		"replace-me: failed auth signal",
+		"replace-me: failed write signal",
+		"replace-me: replication lag signal",
+		"replace-me: delete behavior signal"
+	],
+	"authority_separation": [
+		"Attic cache is separate",
+		"Bazel cache is separate",
+		"BCR mirrors are separate",
+		"RBE CAS and action-cache are separate"
+	],
+	"proof_commands": [
+		"just ha-state-credential-boundary-check endpoint-package.json --checkpoint-file credential-boundary.json",
+		"just ha-state-candidate-proof --endpoint-package endpoint-package.json --phase baseline --checkpoint-file scratch-proof-baseline.json",
+		"just ha-state-candidate-proof --endpoint-package endpoint-package.json --run-disposable-tofu --use-lockfile",
+		"just ha-state-candidate-proof --endpoint-package endpoint-package.json --keep-scratch-bucket --checkpoint-file <path>"
+	],
+	"non_secret": true
+}

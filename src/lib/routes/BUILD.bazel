@@ -1,0 +1,51 @@
+"""Bazel targets for the darkmap route-import unit-test slice."""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+# Implementation sources (no *.test.ts) for the root //:app_build SSR build,
+# which imports `$lib/routes/...`. See the raster package BUILD for rationale.
+js_library(
+    name = "routes_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# RouteImportService.ts is a pure Effect service (GeoJSON/GPX/KML parsing) with
+# no DOM and no cross-package imports.
+filegroup(
+    name = "routes_srcs",
+    srcs = glob(["*.ts"]),
+)
+
+vitest.vitest_test(
+    name = "routes_test",
+    data = [
+        ":routes_srcs",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/routes/RouteImportService.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)

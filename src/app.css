@@ -38,6 +38,15 @@
    the native light-dark() function which switches via document color-scheme. */
 @custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
 
+/* Accent amber — single source for the warm highlight used across the map
+   overlays (health pills, active states, sun glyphs, links). The -rgb token
+   holds the channels so translucent tints compose as
+   rgba(var(--accent-amber-rgb), α); --accent-amber is the solid form. */
+:root {
+	--accent-amber-rgb: 255, 209, 102;
+	--accent-amber: rgb(var(--accent-amber-rgb));
+}
+
 [data-mode='light'] {
 	color-scheme: light;
 }
@@ -53,6 +62,14 @@ html {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	text-rendering: optimizeLegibility;
+	--field-bottom-reserve: 7.75rem;
+	--map-toolbar-inset-rem: 5rem;
+}
+
+@media (max-width: 820px) {
+	html {
+		--field-bottom-reserve: 8.75rem;
+	}
 }
 
 body {
@@ -323,6 +340,70 @@ pre.shiki span {
 
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
 	background: var(--color-surface-500);
+}
+
+/* ===== On-map surface stacking contract =====
+   Fixed overlays share the map canvas; this is the authoritative map of
+   their z-index + anchor so new panels compose instead of colliding.
+   Keep this comment in sync when adding/moving an overlay.
+
+     z-index  surface              anchor
+     ───────  ───────────────────  ─────────────────────────────
+       5      attribution          bottom-left
+       6      SkyCompass           top-right (hidden ≤560px)
+       6      EphemerisGantt strip bottom, full width (minus toolbar inset)
+       8      MapToolbar           bottom-right
+       8      MapErrorToast        bottom-left
+       9      LayerRail backdrop   full (mobile drawer only)
+      10      LayerRail            left (drawer ≤640px)
+      11      GeocoderSearch       top-center
+      11      PointReadout         bottom-right (full-width ≤820px)
+      12      TransmissionSheet    bottom-right (full-width bottom sheet ≤640px)
+      12      LayerRail toggle     top-left
+
+   Bottom-stack rule: the page-level `.field-hud` layout owner in
+   `src/routes/+page.svelte` sets the active mobile slot state. Mobile
+   bottom panels reserve the twilight strip's height (#267), the toolbar's
+   width, and every edge-anchored panel uses safe-area aware gaps so
+   notched-landscape never clips it. */
+
+/* ===== Queried-point locator marker =====
+   Imperative MapLibre marker (lives outside the Svelte tree), so styled
+   globally. Amber crosshair anchoring a PointReadout to its place; dims
+   when the readout closes. Color matches the app's amber accent. */
+.darkmap-point-marker {
+	color: var(--accent-amber);
+	filter: drop-shadow(0 0 2px rgba(8, 10, 16, 0.9));
+	pointer-events: none;
+	transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.darkmap-point-marker.is-stale {
+	opacity: 0.35;
+}
+.darkmap-point-marker svg {
+	display: block;
+}
+/* One-time locating pulse: an expanding ring that fades once on placement. */
+.darkmap-point-marker::after {
+	content: '';
+	position: absolute;
+	inset: 50% auto auto 50%;
+	width: 24px;
+	height: 24px;
+	margin: -12px 0 0 -12px;
+	border: 1.5px solid var(--accent-amber);
+	border-radius: 999px;
+	animation: darkmap-marker-pulse 900ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+}
+@keyframes darkmap-marker-pulse {
+	from {
+		transform: scale(0.6);
+		opacity: 0.7;
+	}
+	to {
+		transform: scale(2.6);
+		opacity: 0;
+	}
 }
 
 /* ===== Reduced motion =====

@@ -3,11 +3,6 @@ output "namespace" {
   value       = kubernetes_namespace_v1.darkmap.metadata[0].name
 }
 
-output "upstream_secret_name" {
-  description = "Name of the secret holding QUERY_RASTER_KEY."
-  value       = kubernetes_secret_v1.darkmap_upstream.metadata[0].name
-}
-
 output "dns_record" {
   description = "Live CF A record for darkmap.tinyland.dev."
   value = {
@@ -15,4 +10,13 @@ output "dns_record" {
     content  = cloudflare_dns_record.darkmap_a.content
     proxied  = cloudflare_dns_record.darkmap_a.proxied
   }
+}
+
+output "public_dns_record" {
+  description = "Managed public Cloudflare record for darkmap.phasi.space, when adopted by this stack."
+  value = var.public_dns_enabled ? {
+    hostname = var.brand_domain
+    content  = cloudflare_dns_record.darkmap_public_cname[0].content
+    proxied  = cloudflare_dns_record.darkmap_public_cname[0].proxied
+  } : null
 }

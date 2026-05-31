@@ -3,12 +3,12 @@
 	"schema_version": 1,
 	"spoke": {
 		"name": "darkmap",
-		"domain": "darkmap.tinyland.dev"
+		"domain": "darkmap.phasi.space"
 	},
 	"defaults": {
 		"runner_class": "tinyland-nix",
 		"ttl_hours": 72,
-		"flywheel_target_classes": ["sveltekit-app-build", "sveltekit-unit-tests"]
+		"flywheel_target_classes": ["sveltekit-unit-tests", "sveltekit-app-build"]
 	},
 	"lanes": [
 		{

@@ -1,0 +1,26 @@
+{
+	"name": "darkmap — dark-sky planning",
+	"short_name": "darkmap",
+	"description": "Dark-sky planning map for astronomy, field sensing, and night-work logistics. VIIRS DNB, Falchi 2016, terrain horizon, sun/moon ephemeris.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "any",
+	"theme_color": "#0c1018",
+	"background_color": "#0c1018",
+	"categories": ["navigation", "travel", "utilities", "weather"],
+	"icons": [
+		{
+			"src": "/favicon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any"
+		},
+		{
+			"src": "/favicon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "maskable"
+		}
+	]
+}

@@ -1,11 +1,40 @@
 """Bazel targets for the darkmap ephemeris service unit-test slice."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
 filegroup(
     name = "ephemeris_srcs",
     srcs = glob(["*.ts"]),
+)
+
+# Implementation sources (no *.test.ts) exposed as a js_library so the root
+# //:app_build (SvelteKit SSR build) can consume them across the package
+# boundary. See the raster package BUILD for the copy_to_bin rationale.
+js_library(
+    name = "ephemeris_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# Pure, dependency-free modules consumed cross-package by the transmission
+# slant-path slice (`$lib/ephemeris/{airmass,horizonAtAzimuth}`). aspect_rules_js
+# rejects raw cross-package file labels in `data`, so each is bin-copied via its
+# own js_library — mirrors the spectral package's value-source exports.
+js_library(
+    name = "airmass",
+    srcs = ["airmass.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "horizon_at_azimuth",
+    srcs = ["horizonAtAzimuth.ts"],
+    visibility = ["//visibility:public"],
 )
 
 ts_project(
@@ -41,9 +70,17 @@ vitest.vitest_test(
         "--config",
         "vitest.bazel.config.ts",
         "src/lib/ephemeris/EphemerisClient.test.ts",
+        "src/lib/ephemeris/viewportSummaryCache.test.ts",
+        "src/lib/ephemeris/viewportSummary.test.ts",
+        "src/lib/ephemeris/horizonAtAzimuth.test.ts",
     ],
     log_level = "info",
     tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
         "gloriousflywheel-cache-candidate",
         "vitest",
     ],

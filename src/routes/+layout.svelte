@@ -1,14 +1,41 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+	import { dev } from '$app/environment';
 	import { page } from '$app/state';
+	import { Effect } from 'effect';
 	import { Menu, X } from '@lucide/svelte';
 	import SaturnMark from '$lib/components/SaturnMark.svelte';
 	import { AppBar, Dialog, Navigation } from '@skeletonlabs/skeleton-svelte';
 	import { TinyVectors } from '@tummycrypt/tinyvectors';
 	import '../app.css';
 	import ThemeSwitcher from '$lib/components/ThemeSwitcher.svelte';
+	import { OfflineCacheService } from '$lib/effect/services/OfflineCacheService';
+	import { OfflineCacheServiceBrowserLive } from '$lib/effect/services/OfflineCacheServiceBrowser';
 
 	let { children } = $props();
+
+	// Gates browser-only DOM (the TinyVectors background) on a post-mount flag
+	// rather than `browser`. `{#if browser}` diverges at *hydration* time — the
+	// server renders nothing, the hydrating client renders the node, and Svelte 5
+	// flags a hydration_mismatch. A mounted flag (false on SSR *and* the first
+	// client render, true only after onMount) keeps the trees identical.
+	let mounted = $state(false);
+
+	onMount(() => {
+		mounted = true;
+		// Register the service worker for offline field use. Production-only +
+		// secure-context guard so `just dev` never caches stale builds and so
+		// HTTP previews degrade gracefully (SW registration is HTTPS-gated).
+		if (dev || !window.isSecureContext) return;
+		void Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const cache = yield* OfflineCacheService;
+				yield* cache.register();
+			}).pipe(Effect.provide(OfflineCacheServiceBrowserLive)),
+		).then((exit) => {
+			if (exit._tag === 'Failure') console.warn('OfflineCache register failed', exit.cause);
+		});
+	});
 
 	// The map at `/` is the application surface — full viewport, no chrome.
 	// Every other route (e.g. /docs) gets the full AppBar + footer shell.
@@ -20,7 +47,8 @@
 	// non-home route the link navigates back to `/` and scrolls to the section.
 	const navLinks: { href: string; label: string }[] = [
 		{ href: '/', label: 'Overview' },
-		{ href: '/#contact', label: 'Contact' },
+		{ href: '/aq', label: 'Air quality' },
+		{ href: '/docs#contact', label: 'Contact' },
 	];
 
 	const SITE_NAME = 'darkmap';
@@ -67,7 +95,7 @@
 	<!-- TinyVectors warm Tinyland background. Browser-only — the component uses
 	     window/navigator APIs and Svelte effects that crash under SSR. Fixed
 	     full-viewport, behind everything, low opacity. (TIN-801 phase 3.) -->
-	{#if browser}
+	{#if mounted}
 		<div
 			class="pointer-events-none fixed inset-0 -z-10"
 			style="overflow:hidden"

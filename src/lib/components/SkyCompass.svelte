@@ -1,7 +1,14 @@
 <script lang="ts">
-	import { Effect, Layer } from 'effect';
-	import { onDestroy } from 'svelte';
+	import { Cause, Effect, Layer, Option } from 'effect';
+	import { onDestroy, onMount } from 'svelte';
+	import { Compass, Moon, Sun } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import {
+		makeOrientationServiceLive,
+		OrientationService,
+		orientationCapabilityFor,
+		type OrientationWatch,
+	} from '$lib/device/OrientationService';
 	import { airmassKastenYoung, formatAirmass } from '$lib/ephemeris/airmass';
 	import type { BodyPosition, EphemerisReadout, LatLon, SkyPositions } from '$lib/ephemeris/EphemerisClient';
 	import type { HorizonPolygon } from '$lib/ephemeris/HorizonProvider';
@@ -13,7 +20,107 @@
 
 	let { location, time }: Props = $props();
 
-	let readout = $state<EphemerisReadout | null>(null);
+	// Device-orientation compass overlay (#102). Status machine:
+	//   unknown      — pre-mount / SSR
+	//   unsupported  — no DeviceOrientationEvent
+	//   needs-permission — iOS Safari path; show "Enable compass" button
+	//   granted      — desktop/Android path; start watch immediately
+	//   active       — watch running, heading flowing
+	//   denied       — user denied the permission prompt
+	//   error        — watch start failed for another reason
+	type CompassStatus = 'unknown' | 'unsupported' | 'needs-permission' | 'granted' | 'active' | 'denied' | 'error';
+	let compassStatus = $state<CompassStatus>('unknown');
+	let headingDeg = $state<number | null>(null);
+	let compassWatch: OrientationWatch | undefined;
+	let lastHeadingTs = 0;
+
+	onMount(() => {
+		const capability = orientationCapabilityFor({
+			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
+				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
+			},
+		});
+		compassStatus =
+			capability === 'unsupported' ? 'unsupported' : capability === 'needs-permission' ? 'needs-permission' : 'granted';
+		// Desktop/Android: no gesture required — start the watch on mount.
+		if (compassStatus === 'granted') void startCompassWatch();
+	});
+
+	onDestroy(() => {
+		compassWatch?.stop();
+		compassWatch = undefined;
+	});
+
+	async function startCompassWatch(): Promise<void> {
+		const layer = makeOrientationServiceLive({
+			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
+				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
+			},
+			addEventListener: (type, listener) => window.addEventListener(type, listener),
+			removeEventListener: (type, listener) => window.removeEventListener(type, listener),
+		});
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OrientationService;
+				return yield* svc.watch((reading) => {
+					// 8 Hz cap — DeviceOrientationEvent fires up to ~60 Hz on some
+					// devices; the on-screen needle doesn't need that resolution.
+					const now = Date.now();
+					if (now - lastHeadingTs < 125) return;
+					lastHeadingTs = now;
+					headingDeg = reading.headingDeg;
+				});
+			}).pipe(Effect.provide(layer)),
+		);
+		if (exit._tag === 'Failure') {
+			// Cause.failureOption extracts the typed failure for any cause shape
+			// (Fail/Sequential/Parallel); the old `cause.error` cast only worked
+			// for a bare Fail and silently mis-classified the rest as 'error'.
+			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
+			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
+			return;
+		}
+		compassWatch = exit.value;
+		compassStatus = 'active';
+	}
+
+	async function enableCompass(): Promise<void> {
+		const layer = makeOrientationServiceLive({
+			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
+				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
+			},
+			addEventListener: (type, listener) => window.addEventListener(type, listener),
+			removeEventListener: (type, listener) => window.removeEventListener(type, listener),
+		});
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OrientationService;
+				return yield* svc.requestPermission();
+			}).pipe(Effect.provide(layer)),
+		);
+		if (exit._tag === 'Failure') {
+			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
+			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
+			return;
+		}
+		await startCompassWatch();
+	}
+
+	function compassButtonLabel(): string {
+		switch (compassStatus) {
+			case 'needs-permission':
+				return 'Enable compass';
+			case 'denied':
+				return 'Compass denied';
+			case 'error':
+				return 'Compass error';
+			case 'active':
+				return `Compass on${headingDeg !== null ? ` (${Math.round(headingDeg)}°)` : ''}`;
+			default:
+				return '';
+		}
+	}
+
 	let trajectory = $state<{ frac: number; sun: BodyPosition }[]>([]);
 	let horizon = $state<HorizonPolygon | null>(null);
 	let horizonError = $state(false);
@@ -59,18 +166,23 @@
 		return clientPromise;
 	};
 
-	let cancelGen = 0;
+	// Each async effect owns its own cancellation counter. Sharing one counter
+	// let a time-scrub (the lightweight cursor effect) bump the generation and
+	// silently abort the in-flight trajectory/horizon build mid-loop, leaving the
+	// sun-arc stale until location/day changed. Separate counters keep them
+	// independent — scrubbing time no longer cancels the trajectory.
+	let trajectoryGen = 0;
+	let cursorGen = 0;
 	const dayKey = $derived(
 		`${time.getUTCFullYear()}-${time.getUTCMonth()}-${time.getUTCDate()}|${location.lat.toFixed(3)},${location.lon.toFixed(3)}`,
 	);
 
 	$effect(() => {
-		const myGen = ++cancelGen;
+		const myGen = ++trajectoryGen;
 		(async () => {
 			const c = await loadClient();
 			const r = await c.at(location, time);
-			if (myGen !== cancelGen) return;
-			readout = r;
+			if (myGen !== trajectoryGen) return;
 			// Sample sun position every 15 min from astro dawn to astro dusk so
 			// the trajectory shows the full visible-light cycle. Fall back to
 			// the whole UTC day when polar (no twilight events).
@@ -86,7 +198,7 @@
 			const STEP_MS = 15 * 60 * 1000;
 			for (let ts = start.getTime(); ts <= end.getTime(); ts += STEP_MS) {
 				const p = await c.positionAt(location, new Date(ts));
-				if (myGen !== cancelGen) return;
+				if (myGen !== trajectoryGen) return;
 				samples.push({ frac: (ts - start.getTime()) / span, sun: p.sun });
 			}
 			trajectory = samples;
@@ -96,29 +208,29 @@
 			// the dot rendering on them. On error, fall back to a flat horizon.
 			c.horizonAt(location)
 				.then((poly) => {
-					if (myGen !== cancelGen) return;
+					if (myGen !== trajectoryGen) return;
 					horizon = poly;
 					horizonError = false;
 				})
 				.catch((e) => {
-					if (myGen !== cancelGen) return;
+					if (myGen !== trajectoryGen) return;
 					horizon = null;
 					horizonError = true;
 					console.warn('SkyCompass: horizon polygon failed, falling back to flat', e);
 				});
 		})().catch((e) => {
-			if (myGen === cancelGen) console.warn('SkyCompass: failed to load', e);
+			if (myGen === trajectoryGen) console.warn('SkyCompass: failed to load', e);
 		});
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		dayKey;
 	});
 
 	$effect(() => {
-		const myGen = ++cancelGen;
+		const myGen = ++cursorGen;
 		(async () => {
 			const c = await loadClient();
 			const p = await c.positionAt(location, time);
-			if (myGen !== cancelGen) return;
+			if (myGen !== cursorGen) return;
 			cursor = p;
 		})().catch(() => undefined);
 		// re-run on time change only — location triggers the heavier effect above
@@ -129,7 +241,9 @@
 	let cursor = $state<SkyPositions | null>(null);
 
 	onDestroy(() => {
-		cancelGen++;
+		// Cancel any in-flight async work in both effects on unmount.
+		trajectoryGen++;
+		cursorGen++;
 	});
 
 	// Compass geometry. SVG viewBox is 0..200; origin at center (100,100),
@@ -240,6 +354,18 @@
 			<path d={horizonPath} fill="rgba(110, 78, 48, 0.35)" stroke="rgba(180, 130, 80, 0.75)" stroke-width="0.9" />
 		{/if}
 
+		{#if compassStatus === 'active' && headingDeg !== null}
+			<!-- Device heading needle. Triangle from compass center pointing toward
+			     the bearing the phone is facing. heading=0 → up (toward N). -->
+			<g transform="rotate({headingDeg} {CX} {CY})" class="heading-needle">
+				<line x1={CX} y1={CY} x2={CX} y2={CY - R + 4} stroke="rgba(255, 209, 102, 0.85)" stroke-width="2" />
+				<polygon
+					points="{CX},{CY - R - 2} {CX - 4},{CY - R + 8} {CX + 4},{CY - R + 8}"
+					fill="rgba(255, 209, 102, 0.95)"
+				/>
+			</g>
+		{/if}
+
 		{#if trajectoryPath}
 			<path
 				d={trajectoryPath}
@@ -271,7 +397,7 @@
 	</svg>
 	<div class="readout">
 		<div class="row">
-			<span class="badge sun">☼</span>
+			<span class="badge sun" aria-label="Sun"><Sun size={14} aria-hidden="true" /></span>
 			<span>alt {fmtAlt(cursor?.sun.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.sun.azimuthDeg)}</span>
 			{#if cursor && cursor.sun.altitudeDeg > 0}
@@ -299,7 +425,7 @@
 			{/if}
 		</div>
 		<div class="row">
-			<span class="badge moon">☾</span>
+			<span class="badge moon" aria-label="Moon"><Moon size={14} aria-hidden="true" /></span>
 			<span>alt {fmtAlt(cursor?.moon.altitudeDeg)}</span>
 			<span>az {fmtAz(cursor?.moon.azimuthDeg)}</span>
 			{#if moonHorizonDelta?.blocked}
@@ -307,12 +433,32 @@
 			{:else if moonHorizonDelta}
 				<span class="horizon">h {fmtAlt(moonHorizonDelta.horizonAlt)}</span>
 			{/if}
-			{#if readout}
-				<span class="phase">{readout.moon.phaseName}</span>
-			{/if}
+			<!-- Moon phase/illumination is shown once, in the EphemerisGantt readout
+			     rendered alongside this compass; the compass row keeps the
+			     position-specific alt/az/horizon and omits the duplicate phase. -->
 		</div>
 		{#if horizonError}
 			<div class="row note">terrain horizon unavailable — flat horizon assumed</div>
+		{/if}
+		{#if compassStatus === 'needs-permission'}
+			<div class="row compass-row">
+				<button type="button" class="compass-btn" onclick={enableCompass}>
+					<Compass size={14} aria-hidden="true" />
+					{compassButtonLabel()}
+				</button>
+			</div>
+		{:else if compassStatus === 'active'}
+			<div class="row compass-row" aria-live="polite">
+				<span class="compass-status">
+					<Compass size={14} aria-hidden="true" />
+					{compassButtonLabel()}
+				</span>
+			</div>
+		{:else if compassStatus === 'denied' || compassStatus === 'error'}
+			<div class="row note">
+				<Compass size={14} aria-hidden="true" />
+				{compassButtonLabel()}
+			</div>
 		{/if}
 	</div>
 </div>
@@ -321,9 +467,10 @@
 	.sky {
 		position: fixed;
 		/* Sit under the top-center geocoder search input so it doesn't
-		   stack over it on narrow widths. */
-		top: 3.75rem;
-		right: 1rem;
+		   stack over it on narrow widths. `max(…, env())` keeps it clear of
+		   the notch/rounded corner in landscape on notched devices. */
+		top: max(3.75rem, env(safe-area-inset-top));
+		right: max(1rem, env(safe-area-inset-right));
 		width: 9.5rem;
 		background: rgba(8, 10, 16, 0.78);
 		border: 1px solid rgba(255, 255, 255, 0.1);
@@ -372,18 +519,14 @@
 		width: 1rem;
 	}
 	.badge.sun {
-		color: #ffd166;
+		color: var(--accent-amber);
 	}
 	.badge.moon {
 		color: #dde2ff;
 	}
-	.phase {
-		margin-left: auto;
-		opacity: 0.6;
-	}
 	.airmass {
 		opacity: 0.7;
-		color: #ffd166;
+		color: var(--accent-amber);
 		font-variant-numeric: tabular-nums;
 	}
 	.horizon {
@@ -395,5 +538,35 @@
 	.note {
 		opacity: 0.55;
 		font-style: italic;
+	}
+	.compass-row {
+		gap: 0.4rem;
+		margin-top: 0.25rem;
+	}
+	.compass-btn {
+		background: rgba(8, 10, 16, 0.85);
+		color: #e9ecf3;
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.45);
+		border-radius: 999px;
+		padding: 0.3rem 0.65rem;
+		font: inherit;
+		font-size: 0.75rem;
+		cursor: pointer;
+		min-height: 2.25rem;
+	}
+	.compass-btn:hover,
+	.compass-btn:focus-visible {
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.85);
+		outline: none;
+	}
+	.compass-status {
+		color: rgba(var(--accent-amber-rgb), 0.9);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.heading-needle {
+		transition: transform 0.12s linear;
+		transform-origin: center;
 	}
 </style>

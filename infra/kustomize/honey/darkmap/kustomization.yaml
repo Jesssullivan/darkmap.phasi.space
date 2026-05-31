@@ -6,6 +6,11 @@ kind: Kustomization
 namespace: darkmap
 
 labels:
+  # These labels are part of the live Deployment/Service/PDB selectors.
+  # Kubernetes treats Deployment selectors as immutable, so keep this
+  # selector identity stable even while public-facing metadata moves to
+  # darkmap.phasi.space in docs, repo metadata, image names, and ingress
+  # hosts.
   - includeSelectors: true
     pairs:
       app.kubernetes.io/name: darkmap
@@ -21,11 +26,10 @@ resources:
   - ingress.yaml
   - poddisruptionbudget.yaml
 
-# CI substitutes the resolved SHA via `kustomize edit set image
-# darkmap=ghcr.io/jesssullivan/darkmap.tinyland.dev:${GITHUB_SHA}` before
-# applying. The `:main` floating tag is the default for ad-hoc operator
-# applies.
+# CI substitutes the short SHA tag emitted by docker/metadata-action via
+# `kustomize edit set image` before applying. The `:main` floating tag is
+# the default for ad-hoc operator applies.
 images:
   - name: darkmap
-    newName: ghcr.io/jesssullivan/darkmap.tinyland.dev
+    newName: ghcr.io/jesssullivan/darkmap.phasi.space
     newTag: main
