@@ -9,6 +9,7 @@ import { chromium } from '@playwright/test';
 process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
 
 const VIEWPORT = { width: 390, height: 844 };
+const SMOKE_SCENARIO = process.env.DARKMAP_RBE_SMOKE_SCENARIO ?? 'shell';
 const TRANSPARENT_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
 	'base64',
@@ -76,6 +77,35 @@ try {
 	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
 
 	await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+	await runSmokeScenario(page, SMOKE_SCENARIO);
+
+	if (pageErrors.length > 0) {
+		throw new Error(`page errors during browser-RBE ${SMOKE_SCENARIO} smoke: ${pageErrors.join(' | ')}`);
+	}
+	if (consoleErrors.length > 0) {
+		console.log(`darkmap ${SMOKE_SCENARIO} smoke observed console errors: ${consoleErrors.join(' | ')}`);
+	}
+
+	console.log(`darkmap Playwright ${SMOKE_SCENARIO} smoke passed with ${chromiumPath}`);
+} finally {
+	await browser?.close();
+	await stopServer(server);
+}
+
+async function runSmokeScenario(page, scenario) {
+	switch (scenario) {
+		case 'shell':
+			await runShellSmoke(page);
+			return;
+		case 'mobile-layers':
+			await runMobileLayersSmoke(page);
+			return;
+		default:
+			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
+	}
+}
+
+async function runShellSmoke(page) {
 	await page.getByRole('button', { name: /open layers/i }).waitFor({ timeout: 20_000 });
 	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
 	await page
@@ -85,18 +115,62 @@ try {
 
 	const mapCanvasCount = await page.locator('canvas.maplibregl-canvas').count();
 	console.log(`darkmap shell smoke observed ${mapCanvasCount} MapLibre canvas node(s)`);
+}
 
-	if (pageErrors.length > 0) {
-		throw new Error(`page errors during browser-RBE smoke: ${pageErrors.join(' | ')}`);
-	}
-	if (consoleErrors.length > 0) {
-		console.log(`darkmap shell smoke observed console errors: ${consoleErrors.join(' | ')}`);
+async function runMobileLayersSmoke(page) {
+	const toggle = page.getByRole('button', { name: /open layers/i });
+	await toggle.waitFor({ timeout: 20_000 });
+
+	const beforeExpanded = await toggle.getAttribute('aria-expanded');
+	if (beforeExpanded !== 'false') {
+		throw new Error(`expected mobile layer drawer to start collapsed, got aria-expanded=${beforeExpanded}`);
 	}
 
-	console.log(`darkmap Playwright local-route smoke passed with ${chromiumPath}`);
-} finally {
-	await browser?.close();
-	await stopServer(server);
+	await toggle.click();
+	const closeToggle = page.getByRole('button', { name: /close layers/i });
+	await closeToggle.waitFor({ timeout: 20_000 });
+
+	const rail = page.locator('[data-tour="rail"].open').first();
+	await rail.waitFor({ state: 'attached', timeout: 20_000 });
+	await page.waitForFunction(
+		() => {
+			const node = document.querySelector('[data-tour="rail"].open');
+			if (!(node instanceof HTMLElement)) return false;
+			const rect = node.getBoundingClientRect();
+			const style = getComputedStyle(node);
+			return style.display !== 'none' && style.visibility !== 'hidden' && rect.left >= -2 && rect.right > 120;
+		},
+		null,
+		{ timeout: 20_000 },
+	);
+
+	const metrics = await rail.evaluate((node) => {
+		const rect = node.getBoundingClientRect();
+		const style = getComputedStyle(node);
+		return {
+			display: style.display,
+			height: rect.height,
+			left: rect.left,
+			right: rect.right,
+			transform: style.transform,
+			visibility: style.visibility,
+			width: rect.width,
+		};
+	});
+	if (metrics.width < 280 || metrics.height < 500) {
+		throw new Error(`mobile layer drawer opened with unexpected geometry: ${JSON.stringify(metrics)}`);
+	}
+
+	await rail.getByRole('radiogroup', { name: /basemap/i }).waitFor({ timeout: 20_000 });
+	await rail.getByRole('button', { name: /light pollution/i }).waitFor({ timeout: 20_000 });
+	await rail.getByRole('button', { name: /atmosphere/i }).waitFor({ timeout: 20_000 });
+	await rail.getByRole('slider', { name: /viirs opacity/i }).waitFor({ timeout: 20_000 });
+
+	await closeToggle.click();
+	await page.locator('[data-tour="rail"].open').waitFor({ state: 'detached', timeout: 20_000 });
+	await page.getByRole('button', { name: /open layers/i }).waitFor({ timeout: 20_000 });
+
+	console.log(`darkmap mobile-layers smoke opened drawer with ${JSON.stringify(metrics)}`);
 }
 
 function findBuildDir() {
