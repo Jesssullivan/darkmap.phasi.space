@@ -63,6 +63,13 @@
 		onLookTargetChange?: (t: LookTarget) => void;
 		onLookAzimuthChange?: (v: number) => void;
 		onLookElevationChange?: (v: number) => void;
+		// V3-7 — directable-area footprint overlay controls.
+		showBeam?: boolean;
+		beamwidthDeg?: number;
+		beamRangeKm?: number;
+		onBeamToggle?: (show: boolean) => void;
+		onBeamwidthChange?: (v: number) => void;
+		onBeamRangeChange?: (v: number) => void;
 	}
 
 	let {
@@ -97,6 +104,12 @@
 		onLookTargetChange,
 		onLookAzimuthChange,
 		onLookElevationChange,
+		showBeam = false,
+		beamwidthDeg = 20,
+		beamRangeKm = 25,
+		onBeamToggle,
+		onBeamwidthChange,
+		onBeamRangeChange,
 	}: Props = $props();
 
 	const WIDTH = 360;
@@ -225,6 +238,45 @@
 			onAzimuthChange={onLookAzimuthChange ?? (() => {})}
 			onElevationChange={onLookElevationChange ?? (() => {})}
 		/>
+	{/if}
+
+	{#if onBeamToggle}
+		<section class="beam-controls" aria-label="Directable-area footprint">
+			<label class="beam-toggle">
+				<input
+					type="checkbox"
+					checked={showBeam}
+					onchange={(e) => onBeamToggle?.((e.target as HTMLInputElement).checked)}
+				/>
+				<span>Show beam footprint on map</span>
+			</label>
+			{#if showBeam}
+				<label class="beam-row">
+					<span class="slider-label">Beamwidth <span class="val">{Math.round(beamwidthDeg)}°</span></span>
+					<input
+						type="range"
+						min="1"
+						max="120"
+						step="1"
+						value={beamwidthDeg}
+						aria-label="Beam width"
+						oninput={(e) => onBeamwidthChange?.(Number((e.target as HTMLInputElement).value))}
+					/>
+				</label>
+				<label class="beam-row">
+					<span class="slider-label">Range <span class="val">{Math.round(beamRangeKm)} km</span></span>
+					<input
+						type="range"
+						min="1"
+						max="200"
+						step="1"
+						value={beamRangeKm}
+						aria-label="Beam range"
+						oninput={(e) => onBeamRangeChange?.(Number((e.target as HTMLInputElement).value))}
+					/>
+				</label>
+			{/if}
+		</section>
 	{/if}
 
 	{#if loading}
@@ -617,6 +669,53 @@
 		color: rgba(233, 236, 243, 0.5);
 		font-size: 0.6rem;
 		font-weight: 400;
+	}
+	.beam-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		margin-bottom: 0.6rem;
+		padding: 0.45rem 0.55rem;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 7px;
+	}
+	.beam-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		font-size: 0.74rem;
+		color: #d7dbe4;
+		cursor: pointer;
+	}
+	.beam-toggle input {
+		accent-color: var(--accent-amber);
+	}
+	.beam-row {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+	.beam-row input[type='range'] {
+		width: 100%;
+		accent-color: var(--accent-amber);
+	}
+	.beam-row .slider-label {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.7rem;
+		color: rgba(233, 236, 243, 0.75);
+	}
+	.beam-row .val {
+		color: var(--accent-amber);
+		font-variant-numeric: tabular-nums;
+	}
+	@media (pointer: coarse) {
+		.beam-toggle {
+			min-height: 2.2rem;
+		}
+		.beam-row input[type='range'] {
+			min-height: 1.8rem;
+		}
 	}
 	.unit {
 		opacity: 0.6;

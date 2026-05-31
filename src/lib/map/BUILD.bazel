@@ -33,6 +33,7 @@ vitest.vitest_test(
         "--config",
         "vitest.bazel.config.ts",
         "src/lib/map/BasemapController.test.ts",
+        "src/lib/map/beam-footprint.test.ts",
         "src/lib/map/MapLayerController.cancellation.test.ts",
         "src/lib/map/MapLayerController.test.ts",
         "src/lib/map/atmosphericTileProtocol.test.ts",

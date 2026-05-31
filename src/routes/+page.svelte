@@ -33,6 +33,7 @@
 	} from '$lib/transmission/slant-geometry';
 	import type { LookTarget } from '$lib/transmission/look-angle';
 	import { computePinEphemeris, type PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
+	import { beamCenterline, beamSectorPolygon } from '$lib/map/beam-footprint';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
@@ -236,6 +237,12 @@
 	// `transmissionConstituents` carries the per-field provenance for the sheet.
 	let transmissionAodManual = $state(false);
 	let transmissionConstituents = $state<TxConstituents | undefined>(undefined);
+	// V3-7 — directable-area footprint: an azimuth sector + centerline drawn from
+	// the selected point along the boresight. Visualization only (doesn't change
+	// the curve). Azimuth comes from the boresight; beamwidth + range are local.
+	let beamShow = $state(false);
+	let beamBeamwidthDeg = $state(20);
+	let beamRangeKm = $state(25);
 	// Latest in-viewport OpenAQ stations, cached so a click can sample the
 	// diffusion field without re-fetching. Mirrors the GeoJSON the heatmap uses.
 	let pm25Stations = $state<Pm25Station[]>([]);
@@ -446,7 +453,99 @@
 		// Drop the manual AOD override so the next point re-resolves from its own
 		// measured/modeled sources.
 		transmissionAodManual = false;
+		beamShow = false;
+		removeBeamOverlay();
 	}
+
+	// V3-7 — directable-area footprint overlay (MapLibre GeoJSON), mirroring the
+	// OpenAQ manual-source lifecycle (this controller is raster-only).
+	const BEAM_SRC = 'darkmap-beam-src';
+	const BEAM_FILL = 'darkmap-beam-fill-lyr';
+	const BEAM_LINE = 'darkmap-beam-line-lyr';
+	const BEAM_AMBER = '#ffd166';
+
+	// Inline GeoJSON shape (no @types/geojson — see the route overlay above).
+	type BeamFeature = {
+		type: 'Feature';
+		geometry: ReturnType<typeof beamSectorPolygon> | ReturnType<typeof beamCenterline>;
+		properties: { kind: 'sector' | 'centerline' };
+	};
+	type BeamFC = { type: 'FeatureCollection'; features: BeamFeature[] };
+
+	function beamFeatureCollection(): BeamFC | null {
+		if (!readout) return null;
+		const params = {
+			origin: { lon: readout.lon, lat: readout.lat },
+			azimuthDeg: transmissionAzimuthDeg,
+			beamwidthDeg: beamBeamwidthDeg,
+			rangeKm: beamRangeKm,
+		};
+		return {
+			type: 'FeatureCollection',
+			features: [
+				{ type: 'Feature', geometry: beamSectorPolygon(params), properties: { kind: 'sector' } },
+				{ type: 'Feature', geometry: beamCenterline(params), properties: { kind: 'centerline' } },
+			],
+		};
+	}
+
+	function removeBeamOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		if (map.getLayer(BEAM_LINE)) map.removeLayer(BEAM_LINE);
+		if (map.getLayer(BEAM_FILL)) map.removeLayer(BEAM_FILL);
+		if (map.getSource(BEAM_SRC)) map.removeSource(BEAM_SRC);
+	}
+
+	function syncBeamOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		const data = beamShow && transmissionOpen ? beamFeatureCollection() : null;
+		if (!data) {
+			removeBeamOverlay();
+			return;
+		}
+		if (!map.isStyleLoaded()) {
+			map.once('styledata', syncBeamOverlay);
+			return;
+		}
+		const existing = map.getSource(BEAM_SRC) as import('maplibre-gl').GeoJSONSource | undefined;
+		if (existing) {
+			existing.setData(data);
+			return;
+		}
+		map.addSource(BEAM_SRC, { type: 'geojson', data });
+		map.addLayer({
+			id: BEAM_FILL,
+			type: 'fill',
+			source: BEAM_SRC,
+			filter: ['==', ['get', 'kind'], 'sector'],
+			paint: { 'fill-color': BEAM_AMBER, 'fill-opacity': 0.12 },
+		});
+		map.addLayer({
+			id: BEAM_LINE,
+			type: 'line',
+			source: BEAM_SRC,
+			paint: { 'line-color': BEAM_AMBER, 'line-width': 1.5, 'line-opacity': 0.75 },
+		});
+	}
+
+	function onBeamToggle(show: boolean): void {
+		beamShow = show;
+	}
+	function onBeamwidthChange(v: number): void {
+		beamBeamwidthDeg = v;
+	}
+	function onBeamRangeChange(v: number): void {
+		beamRangeKm = v;
+	}
+
+	// Keep the footprint in sync with the boresight + beam params. Reading the
+	// state inside syncBeamOverlay registers the dependencies; when the overlay is
+	// hidden it only tracks beamShow/transmissionOpen and stays cheap.
+	$effect(() => {
+		syncBeamOverlay();
+	});
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
 	// the page-side lifecycle: a toolbar toggle starts watchPosition, drops
@@ -1488,6 +1587,12 @@
 		{onLookTargetChange}
 		{onLookAzimuthChange}
 		{onLookElevationChange}
+		showBeam={beamShow}
+		beamwidthDeg={beamBeamwidthDeg}
+		{beamRangeKm}
+		{onBeamToggle}
+		{onBeamwidthChange}
+		{onBeamRangeChange}
 	/>
 {/if}
 
