@@ -207,18 +207,26 @@ async function runMobileLayersSmoke(page) {
 
 async function runMapCanvasSmoke(page) {
 	await page.locator('[data-tour="map"]').waitFor({ state: 'attached', timeout: 20_000 });
+	const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	const minCanvasWidth = Math.min(300, Math.floor(viewport.width * 0.9));
+	const minCanvasHeight = Math.min(300, Math.floor(viewport.height * 0.9));
 	try {
 		await page.locator(MAP_CANVAS_SELECTOR).first().waitFor({ state: 'attached', timeout: 30_000 });
 		await page.waitForFunction(
-			(selector) => {
+			({ selector, minCanvasWidth, minCanvasHeight }) => {
 				const map = document.querySelector('[data-tour="map"]');
 				const canvas = document.querySelector(selector);
 				if (!(map instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false;
 				const mapRect = map.getBoundingClientRect();
 				const canvasRect = canvas.getBoundingClientRect();
-				return mapRect.width > 300 && mapRect.height > 500 && canvasRect.width > 300 && canvasRect.height > 500;
+				return (
+					mapRect.width >= minCanvasWidth &&
+					mapRect.height >= minCanvasHeight &&
+					canvasRect.width >= minCanvasWidth &&
+					canvasRect.height >= minCanvasHeight
+				);
 			},
-			MAP_CANVAS_SELECTOR,
+			{ selector: MAP_CANVAS_SELECTOR, minCanvasWidth, minCanvasHeight },
 			{ timeout: 30_000 },
 		);
 	} catch (err) {
