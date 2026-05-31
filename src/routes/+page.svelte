@@ -1305,108 +1305,115 @@
 	oninfo={onTransmissionInfo}
 />
 <Tour bind:open={tourOpen} steps={tourSteps} />
-{#if transmissionOpen}
-	<TransmissionSheet
-		curve={transmissionCurve}
-		loading={transmissionLoading}
-		error={transmissionError}
-		onclose={closeTransmission}
-		aerosolType={transmissionAerosolType}
-		aod={transmissionAod}
-		aodSource={transmissionAodSource}
-		angstrom={transmissionAngstrom}
-		{onAerosolTypeChange}
-		{onAodChange}
-		{onAngstromChange}
-		selectedBandId={transmissionBandId}
-		bandCurve={transmissionBandCurve}
-		bandLoading={transmissionBandLoading}
-		bandError={transmissionBandError}
-		{onBandSelect}
-	/>
-{/if}
+<div
+	class="field-hud"
+	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
+	data-readout={readout ? 'open' : 'closed'}
+	data-transmission={transmissionOpen ? 'open' : 'closed'}
+>
+	{#if transmissionOpen}
+		<TransmissionSheet
+			curve={transmissionCurve}
+			loading={transmissionLoading}
+			error={transmissionError}
+			onclose={closeTransmission}
+			aerosolType={transmissionAerosolType}
+			aod={transmissionAod}
+			aodSource={transmissionAodSource}
+			angstrom={transmissionAngstrom}
+			{onAerosolTypeChange}
+			{onAodChange}
+			{onAngstromChange}
+			selectedBandId={transmissionBandId}
+			bandCurve={transmissionBandCurve}
+			bandLoading={transmissionBandLoading}
+			bandError={transmissionBandError}
+			{onBandSelect}
+		/>
+	{/if}
 
-{#if ephemerisOpen}
-	<SkyCompass location={viewCenter} time={ephemerisTime} />
-	<EphemerisGantt
-		location={viewCenter}
-		time={ephemerisTime}
-		bounds={viewBounds}
-		zoom={viewZoom}
-		onTimeChange={(t) => {
-			setEphemerisTime(t);
-			scheduleHashWrite();
-		}}
-	/>
-{/if}
-
-<MapToolbar
-	items={[
-		{
-			id: 'ephemeris',
-			label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
-			icon: SunMoon,
-			title: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
-			pressed: ephemerisOpen,
-			onclick: () => {
-				ephemerisOpen = !ephemerisOpen;
-				if (ephemerisOpen && !decodeHash(window.location.hash).time) {
-					setEphemerisTime(new Date());
-				}
+	{#if ephemerisOpen}
+		<SkyCompass location={viewCenter} time={ephemerisTime} />
+		<EphemerisGantt
+			location={viewCenter}
+			time={ephemerisTime}
+			bounds={viewBounds}
+			zoom={viewZoom}
+			onTimeChange={(t) => {
+				setEphemerisTime(t);
 				scheduleHashWrite();
+			}}
+		/>
+	{/if}
+
+	<MapToolbar
+		items={[
+			{
+				id: 'ephemeris',
+				label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
+				icon: SunMoon,
+				title: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
+				pressed: ephemerisOpen,
+				onclick: () => {
+					ephemerisOpen = !ephemerisOpen;
+					if (ephemerisOpen && !decodeHash(window.location.hash).time) {
+						setEphemerisTime(new Date());
+					}
+					scheduleHashWrite();
+				},
 			},
-		},
-		{
-			id: 'follow',
-			label: followButtonLabel(),
-			icon: LocateFixed,
-			title: followButtonLabel(),
-			pressed: followStatus !== 'off',
-			onclick: toggleFollow,
-		},
-		{
-			id: 'route',
-			label: currentRoute ? `Clear imported route (${currentRoute.name})` : 'Import KML / GPX / GeoJSON route',
-			icon: currentRoute ? X : Upload,
-			title: currentRoute ? `Clear ${currentRoute.name}` : 'Import KML / GPX / GeoJSON route',
-			pressed: currentRoute !== null,
-			onclick: triggerRoutePicker,
-		},
-		{
-			id: 'tour',
-			label: 'Take the guided tour',
-			icon: Compass,
-			title: 'Take the guided tour',
-			pressed: tourOpen,
-			onclick: () => (tourOpen = true),
-		},
-	]}
-/>
-
-<input
-	bind:this={routeFileInput}
-	type="file"
-	accept=".kml,.gpx,.geojson,.json,application/gpx+xml,application/vnd.google-earth.kml+xml,application/geo+json,application/json"
-	style="display: none"
-	onchange={onRouteFileChange}
-/>
-
-{#if readout}
-	<PointReadout
-		lat={readout.lat}
-		lon={readout.lon}
-		time={ephemerisTime}
-		data={readout.data}
-		loading={readout.loading}
-		error={readout.error}
-		pm25={pm25Estimate}
-		onclose={closeReadout}
+			{
+				id: 'follow',
+				label: followButtonLabel(),
+				icon: LocateFixed,
+				title: followButtonLabel(),
+				pressed: followStatus !== 'off',
+				onclick: toggleFollow,
+			},
+			{
+				id: 'route',
+				label: currentRoute ? `Clear imported route (${currentRoute.name})` : 'Import KML / GPX / GeoJSON route',
+				icon: currentRoute ? X : Upload,
+				title: currentRoute ? `Clear ${currentRoute.name}` : 'Import KML / GPX / GeoJSON route',
+				pressed: currentRoute !== null,
+				onclick: triggerRoutePicker,
+			},
+			{
+				id: 'tour',
+				label: 'Take the guided tour',
+				icon: Compass,
+				title: 'Take the guided tour',
+				pressed: tourOpen,
+				onclick: () => (tourOpen = true),
+			},
+		]}
 	/>
-{/if}
 
-<footer class="attribution">
-	<a href="/docs">credits + sources</a>
-</footer>
+	<input
+		bind:this={routeFileInput}
+		type="file"
+		accept=".kml,.gpx,.geojson,.json,application/gpx+xml,application/vnd.google-earth.kml+xml,application/geo+json,application/json"
+		style="display: none"
+		onchange={onRouteFileChange}
+	/>
+
+	{#if readout}
+		<PointReadout
+			lat={readout.lat}
+			lon={readout.lon}
+			time={ephemerisTime}
+			data={readout.data}
+			loading={readout.loading}
+			error={readout.error}
+			pm25={pm25Estimate}
+			onclose={closeReadout}
+		/>
+	{/if}
+
+	<footer class="attribution">
+		<a href="/docs">credits + sources</a>
+	</footer>
+</div>
 
 <style>
 	:global(html),
@@ -1441,6 +1448,32 @@
 		z-index: 100;
 		pointer-events: none;
 	}
+	.field-hud {
+		--field-gap: 0.75rem;
+		--field-panel-bottom: 0px;
+		--field-panel-max-height: min(60vh, 28rem);
+		pointer-events: none;
+	}
+	.field-hud :global(.gantt),
+	.field-hud :global(.readout[role='dialog']),
+	.field-hud :global(.sheet),
+	.field-hud :global(.sky),
+	.field-hud :global(.toolbar),
+	.field-hud .attribution {
+		pointer-events: auto;
+	}
+	.field-hud[data-ephemeris='open'] {
+		--field-panel-bottom: calc(
+			var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
+		);
+		--field-panel-max-height: min(
+			48vh,
+			calc(100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 4.75rem)
+		);
+	}
+	.field-hud[data-transmission='open'][data-readout='open'] {
+		--field-panel-max-height: min(40vh, calc(100dvh - var(--field-panel-bottom) - 15.25rem));
+	}
 	.attribution {
 		position: absolute;
 		bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px));
@@ -1456,9 +1489,50 @@
 		color: var(--accent-amber);
 	}
 	@media (max-width: 820px) {
+		.field-hud :global(.readout[role='dialog']) {
+			bottom: calc(
+				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
+			) !important;
+			max-height: calc(
+				100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 5rem
+			) !important;
+		}
+		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
+			top: calc(4.75rem + env(safe-area-inset-top, 0px)) !important;
+			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
+			bottom: auto !important;
+			max-height: min(24dvh, 10rem) !important;
+		}
+		.field-hud[data-transmission='open'] :global(.toolbar) {
+			top: calc(4.25rem + env(safe-area-inset-top, 0px)) !important;
+			bottom: auto !important;
+		}
+		.field-hud[data-transmission='open'] :global(.sheet) {
+			bottom: var(--field-panel-bottom) !important;
+			max-height: var(--field-panel-max-height) !important;
+			border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+			box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.42);
+		}
+		.field-hud[data-readout='open'] .attribution,
+		.field-hud[data-transmission='open'] .attribution {
+			display: none;
+		}
 		.attribution {
 			left: 0.75rem;
-			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
+			bottom: calc(
+				var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem
+			);
+		}
+	}
+	@media (max-width: 820px) and (orientation: landscape), (max-width: 820px) and (max-height: 500px) {
+		.field-hud[data-transmission='open'][data-readout='open'] {
+			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
+		}
+		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
+			display: none;
+		}
+		.field-hud[data-transmission='open'] :global(.toolbar) {
+			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
 	}
 	:global(.follow-marker) {
