@@ -13,6 +13,7 @@
 		type AirQualityPointReading,
 		type PollenReading,
 	} from '$lib/effect/services/AirQualityService';
+	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -89,6 +90,9 @@
 		airQuality ? POLLEN_SPECIES.filter((s) => airQuality.pollen[s] !== null) : ([] as (keyof PollenReading)[]),
 	);
 	const missingPollenCount = $derived(POLLEN_SPECIES.length - reportedPollen.length);
+	// V3-9 — geometric-optics optical depth from the pollen load. Informational:
+	// it is ~1e-4–1e-3 even at heavy counts, i.e. negligible for transmission.
+	const pollenTau = $derived(airQuality ? pollenOpticalDepth(airQuality.pollen) : null);
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -286,6 +290,13 @@
 				</dl>
 				{#if missingPollenCount > 0}
 					<p class="note">{missingPollenCount} other species not in season — none reported.</p>
+				{/if}
+				{#if pollenTau && pollenTau.tau > 0}
+					<p class="note">
+						Optical depth τ ≈ {pollenTau.tau.toExponential(1)}{pollenTau.negligible
+							? ' — negligible for transmission'
+							: ''}
+					</p>
 				{/if}
 			{:else}
 				<p class="note">No pollen reported for this hour / region.</p>
