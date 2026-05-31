@@ -27,6 +27,8 @@
  * or the Effect runtime.
  */
 
+import { isFiniteNumber as finite } from './stats';
+
 /** Provenance of a single source value, mirroring the model-card `kind`. */
 export type SourceKind = 'measured' | 'modeled' | 'imagery';
 
@@ -92,8 +94,6 @@ export interface CrossValResult {
 	 */
 	readonly emptyReason: string | null;
 }
-
-const finite = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /**
  * Relative tolerances + conflict thresholds. These are coarse v1 engineering

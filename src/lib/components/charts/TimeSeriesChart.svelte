@@ -15,6 +15,8 @@
 	 * The window label + sample count live in the parent panel, not here.
 	 */
 
+	import { median } from '$lib/atmospheric/stats';
+
 	interface ChartPoint {
 		/** ISO-8601 timestamp. */
 		readonly at: string;
@@ -55,12 +57,15 @@
 		if (valid.length === 0) {
 			return { plotted: [] as Plotted[], segments: [] as string[], yMin: 0, yMax: 0, H };
 		}
-		const xs = valid.map((p) => p.at);
-		const ys = valid.map((p) => p.value);
-		const xMin = Math.min(...xs);
-		const xMax = Math.max(...xs);
-		let yMin = Math.min(...ys);
-		let yMax = Math.max(...ys);
+		// `valid` is sorted ascending by `at`, so the x-extent is just the ends.
+		const xMin = valid[0].at;
+		const xMax = valid[valid.length - 1].at;
+		let yMin = valid[0].value;
+		let yMax = valid[0].value;
+		for (const p of valid) {
+			if (p.value < yMin) yMin = p.value;
+			if (p.value > yMax) yMax = p.value;
+		}
 		if (yMin === yMax) {
 			// Flat series: give it a sane band so the line sits mid-height.
 			yMin = yMin > 0 ? 0 : yMin - 1;
@@ -79,9 +84,8 @@
 
 		// Median spacing → break the path across real gaps (missing hours).
 		const deltas = plotted.slice(1).map((p, i) => p.at - plotted[i].at);
-		const sorted = [...deltas].sort((a, b) => a - b);
-		const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-		const breakAt = median > 0 ? median * gapFactor : Infinity;
+		const medianDelta = deltas.length ? median(deltas) : 0;
+		const breakAt = medianDelta > 0 ? medianDelta * gapFactor : Infinity;
 
 		const segments: string[] = [];
 		let run: Plotted[] = [];

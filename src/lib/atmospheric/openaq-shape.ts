@@ -89,8 +89,13 @@ export const selectFreshLocations = (
 		if (!hasCriteria) return false;
 		return isFresh(l.datetimeLast?.utc, nowMs, staleAfterMs);
 	});
-	fresh.sort((a, b) => Date.parse(b.datetimeLast?.utc ?? '') - Date.parse(a.datetimeLast?.utc ?? ''));
-	return fresh.slice(0, Math.max(0, max));
+	// Parse each timestamp once (decorate-sort-undecorate) instead of twice per
+	// comparison, then take the most-recent `max`.
+	return fresh
+		.map((loc) => ({ loc, ts: Date.parse(loc.datetimeLast?.utc ?? '') }))
+		.sort((a, b) => b.ts - a.ts)
+		.slice(0, Math.max(0, max))
+		.map((d) => d.loc);
 };
 
 /**
