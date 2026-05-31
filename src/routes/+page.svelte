@@ -37,14 +37,8 @@
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
-	import {
-		estimatePm25At,
-		formatNearestKm,
-		formatStationCount,
-		pm25ToAod550,
-		type Pm25Estimate,
-		type Pm25Station,
-	} from '$lib/atmospheric/pm25-diffusion';
+	import { estimatePm25At, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
+	import { buildTxConstituents, toTransmissionInput, type TxConstituents } from '$lib/atmospheric/tx-constituents';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -236,11 +230,12 @@
 	});
 	const sunAvailable = $derived((transmissionPin?.flat.sun.altitudeDeg ?? -1) > 0);
 	const moonAvailable = $derived((transmissionPin?.flat.moon.altitudeDeg ?? -1) > 0);
-	// #275 — when the smog overlay is on, a clicked point's AOD input can be
-	// driven by the local PM2.5 kernel-diffusion estimate. `transmissionAodSource`
-	// captions the widget so users know the AOD is modeled (with confidence),
-	// not measured. Cleared when the user drags the slider manually.
-	let transmissionAodSource = $state<string | undefined>(undefined);
+	// V3-6 — the AOD fed to the curve resolves through a source cascade (measured
+	// CAMS → modeled PM2.5 bridge → default slider) in buildTxConstituents; a
+	// manual drag pins it. `transmissionAodManual` tracks that explicit override;
+	// `transmissionConstituents` carries the per-field provenance for the sheet.
+	let transmissionAodManual = $state(false);
+	let transmissionConstituents = $state<TxConstituents | undefined>(undefined);
 	// Latest in-viewport OpenAQ stations, cached so a click can sample the
 	// diffusion field without re-fetching. Mirrors the GeoJSON the heatmap uses.
 	let pm25Stations = $state<Pm25Station[]>([]);
@@ -269,14 +264,23 @@
 			return;
 		}
 		transmissionBlocked = false;
-		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
-		const input = {
-			pwvMm: pwv,
-			aod550: transmissionAod,
+		// V3-6 — resolve every constituent with honest provenance in one place.
+		const constituents = buildTxConstituents({
+			pwvMm: readout?.data?.atmospheric?.pwv ?? null,
+			camsAod550: airQualityReading?.aod550 ?? null,
+			pm25Estimate,
+			manualAod550: transmissionAod,
+			manualAodActive: transmissionAodManual,
 			angstrom: transmissionAngstrom,
 			o3Du: transmissionO3,
 			zenithDeg: elevationToZenithDeg(transmissionElevationDeg),
-		};
+			zenithDirected: transmissionLookTarget !== 'zenith',
+		});
+		transmissionConstituents = constituents;
+		// Reflect the resolved AOD back into the slider when not a manual override,
+		// so the control shows the value actually used (CAMS / PM2.5 / default).
+		if (!transmissionAodManual) transmissionAod = constituents.aod550.value;
+		const input = toTransmissionInput(constituents);
 		transmissionLoading = true;
 		transmissionError = undefined;
 		const aerosolType = transmissionAerosolType;
@@ -370,38 +374,26 @@
 	}
 	function onAodChange(value: number): void {
 		transmissionAod = value;
-		// Manual override — the AOD is no longer the PM2.5-derived estimate.
-		transmissionAodSource = undefined;
+		// Manual override pins the AOD over the CAMS / PM2.5 source cascade.
+		transmissionAodManual = true;
 		scheduleTransmissionRefresh();
 	}
 
 	const SMOG_LAYER_ID = 'smog-openaq-pm25';
 
 	/**
-	 * #275 — derive the transmission AOD input from the local PM2.5 field at a
-	 * clicked point. Only when the smog overlay is enabled and stations are in
-	 * range; honest about confidence and never fabricates over sparse data
-	 * (the diffusion estimator returns `none` and we leave AOD untouched).
+	 * #275 — compute the local PM2.5 kernel-diffusion estimate at a clicked point.
+	 * Surfaced in the readout AND consumed by buildTxConstituents as the modeled
+	 * AOD fallback. Only when the smog overlay is on + stations are in range;
+	 * never fabricates over sparse data (the estimator returns `none` → nothing).
 	 */
-	function applyPm25DerivedAod(lat: number, lon: number): void {
+	function refreshPm25Estimate(lat: number, lon: number): void {
 		if (!layerState[SMOG_LAYER_ID]?.on || pm25Stations.length === 0) {
 			pm25Estimate = null;
-			transmissionAodSource = undefined;
 			return;
 		}
 		const est = estimatePm25At(pm25Stations, lon, lat);
-		// Surface the estimate in the readout when it rests on real coverage;
-		// `none` means no in-range station — show nothing rather than fabricate.
 		pm25Estimate = est.confidence === 'none' ? null : est;
-		const aod = pm25ToAod550(est.valueUgm3);
-		if (est.confidence === 'none' || aod === null) {
-			transmissionAodSource = undefined;
-			return;
-		}
-		transmissionAod = aod;
-		const near = formatNearestKm(est.nearestKm);
-		transmissionAodSource = `modeled from local PM2.5 — ${est.confidence} confidence (${formatStationCount(est.contributingStations)}${near ? `, ${near}` : ''})`;
-		if (transmissionOpen) scheduleTransmissionRefresh();
 	}
 	function onAngstromChange(value: number): void {
 		transmissionAngstrom = value;
@@ -451,6 +443,9 @@
 		transmissionLookTarget = 'zenith';
 		transmissionPin = null;
 		transmissionBlocked = false;
+		// Drop the manual AOD override so the next point re-resolves from its own
+		// measured/modeled sources.
+		transmissionAodManual = false;
 	}
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
@@ -822,13 +817,12 @@
 				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
 			readout = { lat, lon, loading: false, data };
 			airQualityReading = airQualityExit._tag === 'Success' ? airQualityExit.value : null;
-			// #275 — drive the transmission AOD from the local PM2.5 estimate.
-			applyPm25DerivedAod(lat, lon);
-			// V3 — the curve is point-anchored: a new point's PWV (and AOD) must
-			// reseed the open sheet. applyPm25DerivedAod only reschedules when it
-			// derives an AOD, so this covers the smog-off / PWV-only path. Reload
-			// the per-pin ephemeris too so the boresight's sun/moon snap + terrain
-			// occlusion track the new location.
+			// #275 — local PM2.5 estimate for the readout + the modeled AOD fallback.
+			refreshPm25Estimate(lat, lon);
+			// V3 — the curve is point-anchored: a new point's PWV / AOD (CAMS or the
+			// PM2.5 bridge) must reseed the open sheet, and the per-pin ephemeris is
+			// reloaded so the boresight's sun/moon snap + terrain occlusion track the
+			// new location.
 			if (transmissionOpen) {
 				void loadTransmissionPin();
 				scheduleTransmissionRefresh();
@@ -1056,10 +1050,12 @@
 		pointFetchGen.set(l.id, (pointFetchGen.get(l.id) ?? 0) + 1);
 		pointFetchInflight.get(l.id)?.abort();
 		pointFetchInflight.delete(l.id);
-		// #275 — drop the cached stations + any PM2.5-derived AOD caption.
+		// #275 — drop the cached stations + the PM2.5 estimate so the transmission
+		// AOD cascade stops using it; recompute the open sheet.
 		if (l.id === SMOG_LAYER_ID) {
 			pm25Stations = [];
-			transmissionAodSource = undefined;
+			pm25Estimate = null;
+			if (transmissionOpen) scheduleTransmissionRefresh();
 		}
 	}
 
@@ -1467,7 +1463,8 @@
 		onclose={closeTransmission}
 		aerosolType={transmissionAerosolType}
 		aod={transmissionAod}
-		aodSource={transmissionAodSource}
+		aodSource={transmissionConstituents?.aod550.caption}
+		pwvSource={transmissionConstituents?.pwv.caption}
 		angstrom={transmissionAngstrom}
 		{onAerosolTypeChange}
 		{onAodChange}

@@ -37,6 +37,7 @@ vitest.vitest_test(
         "vitest.bazel.config.ts",
         "src/lib/atmospheric/model-cards.test.ts",
         "src/lib/atmospheric/pm25-diffusion.test.ts",
+        "src/lib/atmospheric/tx-constituents.test.ts",
     ],
     log_level = "info",
     tags = [
