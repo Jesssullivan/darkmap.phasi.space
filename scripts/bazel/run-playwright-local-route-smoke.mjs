@@ -114,6 +114,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'map-canvas':
 			await runMapCanvasSmoke(page);
 			return;
+		case 'point-readout':
+			await runPointReadoutSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -236,6 +239,40 @@ async function runMapCanvasSmoke(page) {
 	}
 
 	console.log(`darkmap map-canvas smoke observed ${JSON.stringify(metrics)}`);
+}
+
+async function runPointReadoutSmoke(page) {
+	await runMapCanvasSmoke(page);
+
+	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
+	await canvas.click({ position: { x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2) } });
+
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ timeout: 20_000 });
+	await readout.getByText(/VIIRS pixel/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/PostGIS:VIIRS_2019/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/0\.08\s*mcd\/m²/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/Atmosphere \(Open-Meteo\)/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/12\.3\s*mm/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/24\.0\s*km/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/Pollen & air quality/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/Grass pollen/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout.getByText(/AOD₅₅₀/i).waitFor({ state: 'attached', timeout: 20_000 });
+	await readout
+		.getByRole('button', { name: /open spectral transmission analysis/i })
+		.waitFor({ state: 'attached', timeout: 20_000 });
+
+	const metrics = await readout.evaluate((node) => {
+		const rect = node.getBoundingClientRect();
+		return {
+			height: rect.height,
+			left: rect.left,
+			top: rect.top,
+			width: rect.width,
+		};
+	});
+	console.log(`darkmap point-readout smoke observed ${JSON.stringify(metrics)}`);
 }
 
 async function collectMapDiagnostics(page) {
