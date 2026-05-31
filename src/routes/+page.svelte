@@ -1519,9 +1519,7 @@
 		}
 		.attribution {
 			left: 0.75rem;
-			bottom: calc(
-				var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem
-			);
+			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 		}
 	}
 	@media (max-width: 820px) and (orientation: landscape), (max-width: 820px) and (max-height: 500px) {
