@@ -124,6 +124,8 @@
 	let ephemeris: PinEphemerisReadout | null = $state(null);
 	let ephemerisLoading = $state(false);
 	let ephemerisError: string | null = $state(null);
+	let readoutPanel: HTMLDivElement | undefined = $state();
+	let lastScrollResetKey = '';
 
 	async function loadEphemeris(): Promise<void> {
 		ephemerisLoading = true;
@@ -155,6 +157,23 @@
 		ephemerisError = null;
 	});
 
+	$effect(() => {
+		const resetKey = [
+			lat.toFixed(5),
+			lon.toFixed(5),
+			time.getUTCFullYear(),
+			time.getUTCMonth(),
+			time.getUTCDate(),
+			loading ? 'loading' : 'ready',
+			data ? 'data' : 'empty',
+			error ?? '',
+		].join('|');
+		if (readoutPanel && resetKey !== lastScrollResetKey) {
+			lastScrollResetKey = resetKey;
+			readoutPanel.scrollTop = 0;
+		}
+	});
+
 	const fmtClock = (d: Date | null): string => {
 		if (!d) return '—';
 		const hh = d.getUTCHours().toString().padStart(2, '0');
@@ -170,7 +189,7 @@
 	};
 </script>
 
-<div class="readout" role="dialog" aria-label="Point readout">
+<div bind:this={readoutPanel} class="readout" role="dialog" aria-label="Point readout">
 	<button class="close" type="button" aria-label="Close readout" onclick={onclose}>
 		<X size={16} aria-hidden="true" />
 	</button>
