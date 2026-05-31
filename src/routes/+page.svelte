@@ -1960,7 +1960,7 @@
 			max-height: min(24dvh, 10rem) !important;
 		}
 		.field-hud[data-transmission='open'] :global(.toolbar) {
-			top: calc(4.25rem + env(safe-area-inset-top, 0px)) !important;
+			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 			bottom: auto !important;
 		}
 		.field-hud[data-transmission='open'] :global(.sheet) {
