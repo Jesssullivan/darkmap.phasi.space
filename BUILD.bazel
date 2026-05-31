@@ -198,6 +198,28 @@ js_test(
     visibility = ["//visibility:public"],
 )
 
+js_test(
+    name = "playwright_mobile_layers_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-mobile-layers-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-mobile-layers-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "mobile-layers-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # root_lib_test — top-level src/lib unit-test slice
 #
