@@ -6,7 +6,7 @@ static site is built by `pnpm run build` (vite build) — Bazel does not
 produce build/.
 """
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
@@ -156,6 +156,36 @@ js_run_binary(
         "flywheel-eligible",
         "manual",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# playwright_local_route_smoke — explicit GloriousFlywheel browser-RBE candidate
+#
+# Narrow Playwright/Chromium smoke for the browser-runtime authority path:
+# declared adapter-node output from //:app_build is served inside the Bazel test
+# action, then Chromium is launched through GF_RBE_CHROMIUM_EXECUTABLE=/bin/chromium.
+# This is intentionally manual so `bazel test //...` and local fallback recipes do
+# not run browserful work by accident. Invoke explicitly through GF proof /
+# flywheel-executor once #324 / TIN-1745 is wired.
+# =============================================================================
+js_test(
+    name = "playwright_local_route_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+    ],
+    timeout = "moderate",
     visibility = ["//visibility:public"],
 )
 
