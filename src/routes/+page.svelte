@@ -2,6 +2,7 @@
 	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import {
 		classifyPositionFreshness,
@@ -366,6 +367,18 @@
 		transmissionOpen = true;
 		void loadTransmissionPin();
 		void refreshTransmission();
+	}
+
+	// Hand off to the dedicated AQ-analysis dashboard (/aq, V6-4), seeded from the
+	// selected point + ephemeris time via the shared URL-hash codec. The map zoom
+	// rides along so a "View on map" return lands where we left.
+	function openAqDashboardForPoint(): void {
+		if (!readout) return;
+		const hash = encodeHash({
+			view: { lat: readout.lat, lon: readout.lon, zoom: mapInstance?.getZoom() ?? 8 },
+			time: ephemerisTime,
+		});
+		void goto(`/aq${hash}`);
 	}
 
 	// Load the per-pin ephemeris (sun/moon alt-az + DEM horizon) for the selected
@@ -1915,6 +1928,7 @@
 			historyLoading={stationHistoryLoading}
 			onclose={closeReadout}
 			onTransmissionForPoint={openTransmissionForPoint}
+			onAqDashboardForPoint={openAqDashboardForPoint}
 		/>
 	{/if}
 
