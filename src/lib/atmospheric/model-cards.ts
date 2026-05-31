@@ -81,6 +81,13 @@ export const MODEL_CARDS: Readonly<Record<string, ModelCard>> = {
 		source: 'OpenAQ ground stations (CC-BY)',
 		href: 'https://openaq.org/',
 	},
+	'aq-crossval': {
+		title: 'AQ cross-validation',
+		what: 'Lines up the air-quality sources at a point and reports their bias only where both have data — OpenAQ ground PM2.5 (measured, diffused; bridged to AOD550) vs CAMS PM2.5/AOD550 (modeled). A missing source is shown as no data, never as agreement; GIBS MODIS AOD stays a visual cross-check (no trustworthy point-decode in v1).',
+		kind: 'modeled',
+		source: 'Derived: OpenAQ × CAMS (Open-Meteo)',
+		href: 'https://openaq.org/',
+	},
 };
 
 export const modelCardFor = (id: string): ModelCard | undefined => MODEL_CARDS[id];

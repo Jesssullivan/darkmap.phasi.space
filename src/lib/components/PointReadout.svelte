@@ -7,8 +7,10 @@
 		formatNearestKm,
 		formatStationCount,
 		pm25AqiCategory,
+		pm25ToAod550,
 		type Pm25Estimate,
 	} from '$lib/atmospheric/pm25-diffusion';
+	import { crossValidate } from '$lib/atmospheric/aq-crossval';
 	import {
 		POLLEN_SPECIES,
 		type AirQualityPointReading,
@@ -134,6 +136,23 @@
 		}));
 		return computeAqi(readings);
 	});
+
+	// V6-3 — cross-validate the air-quality sources at this point. Pure: lines up
+	// OpenAQ diffused PM2.5 (measured) + its AOD550 bridge against CAMS PM2.5/AOD
+	// (modeled), comparing ONLY where both carry a value. A missing source is no
+	// data, never agreement. GIBS MODIS AOD is visual-only in v1 (no trustworthy
+	// point-decode) — read it off the map, it is not part of the numeric compare.
+	const crossVal = $derived.by(() => {
+		const openaqPm25 = pm25?.valueUgm3 ?? null;
+		return crossValidate({
+			openaqPm25,
+			openaqAod550FromPm25: pm25ToAod550(openaqPm25),
+			camsPm25: airQuality?.pm25 ?? null,
+			camsAod550: airQuality?.aod550 ?? null,
+		});
+	});
+	// Only worth surfacing the section once at least one source is in play.
+	const crossValHasSignal = $derived(crossVal.pairs.length > 0 || (pm25?.valueUgm3 != null && airQuality != null));
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -431,6 +450,49 @@
 		</section>
 	{/if}
 
+	{#if crossValHasSignal}
+		<section class="crossval">
+			<h4>
+				Source cross-check
+				<HelpTooltip
+					text="Lines up the air-quality sources at this point and reports their bias ONLY where both have data. Stations = OpenAQ ground PM2.5 (measured, then kernel-diffused); CAMS = modeled PM2.5 / column AOD. The Stations→AOD figure is an engineering bridge from surface PM2.5, not a measured column. A missing source is shown as no data — never as agreement. GIBS MODIS AOD is a visual cross-check on the map: there is no trustworthy point-decode in v1, so it is not compared numerically."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">derived</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			{#if crossVal.pairs.length === 0}
+				<p class="note">{crossVal.emptyReason}</p>
+			{:else}
+				<dl class="crossval-grid">
+					{#each crossVal.pairs as pair (pair.quantity)}
+						<dt>
+							{pair.quantity === 'pm25' ? 'PM2.5' : 'AOD₅₅₀'}
+							<span class="cv-level" class:conflict={pair.level === 'conflict'} class:differ={pair.level === 'differ'}>
+								{pair.level}
+							</span>
+						</dt>
+						<dd>
+							Δ {pair.bias >= 0 ? '+' : ''}{pair.quantity === 'pm25'
+								? pair.bias.toFixed(1)
+								: pair.bias.toFixed(2)}{pair.units ? ` ${pair.units}` : ''}{pair.relDiff !== null
+								? ` · ${Math.round(pair.relDiff * 100)}%`
+								: ''}
+						</dd>
+						<dd class="cv-note">{pair.note}</dd>
+					{/each}
+				</dl>
+				{#if crossVal.hasConflict}
+					<p class="note cv-conflict-note">
+						Sources disagree across a clean/unhealthy boundary — treat both with caution.
+					</p>
+				{/if}
+			{/if}
+			<p class="note">Numeric: OpenAQ ↔ CAMS only. GIBS MODIS AOD is a visual cross-check (no point-decode in v1).</p>
+		</section>
+	{/if}
+
 	<section class="ephemeris-section">
 		<button
 			class="ephemeris-header"
@@ -694,6 +756,49 @@
 	.aqi-dom {
 		font-size: 0.66rem;
 		opacity: 0.7;
+	}
+	.crossval-grid {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.15rem 0.75rem;
+		margin: 0;
+		font-size: 0.74rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.crossval-grid dt {
+		opacity: 0.8;
+	}
+	.crossval-grid dd {
+		margin: 0;
+		text-align: right;
+		color: var(--accent-amber);
+	}
+	.crossval-grid dd.cv-note {
+		grid-column: 1 / -1;
+		text-align: left;
+		color: rgba(233, 236, 243, 0.7);
+		font-size: 0.66rem;
+		margin-bottom: 0.2rem;
+	}
+	.cv-level {
+		margin-left: 0.3rem;
+		font-size: 0.58rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.6;
+	}
+	.cv-level.differ {
+		color: var(--accent-amber);
+		opacity: 0.9;
+	}
+	.cv-level.conflict {
+		color: #ff6b6b;
+		opacity: 1;
+		font-weight: 600;
+	}
+	.cv-conflict-note {
+		color: #ff8f8f;
+		opacity: 0.9;
 	}
 	.loading {
 		opacity: 0.55;
