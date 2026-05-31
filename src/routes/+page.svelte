@@ -24,6 +24,11 @@
 		type OpenAQSensorCollection,
 	} from '$lib/effect/services/OpenAQService';
 	import {
+		OpenAQHistoryService,
+		OpenAQHistoryServiceLive,
+		type HistorySeries,
+	} from '$lib/effect/services/OpenAQHistoryService';
+	import {
 		TransmissionEstimator,
 		TransmissionEstimatorLive,
 		type TransmissionCurve,
@@ -287,6 +292,11 @@
 	// while loading / on failure / before a point is selected; surfaced in the
 	// readout. A failed fetch never sinks the rest of the readout.
 	let airQualityReading = $state<AirQualityPointReading | null>(null);
+	// V6-2 — recent hourly PM2.5 history of the nearest OpenAQ station (sparkline +
+	// rolling stats in the readout). Null while loading / on failure / no station;
+	// its own isolated Effect so an outage can't sink the readout.
+	let stationHistory = $state<HistorySeries | null>(null);
+	let stationHistoryLoading = $state(false);
 
 	// Built once, not per keystroke — refreshTransmission runs on an 80ms debounce
 	// off every slider/picker change, so rebuilding the merged layer literal each
@@ -932,6 +942,8 @@
 		pm25Estimate = null;
 		aqEstimates = null;
 		airQualityReading = null;
+		stationHistory = null;
+		stationHistoryLoading = false;
 		pointMarker?.remove();
 		// V3 — the sheet is anchored to the selected point; clearing the point
 		// leaves it with nothing to describe, so dismiss it too.
@@ -973,6 +985,23 @@
 				return yield* svc.getReading({ lat, lon, time: ephemerisTime }, { signal: controller.signal });
 			}).pipe(Effect.provide(AirQualityServiceLive)),
 		);
+
+		// V6-2 — nearest-station recent hourly PM2.5 history (sparkline + 24-h mean +
+		// trend). Fully isolated: it resolves on its own timeline and updates state
+		// directly, so a slow/failed history fetch never delays or sinks the readout.
+		// It self-cancels when a newer point is clicked (generation + abort guards).
+		stationHistory = null;
+		stationHistoryLoading = true;
+		void Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const svc = yield* OpenAQHistoryService;
+				return yield* svc.getHistory({ lat, lon, param: 'pm25', hours: 24 }, { signal: controller.signal });
+			}).pipe(Effect.provide(OpenAQHistoryServiceLive)),
+		).then((exit) => {
+			if (myGen !== readoutGen || controller.signal.aborted) return;
+			stationHistory = exit._tag === 'Success' ? exit.value.series : null;
+			stationHistoryLoading = false;
+		});
 
 		try {
 			const [featureinfo, atmosphericExit, airQualityExit] = await Promise.all([
@@ -1882,6 +1911,8 @@
 			{aqEstimates}
 			{pollutantUnits}
 			airQuality={airQualityReading}
+			history={stationHistory}
+			historyLoading={stationHistoryLoading}
 			onclose={closeReadout}
 			onTransmissionForPoint={openTransmissionForPoint}
 		/>
