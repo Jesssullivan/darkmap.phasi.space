@@ -18,6 +18,7 @@
 	} from '$lib/effect/services/AirQualityService';
 	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
 	import { computeAqi, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
+	import type { HistorySeries } from '$lib/effect/services/OpenAQHistoryService';
 
 	export interface ReadoutData {
 		readonly viirs?: {
@@ -61,6 +62,10 @@
 		pollutantUnits?: Record<string, string>;
 		/** Clicked-point pollen + air-quality reading (Open-Meteo CAMS, V3-5); null when unavailable. */
 		airQuality?: AirQualityPointReading | null;
+		/** V6-2 — recent hourly history of the nearest OpenAQ station; null when none / loading-failed. */
+		history?: HistorySeries | null;
+		/** V6-2 — true while the history fetch is in flight (shows a quiet placeholder). */
+		historyLoading?: boolean;
 		onclose: () => void;
 		/**
 		 * Open the spectral-transmission sheet seeded from THIS point + time.
@@ -82,6 +87,8 @@
 		aqEstimates = null,
 		pollutantUnits = {},
 		airQuality = null,
+		history = null,
+		historyLoading = false,
 		onclose,
 		onTransmissionForPoint,
 	}: Props = $props();
@@ -153,6 +160,52 @@
 	});
 	// Only worth surfacing the section once at least one source is in play.
 	const crossValHasSignal = $derived(crossVal.pairs.length > 0 || (pm25?.valueUgm3 != null && airQuality != null));
+
+	// V6-2 — compact sparkline geometry for the nearest station's hourly history.
+	// Real samples only: each point is plotted at its true position in the window
+	// (x by timestamp, not by index), so a gap shows as a visibly longer segment
+	// rather than a fabricated even spacing. We never draw a point for a missing
+	// hour. A single sample renders as a dot; <1 renders nothing.
+	const SPARK_W = 132;
+	const SPARK_H = 26;
+	const SPARK_PAD = 2;
+	const sparkPoints = $derived.by(() => {
+		const pts = history?.points ?? [];
+		if (pts.length === 0) return [] as { x: number; y: number }[];
+		const xs = pts.map((p) => Date.parse(p.at));
+		const ys = pts.map((p) => p.value);
+		const xMin = Math.min(...xs);
+		const xMax = Math.max(...xs);
+		const yMin = Math.min(...ys);
+		const yMax = Math.max(...ys);
+		const xSpan = xMax - xMin || 1;
+		const ySpan = yMax - yMin || 1;
+		const w = SPARK_W - SPARK_PAD * 2;
+		const h = SPARK_H - SPARK_PAD * 2;
+		return pts.map((p, i) => ({
+			x: SPARK_PAD + ((xs[i] - xMin) / xSpan) * w,
+			// invert y so larger values sit higher
+			y: SPARK_PAD + (1 - (ys[i] - yMin) / ySpan) * h,
+		}));
+	});
+	const sparkPath = $derived(
+		sparkPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+	);
+	const TREND_GLYPH: Record<NonNullable<HistorySeries['trend']>, string> = {
+		rising: '↑',
+		falling: '↓',
+		flat: '→',
+	};
+	const fmtWindowHours = (s: HistorySeries): number =>
+		Math.max(1, Math.round((Date.parse(s.windowTo) - Date.parse(s.windowFrom)) / 3_600_000));
+	const HISTORY_LABELS: Record<string, string> = {
+		pm25: 'PM2.5',
+		pm10: 'PM10',
+		no2: 'NO₂',
+		o3: 'O₃',
+		so2: 'SO₂',
+		co: 'CO',
+	};
 
 	// Coverage phrasing is shared with the transmission widget (pm25-diffusion);
 	// the readout joins the fragments with middot separators.
@@ -397,6 +450,66 @@
 					{/if}
 				{/each}
 			</dl>
+		</section>
+	{/if}
+
+	{#if historyLoading || history}
+		<section class="history">
+			<h4>
+				Station {history ? (HISTORY_LABELS[history.parameter] ?? history.parameter) : ''} history
+				<HelpTooltip
+					text="Measured, not modeled: recent hourly-aggregate readings from the single nearest OpenAQ ground sensor (not the diffused field). Only hours the sensor actually reported are drawn — missing hours stay gaps, never interpolated. The 24-h mean is the mean over the real samples only; the trend compares the newer half of the samples against the older half."
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag measured">measured</span>
+					{/snippet}
+				</HelpTooltip>
+			</h4>
+			{#if historyLoading && !history}
+				<p class="loading">Fetching nearest-station history…</p>
+			{:else if history && history.sampleCount === 0}
+				<p class="note">No hourly samples in the last {fmtWindowHours(history)} h at the nearest station.</p>
+			{:else if history}
+				<div class="spark-row">
+					<svg
+						class="sparkline"
+						width={SPARK_W}
+						height={SPARK_H}
+						viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+						role="img"
+						aria-label={`${history.sampleCount} hourly samples over ${fmtWindowHours(history)} hours`}
+					>
+						{#if sparkPoints.length > 1}
+							<path
+								d={sparkPath}
+								fill="none"
+								stroke="var(--accent-amber)"
+								stroke-width="1.25"
+								stroke-linejoin="round"
+							/>
+						{/if}
+						{#each sparkPoints as p (p.x)}
+							<circle cx={p.x} cy={p.y} r="1.1" fill="var(--accent-amber)" />
+						{/each}
+					</svg>
+					<div class="spark-stats">
+						<span class="spark-mean">
+							{#if history.mean === null}
+								<span class="muted">—</span>
+							{:else}
+								{history.mean.toFixed(history.mean < 10 ? 1 : 0)}
+							{/if}
+							<span class="unit"> {history.units ?? 'µg/m³'}</span>
+							<span class="trend trend-{history.trend}" aria-hidden="true">{TREND_GLYPH[history.trend]}</span>
+						</span>
+						<span class="spark-sub">{fmtWindowHours(history)}-h mean · {history.sampleCount} samples</span>
+					</div>
+				</div>
+				<p class="note">
+					Window {history.windowFrom.slice(0, 16).replace('T', ' ')}–{history.windowTo.slice(11, 16)}Z · nearest station
+					{#if history.stale}· <span class="stale">stale ({history.latestAt?.slice(0, 10)})</span>{/if}
+				</p>
+			{/if}
 		</section>
 	{/if}
 
@@ -712,6 +825,57 @@
 		font-size: 0.55rem;
 		letter-spacing: 0.04em;
 		vertical-align: middle;
+	}
+	.modeled-tag.measured {
+		border-color: rgba(120, 220, 160, 0.4);
+		background: rgba(120, 220, 160, 0.12);
+		color: #b8f0cf;
+	}
+	.spark-row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin-top: 0.15rem;
+	}
+	.sparkline {
+		flex: 0 0 auto;
+		overflow: visible;
+	}
+	.spark-stats {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+		min-width: 0;
+	}
+	.spark-mean {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--accent-amber);
+		font-variant-numeric: tabular-nums;
+	}
+	.spark-mean .muted {
+		color: rgba(233, 236, 243, 0.62);
+	}
+	.spark-sub {
+		font-size: 0.66rem;
+		opacity: 0.6;
+	}
+	.trend {
+		margin-left: 0.2rem;
+		font-size: 0.9rem;
+	}
+	.trend-rising {
+		color: #ff8c6b;
+	}
+	.trend-falling {
+		color: #7fdca0;
+	}
+	.trend-flat {
+		opacity: 0.6;
+	}
+	.stale {
+		color: var(--accent-amber);
+		opacity: 0.9;
 	}
 	.coverage {
 		opacity: 0.6;
