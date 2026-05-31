@@ -33,12 +33,13 @@
 	} from '$lib/transmission/slant-geometry';
 	import type { LookTarget } from '$lib/transmission/look-angle';
 	import { computePinEphemeris, type PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
-	import { beamCenterline, beamSectorPolygon } from '$lib/map/beam-footprint';
+	import { beamCenterline, beamSamplePoints, beamSectorPolygon } from '$lib/map/beam-footprint';
+	import { aggregatePath, type PathProfile } from '$lib/atmospheric/path-constituents';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
-	import { estimatePm25At, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
+	import { estimatePm25At, pm25ToAod550, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
 	import { buildTxConstituents, toTransmissionInput, type TxConstituents } from '$lib/atmospheric/tx-constituents';
 	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
@@ -548,6 +549,28 @@
 	// hidden it only tracks beamShow/transmissionOpen and stays cheap.
 	$effect(() => {
 		syncBeamOverlay();
+	});
+
+	// V3-10 — AOD variation along the beam centerline, sampled from the cached
+	// PM2.5 kernel-diffusion field (no extra fetches). Null when the beam is off,
+	// no point is selected, or no stations are cached. Informational: the column
+	// LUT doesn't path-integrate — this answers "does haze change down my beam?".
+	const beamPathAod = $derived.by((): PathProfile | null => {
+		if (!beamShow || !transmissionOpen || !readout || pm25Stations.length === 0) return null;
+		const points = beamSamplePoints(
+			{
+				origin: { lon: readout.lon, lat: readout.lat },
+				azimuthDeg: transmissionAzimuthDeg,
+				beamwidthDeg: beamBeamwidthDeg,
+				rangeKm: beamRangeKm,
+			},
+			8,
+		);
+		const samples = points.map((pt) => {
+			const est = estimatePm25At(pm25Stations, pt.lon, pt.lat);
+			return est.confidence === 'none' ? null : pm25ToAod550(est.valueUgm3);
+		});
+		return aggregatePath(samples);
 	});
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
@@ -1596,6 +1619,7 @@
 		{onBeamToggle}
 		{onBeamwidthChange}
 		{onBeamRangeChange}
+		pathAod={beamPathAod}
 	/>
 {/if}
 
