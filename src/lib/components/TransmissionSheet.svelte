@@ -98,6 +98,70 @@
 	// Plain-language takeaway distilled from the curve (#PR4): clearest window
 	// to work in + worst absorption band to avoid.
 	const guidance = $derived(curve ? bandGuidance(curve) : null);
+
+	// Live-Mie mode derives the Ångström exponent from the aerosol model, so the
+	// slider is disabled — show the derived value (not the stale prop) so it reads
+	// as "computed", not "broken".
+	const angstromLocked = $derived(aerosolType !== null);
+	const angstromDisplay = $derived(angstromLocked ? (curve?.input.angstrom ?? angstrom) : angstrom);
+
+	// Band / frequency quick-select (#250 first step): operational laser lines +
+	// EO atmospheric windows. Clicking one reads T(λ) straight off the curve so a
+	// user can answer "does my band get through tonight?" without reading the plot.
+	interface BandPreset {
+		readonly id: string;
+		readonly label: string;
+		readonly sub: string;
+		readonly loUm: number;
+		readonly hiUm: number;
+	}
+	const BAND_PRESETS: ReadonlyArray<BandPreset> = [
+		{ id: 'green-532', label: '532 nm', sub: 'green laser', loUm: 0.532, hiUm: 0.532 },
+		{ id: 'ndyag-1064', label: '1064 nm', sub: 'Nd:YAG', loUm: 1.064, hiUm: 1.064 },
+		{ id: 'eyesafe-1550', label: '1550 nm', sub: 'eye-safe', loUm: 1.55, hiUm: 1.55 },
+		{ id: 'vis', label: 'VIS', sub: '0.4–0.7 µm', loUm: 0.4, hiUm: 0.7 },
+		{ id: 'swir', label: 'SWIR', sub: '1–2.5 µm', loUm: 1.0, hiUm: 2.5 },
+		{ id: 'mwir', label: 'MWIR', sub: '3–5 µm', loUm: 3.0, hiUm: 5.0 },
+		{ id: 'lwir', label: 'LWIR', sub: '8–12 µm', loUm: 8.0, hiUm: 12.0 },
+	];
+	let selectedPresetId = $state<string | null>(null);
+
+	/** Linear-interpolate T at a wavelength (µm) from the sorted curve. */
+	const transmissionAt = (c: TransmissionCurve, um: number): number | null => {
+		const w = c.wavelengthsUm;
+		const t = c.transmission;
+		if (w.length === 0 || um < w[0] || um > w[w.length - 1]) return null;
+		for (let i = 1; i < w.length; i++) {
+			if (um <= w[i]) {
+				const span = w[i] - w[i - 1];
+				const f = span === 0 ? 0 : (um - w[i - 1]) / span;
+				return t[i - 1] + f * (t[i] - t[i - 1]);
+			}
+		}
+		return t[t.length - 1];
+	};
+	const bandMeanT = (c: TransmissionCurve, lo: number, hi: number): number | null => {
+		if (lo === hi) return transmissionAt(c, lo);
+		let sum = 0;
+		let n = 0;
+		for (let i = 0; i < c.wavelengthsUm.length; i++) {
+			const um = c.wavelengthsUm[i];
+			if (um >= lo && um <= hi) {
+				sum += c.transmission[i];
+				n += 1;
+			}
+		}
+		return n > 0 ? sum / n : transmissionAt(c, (lo + hi) / 2);
+	};
+	const presetReadout = $derived.by(() => {
+		if (!curve || selectedPresetId === null) return null;
+		const p = BAND_PRESETS.find((b) => b.id === selectedPresetId);
+		if (!p) return null;
+		const t = bandMeanT(curve, p.loUm, p.hiUm);
+		if (t === null) return { preset: p, t: null, verdict: 'out of range', markerUm: (p.loUm + p.hiUm) / 2 };
+		const verdict = t >= 0.7 ? 'clear' : t >= 0.4 ? 'marginal' : 'blocked';
+		return { preset: p, t, verdict, markerUm: (p.loUm + p.hiUm) / 2 };
+	});
 </script>
 
 <div class="sheet" role="dialog" aria-label="Atmospheric transmission widget">
@@ -178,13 +242,18 @@
 					min="0.3"
 					max="2.5"
 					step="0.1"
-					value={angstrom}
-					disabled={aerosolType !== null}
-					title={aerosolType !== null ? 'Disabled in live-Mie mode (Ångström derived from Mie)' : ''}
+					value={angstromDisplay}
+					disabled={angstromLocked}
 					aria-label="Ångström exponent slider"
 					oninput={(e) => onAngstromChange?.(Number((e.target as HTMLInputElement).value))}
 				/>
-				<span class="slider-value">{angstrom.toFixed(1)}</span>
+				<span class="slider-value"
+					>{angstromDisplay.toFixed(1)}{#if angstromLocked}<span
+							class="derived-tag"
+							title="Derived from the live Mie aerosol model — set the aerosol type to “Off” to adjust Ångström manually"
+							>Mie</span
+						>{/if}</span
+				>
 			</label>
 		</div>
 
@@ -255,13 +324,68 @@
 					class="band-tick"
 				></line>
 			{/each}
+
+			<!-- Quick-select band marker — where the chosen laser/EO band sits. -->
+			{#if presetReadout && presetReadout.markerUm >= 0.3 && presetReadout.markerUm <= 30}
+				<line
+					x1={xForLambda(presetReadout.markerUm)}
+					x2={xForLambda(presetReadout.markerUm)}
+					y1={PAD.top}
+					y2={PAD.top + PLOT_H}
+					class="preset-marker"
+				></line>
+			{/if}
 		</svg>
 
+		<!-- The "pick a working band tonight" payload — surfaced as a prominent
+		     callout + a direct laser/EO quick-select, not left to chart-reading. -->
 		{#if guidance && (guidance.clearest || guidance.worst)}
-			<p class="band-guidance">
-				<span class="band-guidance-icon" aria-hidden="true">◎</span>{guidance.takeaway}
-			</p>
+			<div class="band-guidance" role="note">
+				<p class="band-guidance-takeaway">
+					<span class="band-guidance-icon" aria-hidden="true">◎</span>{guidance.takeaway}
+				</p>
+				<div class="band-guidance-stats">
+					{#if guidance.clearest}
+						<span class="bg-stat clear"
+							>Clearest {guidance.clearest.loUm.toFixed(2)}–{guidance.clearest.hiUm.toFixed(2)} µm · T̄ {(
+								guidance.clearest.meanT * 100
+							).toFixed(0)}%</span
+						>
+					{/if}
+					{#if guidance.worst}
+						<span class="bg-stat worst">Avoid {guidance.worst.label} · T {(guidance.worst.minT * 100).toFixed(0)}%</span
+						>
+					{/if}
+				</div>
+			</div>
 		{/if}
+
+		<div class="band-presets" role="group" aria-label="Laser / EO band quick-select">
+			<span class="band-presets-label">Check a band</span>
+			<div class="band-presets-chips">
+				{#each BAND_PRESETS as p (p.id)}
+					<button
+						type="button"
+						class="preset-chip"
+						class:active={selectedPresetId === p.id}
+						aria-pressed={selectedPresetId === p.id}
+						title="{p.sub} · {p.loUm === p.hiUm ? `${p.loUm} µm` : `${p.loUm}–${p.hiUm} µm`}"
+						onclick={() => (selectedPresetId = selectedPresetId === p.id ? null : p.id)}>{p.label}</button
+					>
+				{/each}
+			</div>
+			{#if presetReadout}
+				<p class="preset-readout verdict-{presetReadout.verdict.replace(' ', '-')}">
+					<strong>{presetReadout.preset.label}</strong>
+					<span class="preset-sub">{presetReadout.preset.sub}</span> —
+					{#if presetReadout.t !== null}
+						T ≈ {(presetReadout.t * 100).toFixed(0)}% · <span class="verdict">{presetReadout.verdict}</span>
+					{:else}
+						outside the modeled range
+					{/if}
+				</p>
+			{/if}
+		</div>
 
 		<!-- V3b-4: band selector — opens the LBL detail panel for the named bands. -->
 		{#if onBandSelect}
@@ -599,20 +723,136 @@
 	}
 	.band-guidance {
 		display: flex;
-		gap: 0.4rem;
-		margin: 0.5rem 0 0.2rem;
-		padding: 0.45rem 0.6rem;
+		flex-direction: column;
+		gap: 0.35rem;
+		margin: 0.6rem 0 0.3rem;
+		padding: 0.55rem 0.65rem;
 		border-radius: 7px;
 		background: rgba(97, 220, 163, 0.1);
-		border: 1px solid rgba(97, 220, 163, 0.28);
+		border: 1px solid rgba(97, 220, 163, 0.32);
 		color: #d6f5e6;
-		font-size: 0.72rem;
+		font-size: 0.73rem;
 		line-height: 1.4;
+	}
+	.band-guidance-takeaway {
+		display: flex;
+		gap: 0.4rem;
+		margin: 0;
+		font-weight: 500;
 	}
 	.band-guidance-icon {
 		color: #61dca3;
 		font-size: 0.85rem;
 		line-height: 1.2;
+		flex: 0 0 auto;
+	}
+	.band-guidance-stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.bg-stat {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.64rem;
+		padding: 0.12rem 0.4rem;
+		border-radius: 4px;
+		white-space: nowrap;
+	}
+	.bg-stat.clear {
+		background: rgba(97, 220, 163, 0.18);
+		color: #aef0cf;
+	}
+	.bg-stat.worst {
+		background: rgba(255, 130, 120, 0.16);
+		color: #ffc7c1;
+	}
+
+	/* Laser / EO band quick-select — direct "does my band get through?" answer. */
+	.band-presets {
+		margin: 0.35rem 0 0.2rem;
+	}
+	.band-presets-label {
+		display: block;
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.55;
+		margin-bottom: 0.3rem;
+	}
+	.band-presets-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+	.preset-chip {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.68rem;
+		padding: 0.2rem 0.5rem;
+		border-radius: 5px;
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		background: rgba(255, 255, 255, 0.04);
+		color: #d4d9e4;
+		cursor: pointer;
+	}
+	.preset-chip:hover {
+		background: rgba(255, 255, 255, 0.1);
+	}
+	.preset-chip.active {
+		background: rgba(var(--accent-amber-rgb), 0.18);
+		border-color: var(--accent-amber);
+		color: var(--accent-amber);
+	}
+	.preset-readout {
+		margin: 0.4rem 0 0;
+		font-size: 0.72rem;
+		padding: 0.3rem 0.5rem;
+		border-radius: 6px;
+		border-left: 3px solid rgba(255, 255, 255, 0.25);
+		background: rgba(255, 255, 255, 0.04);
+	}
+	.preset-readout .preset-sub {
+		opacity: 0.6;
+		font-size: 0.66rem;
+	}
+	.preset-readout .verdict {
+		font-weight: 600;
+		text-transform: capitalize;
+	}
+	.preset-readout.verdict-clear {
+		border-left-color: #61dca3;
+	}
+	.preset-readout.verdict-clear .verdict {
+		color: #8fe6bd;
+	}
+	.preset-readout.verdict-marginal {
+		border-left-color: var(--accent-amber);
+	}
+	.preset-readout.verdict-marginal .verdict {
+		color: var(--accent-amber);
+	}
+	.preset-readout.verdict-blocked,
+	.preset-readout.verdict-out-of-range {
+		border-left-color: #ff8278;
+	}
+	.preset-readout.verdict-blocked .verdict {
+		color: #ff9c93;
+	}
+	.derived-tag {
+		font-size: 0.56rem;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		margin-left: 0.3rem;
+		padding: 0.05rem 0.28rem;
+		border-radius: 4px;
+		background: rgba(var(--accent-amber-rgb), 0.16);
+		color: var(--accent-amber);
+		vertical-align: middle;
+		cursor: help;
+	}
+	.preset-marker {
+		stroke: var(--accent-amber);
+		stroke-width: 1.5;
+		stroke-dasharray: 3 2;
 	}
 	.param-help {
 		display: inline-flex;
