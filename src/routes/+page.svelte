@@ -40,6 +40,7 @@
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import { estimatePm25At, type Pm25Estimate, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
 	import { buildTxConstituents, toTransmissionInput, type TxConstituents } from '$lib/atmospheric/tx-constituents';
+	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 
@@ -280,6 +281,8 @@
 			manualAodActive: transmissionAodManual,
 			angstrom: transmissionAngstrom,
 			o3Du: transmissionO3,
+			// Column O₃ from the van Heuklon climatology for the selected point + date.
+			o3ColumnDu: readout ? columnOzoneDu(readout.lat, readout.lon, ephemerisTime) : null,
 			zenithDeg: elevationToZenithDeg(transmissionElevationDeg),
 			zenithDirected: transmissionLookTarget !== 'zenith',
 		});

@@ -53,7 +53,10 @@ export interface ConstituentInputs {
 	readonly manualAod550: number;
 	readonly manualAodActive: boolean;
 	readonly angstrom: number;
+	/** The fallback/default column O₃ (Dobson). */
 	readonly o3Du: number;
+	/** Climatological column O₃ (van Heuklon) for the point+date; null when no point. */
+	readonly o3ColumnDu?: number | null;
 	readonly zenithDeg: number;
 	/** True when the zenith comes from a real boresight aim (sun/moon/manual), not the default zenith. */
 	readonly zenithDirected: boolean;
@@ -118,14 +121,14 @@ export const buildTxConstituents = (inp: ConstituentInputs): TxConstituents => {
 		caption: 'assumed',
 	};
 
-	// Surface O₃ (µg/m³) is not column Dobson — keep O₃ a default until a
-	// validated column climatology lands. (See module header.)
-	const o3: ConstituentField = {
-		value: inp.o3Du,
-		source: 'default',
-		confidence: 'high',
-		caption: 'default column (climatology TBD)',
-	};
+	// Column O₃ from the van Heuklon climatology when a point+date is available
+	// (modeled, not measured); otherwise the flat default. CAMS *surface* ozone is
+	// deliberately NOT used here — it is µg/m³, not the total-column Dobson the LUT
+	// axis expects.
+	const o3: ConstituentField =
+		inp.o3ColumnDu != null
+			? { value: inp.o3ColumnDu, source: 'modeled', confidence: 'high', caption: 'climatology (van Heuklon)' }
+			: { value: inp.o3Du, source: 'default', confidence: 'high', caption: 'default column' };
 
 	const zenith: ConstituentField = inp.zenithDirected
 		? { value: inp.zenithDeg, source: 'measured', confidence: 'high', caption: 'from boresight' }
