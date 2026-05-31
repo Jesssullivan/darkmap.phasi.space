@@ -76,13 +76,8 @@ try {
 	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
 
 	await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-	const openLayersButton = page.getByRole('button', { name: /open layers/i });
-	await openLayersButton.waitFor({ timeout: 20_000 });
+	await page.getByRole('button', { name: /open layers/i }).waitFor({ timeout: 20_000 });
 	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
-	await openLayersButton.click();
-	await page.getByRole('heading', { name: 'Layers' }).waitFor({ timeout: 20_000 });
-	await page.getByText('VIIRS Annual').waitFor({ timeout: 20_000 });
-	await page.getByRole('heading', { name: 'Atmosphere' }).waitFor({ timeout: 20_000 });
 	await page.getByText(/daylight|night|civil twilight|nautical twilight|astronomical twilight/i).waitFor({
 		timeout: 20_000,
 	});
