@@ -1,28 +1,17 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { openTransmissionSheet } from './transmission-helpers';
 
 /**
- * Spectral-usability pass — render-verified, headless (the sheet is inline SVG,
- * no WebGL): the laser/EO band quick-select reads T off the curve, the band
- * guidance is surfaced as a prominent callout, and the Ångström slider shows its
- * Mie-derived state instead of a dead disabled control.
+ * Spectral-usability pass — the sheet itself is inline SVG (no WebGL), but V3
+ * makes it point-anchored: it opens from the PointReadout for a selected map
+ * point. `openTransmissionSheet` drives that flow. Asserts the laser/EO band
+ * quick-select reads T off the curve, the band guidance is a prominent callout,
+ * and the Ångström slider shows its Mie-derived state instead of a dead control.
  */
-const openSheet = async (page: Page): Promise<void> => {
-	// Suppress the first-run tour so it doesn't cover the rail.
-	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
-	await page.setViewportSize({ width: 1280, height: 900 });
-	await page.goto('/');
-	await page.waitForLoadState('domcontentloaded');
-	const railToggle = page.getByRole('button', { name: /Open layers/i });
-	if (await railToggle.isVisible().catch(() => false)) await railToggle.click();
-	const atmo = page.getByRole('button', { name: /^Atmosphere/i });
-	if ((await atmo.getAttribute('aria-expanded')) !== 'true') await atmo.click();
-	await page.getByRole('button', { name: /Open spectral transmission analysis/i }).click();
-};
 
 test.describe('Spectral transmission — band quick-select + guidance', () => {
 	test('band presets read T(λ); guidance callout renders', async ({ page }) => {
-		await openSheet(page);
-		const sheet = page.getByRole('dialog', { name: /Atmospheric transmission/i });
+		const sheet = await openTransmissionSheet(page, { height: 900 });
 		await expect(sheet).toBeVisible();
 		// The curve computes from the LUT (fetch + Effect) — allow headroom under
 		// parallel-worker load before the chart paints.
@@ -44,8 +33,7 @@ test.describe('Spectral transmission — band quick-select + guidance', () => {
 	});
 
 	test('Ångström slider shows its Mie-derived state when an aerosol type is active', async ({ page }) => {
-		await openSheet(page);
-		const sheet = page.getByRole('dialog', { name: /Atmospheric transmission/i });
+		const sheet = await openTransmissionSheet(page, { height: 900 });
 		await expect(sheet).toBeVisible();
 
 		const angstrom = sheet.getByRole('slider', { name: /Ångström exponent slider/i });

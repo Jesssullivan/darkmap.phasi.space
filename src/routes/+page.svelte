@@ -132,8 +132,8 @@
 		},
 		{
 			anchor: '[data-tour="atmosphere"]',
-			title: 'Atmosphere + spectral transmission',
-			body: 'Clouds, aerosol (AOD) and water-vapor overlays — and “Spectral transmission T(λ)” opens the AOD / Ångström analysis with laser & EO band guidance.',
+			title: 'Atmosphere overlays',
+			body: 'Clouds, aerosol (AOD) and water-vapor overlays. To analyze spectral transmission T(λ) for a spot, click the map and open it from the point readout.',
 			prepare: () => {
 				ensureRailOpen();
 				expandAtmosphere();
@@ -142,7 +142,7 @@
 		{
 			anchor: '[data-tour="map"]',
 			title: 'Click anywhere for a readout',
-			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, and modeled PM2.5 — all for that exact spot.',
+			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, modeled PM2.5 — and a directable spectral-transmission T(λ) analysis for that exact spot.',
 		},
 		{
 			anchor: '[data-tour="toolbar"]',
@@ -247,7 +247,11 @@
 		transmissionRecomputeTimer = setTimeout(() => void refreshTransmission(), 80);
 	}
 
-	function onTransmissionInfo(_layerId: string): void {
+	// V3 — the spectral-transmission sheet is point-anchored: it opens from the
+	// PointReadout for the currently selected location and seeds its inputs from
+	// that point. (The old independent LayerRail CTA / per-row (i) entry points
+	// were removed; the tool is meaningless without a selected point.)
+	function openTransmissionForPoint(): void {
 		transmissionOpen = true;
 		void refreshTransmission();
 	}
@@ -1302,7 +1306,6 @@
 	basemap={activeBasemap}
 	onbasemapchange={onBasemapChange}
 	time={ephemerisTime}
-	oninfo={onTransmissionInfo}
 />
 <Tour bind:open={tourOpen} steps={tourSteps} />
 {#if transmissionOpen}
@@ -1401,6 +1404,7 @@
 		error={readout.error}
 		pm25={pm25Estimate}
 		onclose={closeReadout}
+		onTransmissionForPoint={openTransmissionForPoint}
 	/>
 {/if}
 
