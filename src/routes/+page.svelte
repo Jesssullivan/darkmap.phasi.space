@@ -20,6 +20,7 @@
 	} from '$lib/effect/services/TransmissionEstimator';
 	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
 	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
+	import { elevationToZenithDeg, lookAngleAirmass } from '$lib/transmission/slant-geometry';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
@@ -194,6 +195,13 @@
 	let transmissionAerosolType = $state<AerosolType | null>(null);
 	let transmissionAod = $state(0.15);
 	let transmissionAngstrom = $state(1.4);
+	// V3 — the transmission path is a directable boresight. Elevation above the
+	// horizon (90° = local zenith, the default) sets the slant-path zenith angle
+	// and airmass; O₃ is a real input (was a hardcoded 350 DU). The azimuth dial +
+	// sun/moon targeting + terrain occlusion arrive with the LookAngleControl (V3-4);
+	// here the boresight stays at zenith but the geometry is no longer hardcoded.
+	let transmissionElevationDeg = $state(90);
+	let transmissionO3 = $state(350);
 	let transmissionRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
 	// #275 — when the smog overlay is on, a clicked point's AOD input can be
 	// driven by the local PM2.5 kernel-diffusion estimate. `transmissionAodSource`
@@ -219,8 +227,8 @@
 			pwvMm: pwv,
 			aod550: transmissionAod,
 			angstrom: transmissionAngstrom,
-			o3Du: 350,
-			zenithDeg: 30,
+			o3Du: transmissionO3,
+			zenithDeg: elevationToZenithDeg(transmissionElevationDeg),
 		};
 		transmissionLoading = true;
 		transmissionError = undefined;
@@ -314,10 +322,13 @@
 			return;
 		}
 		transmissionBandLoading = true;
+		// Slant-path airmass for the current boresight (≈1.0 at zenith). null only
+		// at/below the horizon, where there is no path — fall back to 1 defensively.
+		const airmass = lookAngleAirmass(transmissionElevationDeg) ?? 1;
 		const exit = await Effect.runPromiseExit(
 			Effect.gen(function* () {
 				const svc = yield* LineByLineService;
-				return yield* svc.estimateInBand({ bandId, airmass: 1 });
+				return yield* svc.estimateInBand({ bandId, airmass });
 			}).pipe(Effect.provide(LineByLineServiceLive)),
 		);
 		transmissionBandLoading = false;
@@ -333,6 +344,9 @@
 		transmissionOpen = false;
 		transmissionBandId = null;
 		transmissionBandCurve = undefined;
+		// Reset the boresight to the zenith default so the next open starts honestly
+		// straight up rather than inheriting a stale look-angle.
+		transmissionElevationDeg = 90;
 	}
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
@@ -651,6 +665,9 @@
 		readout = undefined;
 		pm25Estimate = null;
 		pointMarker?.remove();
+		// V3 — the sheet is anchored to the selected point; clearing the point
+		// leaves it with nothing to describe, so dismiss it too.
+		if (transmissionOpen) closeTransmission();
 	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
@@ -688,6 +705,10 @@
 			readout = { lat, lon, loading: false, data };
 			// #275 — drive the transmission AOD from the local PM2.5 estimate.
 			applyPm25DerivedAod(lat, lon);
+			// V3 — the curve is point-anchored: a new point's PWV (and AOD) must
+			// reseed the open sheet. applyPm25DerivedAod only reschedules when it
+			// derives an AOD, so this covers the smog-off / PWV-only path.
+			if (transmissionOpen) scheduleTransmissionRefresh();
 		} catch (e) {
 			if (myGen !== readoutGen || controller.signal.aborted) return;
 			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };
