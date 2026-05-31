@@ -88,6 +88,7 @@ vitest.vitest_test(
         "--reporter=verbose",
         "--config",
         "vitest.bazel.config.ts",
+        "src/lib/effect/services/AirQualityService.test.ts",
         "src/lib/effect/services/AtmosphericPointService.test.ts",
         "src/lib/effect/services/AtmosphericTileService.test.ts",
         "src/lib/effect/services/CachePolicy.test.ts",
