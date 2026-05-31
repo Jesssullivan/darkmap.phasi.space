@@ -613,7 +613,7 @@ flowchart TD
   for repo posture rules. This doc is the wire-format complement.
 - `tinyland-inc/GloriousFlywheel/config/rbe-target-eligibility.json` —
   upstream source of the proved-class allowlist.
-- `tinyland-inc/ci-templates@v1.0.0` — the versioned reusable
+- `tinyland-inc/ci-templates@v2` — the versioned reusable
   workflows and composite actions this contract assumes.
 - `tinyland-inc/tinyland-infra/modules/spoke/*` — the five spoke-facing
   Tofu modules (`dns-pr-env`, `state-namespace`, `cache-quota`,

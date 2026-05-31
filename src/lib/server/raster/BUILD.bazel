@@ -1,11 +1,37 @@
 """Bazel targets for the darkmap raster service unit-test slice."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
 filegroup(
     name = "raster_srcs",
     srcs = glob(["*.ts"]),
+)
+
+# Implementation sources (no *.test.ts) exposed as a js_library so the root
+# //:app_build (SvelteKit SSR build) can consume them across the package
+# boundary. A bare filegroup of another package's source files is rejected by
+# rules_js copy_to_bin ("Expected to find file ... in //, but instead it is in
+# //src/lib/server/raster"); a js_library bin-copies within its own package and
+# is cross-package consumable.
+js_library(
+    name = "raster_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# Cross-package VALUE source pulled into the effect/services slice
+# (AtmosphericTileService reaches for `$lib/server/raster/TileMath`'s
+# `clampTileToMaxNativeZoom`). TileMath.ts has no cross-package imports, so a
+# standalone js_library bin-copy is sufficient.
+js_library(
+    name = "tile_math",
+    srcs = ["TileMath.ts"],
+    visibility = ["//visibility:public"],
 )
 
 ts_project(
@@ -40,9 +66,15 @@ vitest.vitest_test(
         "--config",
         "vitest.bazel.config.ts",
         "src/lib/server/raster/raster.test.ts",
+        "src/lib/server/raster/raster-clients.test.ts",
     ],
     log_level = "info",
     tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
         "gloriousflywheel-cache-candidate",
         "vitest",
     ],

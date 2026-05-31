@@ -1,18 +1,23 @@
 <script lang="ts">
 	/**
 	 * MapToolbar — vertical stack of map-overlay toggles in the
-	 * bottom-right corner. Replaces the two standalone ⏱ / ☼/☾ buttons
-	 * that fought the EphemerisGantt + TimeDock for the same space.
+	 * bottom-right corner. Replaces the two standalone time / sun-moon
+	 * buttons that fought the EphemerisGantt + TimeDock for the same space.
 	 *
 	 * The toolbar publishes its width via the `--toolbar-w-rem` CSS
 	 * custom property on `:host`. The gantt + dock read that variable
 	 * and inset their `right` so they never overlap the toolbar.
+	 *
+	 * Items pass a Lucide icon Svelte component, not a glyph string —
+	 * see #136 (emoji → Lucide swap).
 	 */
+
+	import type { Component } from 'svelte';
 
 	interface Item {
 		readonly id: string;
 		readonly label: string; // for screen readers
-		readonly glyph: string;
+		readonly icon: Component;
 		readonly title: string;
 		readonly pressed: boolean;
 		readonly onclick: () => void;
@@ -25,24 +30,28 @@
 	let { items }: Props = $props();
 </script>
 
-<aside class="toolbar" aria-label="Map overlay toggles">
+<aside class="toolbar" aria-label="Map overlay toggles" data-tour="toolbar">
 	{#each items as it (it.id)}
+		{@const Icon = it.icon}
 		<button
 			type="button"
 			class="tool"
 			aria-label={it.label}
 			aria-pressed={it.pressed}
 			title={it.title}
-			onclick={it.onclick}>{it.glyph}</button
+			onclick={it.onclick}
 		>
+			<Icon size={18} aria-hidden="true" />
+		</button>
 	{/each}
 </aside>
 
 <style>
 	.toolbar {
 		position: fixed;
-		right: 0.75rem;
-		bottom: 0.75rem;
+		/* Clear the notch / home indicator in landscape on notched devices. */
+		right: max(0.75rem, env(safe-area-inset-right));
+		bottom: max(0.75rem, env(safe-area-inset-bottom));
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
@@ -60,18 +69,28 @@
 		cursor: pointer;
 		backdrop-filter: blur(6px);
 		min-width: 2.5rem;
-		text-align: center;
+		min-height: 2.5rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 	.tool:hover {
-		border-color: rgba(255, 209, 102, 0.65);
-		color: #ffd166;
+		border-color: rgba(var(--accent-amber-rgb), 0.65);
+		color: var(--accent-amber);
 	}
 	.tool[aria-pressed='true'] {
-		color: #ffd166;
-		border-color: rgba(255, 209, 102, 0.65);
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.65);
 	}
 	.tool:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 2px;
+	}
+	@media (pointer: coarse) {
+		.tool {
+			min-width: 3rem;
+			min-height: 3rem;
+			padding: 0.45rem 0.75rem;
+		}
 	}
 </style>

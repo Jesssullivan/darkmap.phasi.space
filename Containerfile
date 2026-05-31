@@ -1,4 +1,4 @@
-# Multi-stage Containerfile for darkmap.tinyland.dev (adapter-node).
+# Multi-stage Containerfile for darkmap.phasi.space (adapter-node).
 #
 # `production` stage is what CI pushes to ghcr.io and what the
 # Kustomize Deployment runs.
@@ -45,9 +45,10 @@ ENV PORT=3000
 COPY --from=build --chown=node:node /app/build ./build
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node server.mjs ./server.mjs
 
 USER node
 EXPOSE 3000
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "build/index.js"]
+CMD ["node", "server.mjs"]

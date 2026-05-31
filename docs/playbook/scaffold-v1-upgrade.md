@@ -2,10 +2,10 @@
 
 > **Audience**: spoke maintainers upgrading from the bare
 > `tinyland-inc/site.scaffold` template (TIN-1028 batch) to the v1.0
-> CI-SCHEMA + ci-templates@v1.0.0 + spoke-tofu-modules-v1.0.0 surface.
+> CI-SCHEMA + ci-templates@v2 + spoke-tofu-modules-v1.0.0 surface.
 >
 > **Source of truth**: this playbook captures what actually happened
-> during darkmap.tinyland.dev's adoption — the first spoke through the
+> during darkmap.phasi.space's adoption — the first spoke through the
 > upgrade. Subsequent spokes should expect *most* of these steps but
 > use the friction notes to anticipate where they'll diverge.
 >
@@ -237,15 +237,16 @@ does); deferred indefinitely for the ci.yml replacement (see friction).
 ### lane-env.yml (DO THIS)
 
 Net-new file, no conflict. Wrap
-`tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0`.
+`tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v2`.
 Use the darkmap version as reference; substitute `spoke:` and the
-secret name.
+image repository.
 
 **Critical**: gate the job on
 `if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED == 'true' }}` so the workflow
-no-ops cleanly until you actually install Blahaj on the repo. Without
-the gate, the workflow will fail on missing-secret as soon as it
-tries to dispatch.
+no-ops cleanly until you actually install Blahaj on the repo and set
+the dispatch secret. ci-templates v2 also makes
+`BLAHAJ_DISPATCH_TOKEN` optional inside the reusable workflow, so
+pull-request triggers are safe before Blahaj is installed.
 
 ### ci.yml replacement (PROBABLY SKIP)
 
@@ -368,54 +369,28 @@ darkmap used Path A.
 ### Validation
 
 Open a tiny no-op PR (one-file marker is fine) to fire `lane-env.yml`
-and check the gate behavior. **On darkmap this surfaced a real bug.**
+and check the gate behavior. On darkmap PR #82 this surfaced a v1 bug:
+`spoke-lane-env.yml@v1.0.0` required `BLAHAJ_DISPATCH_TOKEN`, and
+GitHub resolved that required secret at workflow-call parse time before
+the caller's job-level `if:` could skip. The temporary workaround was
+to comment out the `pull_request:` trigger.
 
-**What we expected**: `if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED == 'true' }}`
-causes the job to skip cleanly when the var is unset. CI shows green
-skip; no error.
-
-**What actually happened on darkmap PR #82**: workflow failed with
-"workflow file issue" in 0 seconds. Root cause:
-`tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0`
-declares `secrets: BLAHAJ_DISPATCH_TOKEN: required: true`. GitHub
-resolves required secrets at workflow-call PARSE TIME — before the
-job-level `if:` evaluates. Empty secret = parse failure. The gate is
-too late.
-
-**Workaround applied to darkmap's `lane-env.yml`** (commented out the
-`pull_request:` trigger; kept `workflow_dispatch:` as the manual
-fallback for once Blahaj IS installed and the secret exists):
-
-```yaml
-on:
-  # pull_request:
-  #   types: [opened, synchronize, reopened, ready_for_review, closed]
-  workflow_dispatch:
-    ...
-```
-
-**Permanent fix in ci-templates v1.0.1** (feedback PR filed): make
-`BLAHAJ_DISPATCH_TOKEN: required: false`, with an internal early-exit
-when the token is empty. Then spokes can safely keep the
-`pull_request:` trigger and gate via `if:` — the gate will actually
-work because the secret reference no longer fails at parse time.
-
-**For your spoke**: if Blahaj is NOT already installed, follow
-darkmap's workaround. Uncomment the `pull_request:` trigger once
-Blahaj installation + secret are in place.
+ci-templates v2 is the fix: `BLAHAJ_DISPATCH_TOKEN` is optional and
+the reusable workflow exits cleanly when the token is empty. Spokes can
+keep the `pull_request:` trigger enabled while still gating actual
+dispatch with `vars.BLAHAJ_LANE_ENV_ENABLED == 'true'`.
 
 ### Feedback PRs
 
 Anything that surprised you during the cutover → PR back to
 `ci-templates` or `site.scaffold`. Darkmap's cutover surfaced five:
 
-1. **ci-templates v1.0.1** — `spoke-lane-env.yml` must make
+1. **ci-templates v2** — `spoke-lane-env.yml` makes
    `BLAHAJ_DISPATCH_TOKEN: required: false` so spokes can safely
    no-op-gate the `pull_request:` trigger before Blahaj is installed.
    GitHub resolves required secrets at parse time, BEFORE job-level
-   `if:` gates evaluate. Without this fix, every spoke without Blahaj
-   yet has to either disable the trigger (darkmap's workaround) or
-   accept a permanent FAIL check on every PR. (PR filed.)
+   `if:` gates evaluate, so v1 callers must not be used for unwired
+   spokes.
 2. **ci-templates v1.1** — `spoke-ci.yml` needs `runner_labels_json`
    input for spokes with dynamic runner-class fallback. (PR filed.)
 3. **ci-templates v1.0.1** — `release.yml`'s empty-commit pattern
@@ -471,9 +446,9 @@ Most overruns came from:
 
 After darkmap (lead pilot), the planning session ranked:
 
-1. **omux.xoxd.ai** — ancestral spoke (site.scaffold was extracted
-   from omux). 90% schema-compliant already. Cleanest fit.
-2. **darkmap.tinyland.dev** — done (this playbook).
+1. **omux ancestral spoke** — site.scaffold was extracted from omux.
+   90% schema-compliant already. Cleanest fit.
+2. **darkmap.phasi.space** — done (this playbook).
 3. **MassageIthaca** — defer until payment-mode (TIN-992) and Modal
    decom (TIN-981) settle. Will be the multi-lane stress test.
 4. **jesssullivan.github.io** — defer further. Not a spoke shape;
@@ -487,10 +462,10 @@ After darkmap (lead pilot), the planning session ranked:
 
 - **Schema**: `tinyland-inc/site.scaffold/docs/CI-SCHEMA.md`
   ([PR #10](https://github.com/tinyland-inc/site.scaffold/pull/10))
-- **Reusable workflows**: `tinyland-inc/ci-templates@v1.0.0`
-  ([release](https://github.com/tinyland-inc/ci-templates/releases/tag/v1.0.0))
+- **Reusable workflows**: `tinyland-inc/ci-templates@v2`
+  ([release](https://github.com/tinyland-inc/ci-templates/releases/tag/v2.0.0))
 - **Tofu modules**: `tinyland-inc/GloriousFlywheel@spoke-tofu-modules-v1.0.0`
   ([release](https://github.com/tinyland-inc/GloriousFlywheel/releases/tag/spoke-tofu-modules-v1.0.0))
 - **Org ruleset**: `tinyland-inc/.github/.github/rulesets/tinyland-spoke-default.json`
-- **Lead pilot PR**: [darkmap #77](https://github.com/Jesssullivan/darkmap.tinyland.dev/pull/77)
+- **Lead pilot PR**: [darkmap #77](https://github.com/Jesssullivan/darkmap.phasi.space/pull/77)
 - **Linear parent**: [TIN-1381](https://linear.app/tinyland/issue/TIN-1381)

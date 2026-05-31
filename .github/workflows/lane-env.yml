@@ -1,34 +1,13 @@
 name: Lane env
 
-# Triggered only manually until Blahaj is installed on this repo.
-#
-# WHY: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
-# declares `secrets: BLAHAJ_DISPATCH_TOKEN: required: true`. GitHub
-# resolves required secrets at workflow-call parse time, BEFORE the
-# job-level `if:` gate is evaluated. So gating with
-# `if: vars.BLAHAJ_LANE_ENV_ENABLED == 'true'` does NOT prevent the
-# workflow file from failing when the secret is empty — it fails with
-# "workflow file issue" before any job logic runs.
-#
-# Surfaced by darkmap's M6 validation test PR #82. Captured as a
-# ci-templates v1.0.1 feedback PR proposing
-# `BLAHAJ_DISPATCH_TOKEN: required: false` (with an internal early-exit
-# when the token is empty), which lets spokes safely no-op-gate the
-# pull_request trigger and only flip it on once Blahaj is wired.
-#
-# Until that PR lands AND Blahaj is installed on
-# Jesssullivan/darkmap.tinyland.dev:
-#   - workflow_dispatch path is available for manual testing once the
-#     secret is populated (operator step; gate the manual run on
-#     visual confirmation, not on the var).
-#   - pull_request trigger is commented out below.
-#
-# When Blahaj IS installed and BLAHAJ_DISPATCH_TOKEN exists as a repo
-# secret, uncomment the `pull_request:` block.
+# ci-templates v2 makes BLAHAJ_DISPATCH_TOKEN optional and exits cleanly
+# when the token is absent, so this workflow can remain enabled for PRs
+# before Blahaj is installed. The repo-level var below is still the
+# operator gate for actually provisioning/reaping lane environments.
 
 on:
-  # pull_request:
-  #   types: [opened, synchronize, reopened, ready_for_review, closed]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
   workflow_dispatch:
     inputs:
       pr:
@@ -47,18 +26,19 @@ permissions:
   deployments: write
 
 concurrency:
-  group: lane-env-${{ github.event.pull_request.number || inputs.pr }}
+  group: lane-env-${{ github.event.pull_request.number || inputs.pr || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   lane-env:
     if: ${{ vars.BLAHAJ_LANE_ENV_ENABLED == 'true' }}
-    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v1.0.0
+    uses: tinyland-inc/ci-templates/.github/workflows/spoke-lane-env.yml@v2
     with:
       spoke: darkmap
+      image_repository: ghcr.io/jesssullivan/darkmap.phasi.space
       lanes_path: .github/lanes.json
       enable_tailnet_qa: false
       reap: ${{ inputs.reap || false }}
-      pr_number: ${{ inputs.pr }}
+      pr_number: ${{ github.event.pull_request.number || inputs.pr || 0 }}
     secrets:
       BLAHAJ_DISPATCH_TOKEN: ${{ secrets.BLAHAJ_DISPATCH_TOKEN }}

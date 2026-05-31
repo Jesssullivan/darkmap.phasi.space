@@ -93,6 +93,22 @@ describe('MapLayerController', () => {
 		expect(ops[1].id).toBe(layerIdFor('viirs_2019'));
 	});
 
+	it('mount passes attribution and native max zoom into the raster source spec', async () => {
+		await run(
+			Effect.flatMap(MapLayerController, (c) =>
+				c.mount(sampleMount({ attribution: 'Imagery courtesy NASA EOSDIS GIBS', maxZoom: 9 })),
+			),
+		);
+		const addSource = env.ops.find((o) => o.kind === 'addSource');
+		expect(addSource?.arg).toMatchObject({
+			attribution: 'Imagery courtesy NASA EOSDIS GIBS',
+			maxzoom: 9,
+			tileSize: 256,
+			tiles: ['/api/raster?layer=viirs_2019&z={z}&x={x}&y={y}'],
+			type: 'raster',
+		});
+	});
+
 	it('mount is idempotent — re-mounting a live layer is a no-op', async () => {
 		await run(Effect.flatMap(MapLayerController, (c) => c.mount(sampleMount())));
 		await run(Effect.flatMap(MapLayerController, (c) => c.mount(sampleMount())));

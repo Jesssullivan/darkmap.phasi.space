@@ -28,13 +28,70 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
   pull-requests: write
 
 jobs:
+  route-preflight:
+    name: tofu route preflight
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    outputs:
+      ready: ${{ steps.preflight.outputs.ready }}
+      labels_json: ${{ steps.preflight.outputs.labels_json }}
+      label_list: ${{ steps.preflight.outputs.label_list }}
+      reason: ${{ steps.preflight.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: preflight
+        name: Check RustFS/backend runner route
+        env:
+          RUNNER_ROUTE_PREFLIGHT_TOKEN: ${{ secrets.RUNNER_ROUTE_PREFLIGHT_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TOFU_LINUX_RUNNER_LABELS_JSON: ${{ vars.TOFU_LINUX_RUNNER_LABELS_JSON || '' }}
+          PRIMARY_LINUX_RUNNER_LABELS_JSON: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
+        run: node scripts/ci-tofu-route-preflight.mjs
+
+  route-blocked:
+    name: tofu plan route blocked
+    needs: route-preflight
+    if: needs.route-preflight.outputs.ready != 'true'
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    steps:
+      - name: Summarize blocked plan route
+        env:
+          LABELS: ${{ needs.route-preflight.outputs.label_list }}
+          REASON: ${{ needs.route-preflight.outputs.reason }}
+        run: |
+          cat > /tmp/tofu-plan-blocked.md <<COMMENT
+          ### tofu plan blocked before RustFS init
+
+          The PR did not run \`tofu plan\` because no repository-visible,
+          cluster-capable runner matched the selected Tofu labels.
+
+          - Selected labels: \`${LABELS}\`
+          - Reason: ${REASON}
+
+          This is a routing/configuration blocker, not a Terraform/OpenTofu
+          diff result. Bind the repo to the selected runner class or update
+          \`TOFU_LINUX_RUNNER_LABELS_JSON\` to a RustFS/backend-reachable class.
+          COMMENT
+          cat /tmp/tofu-plan-blocked.md >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::tofu plan route blocked: ${REASON}"
+
+      - name: Post blocked route as sticky PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: tofu-plan
+          path: /tmp/tofu-plan-blocked.md
+
   plan:
     name: tofu plan
-    runs-on: ${{ fromJSON(vars.TOFU_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    needs: route-preflight
+    if: needs.route-preflight.outputs.ready == 'true'
+    runs-on: ${{ fromJSON(needs.route-preflight.outputs.labels_json) }}
     env:
       CHECKOUT_PATH: repo-${{ github.job }}
       TF_DATA_DIR: /tmp/darkmap-tofu-${{ github.run_id }}-${{ github.run_attempt }}
@@ -56,6 +113,11 @@ jobs:
           tofu_version: '1.11.6'
           tofu_wrapper: false
 
+      - name: Install kubectl
+        uses: yokawasa/action-setup-kube-tools@v0.13.5
+        with:
+          kubectl: '1.31.0'
+
       - name: tofu fmt check
         working-directory: ${{ env.CHECKOUT_PATH }}
         run: tofu fmt -check -recursive infra/tofu
@@ -74,6 +136,7 @@ jobs:
           mkdir -p "$kube_dir"
           echo "$KUBE_CONFIG_HONEY" | base64 -d > "$kubeconfig"
           chmod 600 "$kubeconfig"
+          "$CHECKOUT_PATH/scripts/ci-normalize-kubeconfig.sh" "$kubeconfig" honey
           echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
           echo "TF_VAR_kubeconfig=$kubeconfig" >> "$GITHUB_ENV"
 
@@ -82,7 +145,14 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-        run: tofu init -backend-config=backend.hcl -lockfile=readonly
+        run: ../../scripts/ci-tofu-init-retry.sh -backend-config=backend.hcl -lockfile=readonly
+
+      - name: tofu state backend check
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+        run: ../../scripts/ci-tofu-state-check.sh
 
       - name: tofu plan
         id: plan
@@ -90,7 +160,6 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-          TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set +e

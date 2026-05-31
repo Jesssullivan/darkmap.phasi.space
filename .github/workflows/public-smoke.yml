@@ -1,0 +1,71 @@
+name: Public smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/public-smoke.yml'
+      - 'docs/SMOKE.md'
+      - 'docs/PUBLIC_LAUNCH.md'
+  workflow_dispatch:
+  schedule:
+    - cron: '43 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-smoke:
+    name: darkmap.phasi.space edge
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    timeout-minutes: 5
+    steps:
+      - name: Smoke public Cloudflare edge
+        run: |
+          set -euo pipefail
+
+          index_headers="$(mktemp)"
+          raster_headers="$(mktemp)"
+          index_body="$(mktemp)"
+
+          curl -fsSIL https://darkmap.phasi.space/ -o "$index_headers"
+          curl -fsSL https://darkmap.phasi.space/ -o "$index_body"
+          curl -fsSIL 'https://darkmap.phasi.space/api/raster?layer=viirs_2019&z=8&x=74&y=96' -o "$raster_headers"
+
+          if ! grep -qi '^server: cloudflare' "$index_headers"; then
+            echo "::error::homepage did not return through Cloudflare"
+            cat "$index_headers"
+            exit 1
+          fi
+
+          if grep -q 'ad_prebid' "$index_body"; then
+            echo "::error::homepage contains ad_prebid"
+            exit 1
+          fi
+
+          if ! grep -qi '^content-type: image/png' "$raster_headers"; then
+            echo "::error::raster endpoint did not return image/png"
+            cat "$raster_headers"
+            exit 1
+          fi
+
+          if grep -Eiq 'set-cookie|prebid|googletag|x-ad-' "$index_headers" "$raster_headers"; then
+            echo "::error::public edge returned ad/tracking headers"
+            cat "$index_headers"
+            cat "$raster_headers"
+            exit 1
+          fi
+
+          {
+            echo "### Public smoke"
+            echo
+            echo "- Homepage: 200 via Cloudflare"
+            echo "- Raster endpoint: image/png"
+            echo "- No ad/tracking headers or ad_prebid marker"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -50,6 +50,8 @@ export default ts.config(
 			'**/dist/**',
 			'node_modules/',
 			'**/node_modules/**',
+			'.terraform/',
+			'**/.terraform/**',
 			'scripts/',
 			'static/',
 			'coverage/',

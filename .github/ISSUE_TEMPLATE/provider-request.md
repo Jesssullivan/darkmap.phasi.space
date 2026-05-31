@@ -17,7 +17,7 @@ assignees: ''
 - Official OAuth/OIDC docs:
 - Account boundary (per-user, per-org, per-tenant):
 
-## Current State Per darkmap.tinyland.dev Provider Matrix
+## Current State Per darkmap.phasi.space Provider Matrix
 
 - [ ] live-proven
 - [ ] schema-modeled

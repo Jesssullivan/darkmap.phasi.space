@@ -1,9 +1,23 @@
 <script lang="ts">
 	import { Effect } from 'effect';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import { fmtAge, type CacheBadgeView } from '$lib/cache/badge';
 	import type { EphemerisReadout, LatLon } from '$lib/ephemeris/EphemerisClient';
-	import { viewportGridPoints } from '$lib/viewportGrid';
+	import { viewportRangesFor, type ViewportRangeSummarySource } from '$lib/ephemeris/viewportSummaryCache';
+	import {
+		makeEphemerisViewportSummaryRequest,
+		type EphemerisEventKey,
+		type EventRange,
+		type EventRangeMap,
+	} from '$lib/ephemeris/viewportSummary';
+	import {
+		buildPhaseGradient,
+		buildPhaseSegments,
+		phaseAt,
+		PHASE_DEFINITIONS,
+		type TwilightPhaseSegment,
+	} from '$lib/ephemeris/twilight-phases';
 
 	export interface ViewportBounds {
 		readonly north: number;
@@ -16,31 +30,37 @@
 		location: LatLon;
 		time: Date;
 		bounds?: ViewportBounds;
+		zoom?: number;
 		onTimeChange?: (t: Date) => void;
 	}
 
-	let { location, time, bounds, onTimeChange }: Props = $props();
+	let { location, time, bounds, zoom, onTimeChange }: Props = $props();
 
 	let readout = $state<EphemerisReadout | null>(null);
 	let loading = $state(false);
 	let bar: HTMLDivElement | undefined = $state();
+	let dragging = $state(false);
+	let now = $state(new Date());
+	let online = $state(typeof navigator === 'undefined' ? true : navigator.onLine);
 
-	// Per-event min..max range across a 4x4 grid sampled inside `bounds`.
+	// Per-event min..max range across a 4x4 grid sampled inside the
+	// tile-cover summary for the current bounds.
 	// Populated asynchronously after the center readout, so the gantt
 	// renders the cursor + bands immediately and the uncertainty stripes
 	// fade in once the corner samples settle.
-	type EventKey =
-		| 'astronomicalDawn'
-		| 'nauticalDawn'
-		| 'civilDawn'
-		| 'sunrise'
-		| 'solarNoon'
-		| 'sunset'
-		| 'civilDusk'
-		| 'nauticalDusk'
-		| 'astronomicalDusk';
-	type EventRange = { readonly min: Date; readonly max: Date };
-	let ranges = $state<Partial<Record<EventKey, EventRange>>>({});
+	let ranges = $state<EventRangeMap>({});
+
+	type RangeStatus =
+		| { kind: 'idle' }
+		| { kind: 'loading'; key: string }
+		| { kind: 'refreshing'; key: string; previousKey: string }
+		| { kind: 'ready'; computedAtMs: number; key: string; source: ViewportRangeSummarySource }
+		| { kind: 'stale'; key: string; previousKey?: string }
+		| { kind: 'error'; key: string };
+
+	let rangeStatus = $state<RangeStatus>({ kind: 'idle' });
+	let activeRangeKey = '';
+	let hasDisplayedRanges = false;
 
 	// Lazy-load astronomy-engine + EphemerisClient. The ~116 KB chunk only
 	// ships once the overlay actually mounts.
@@ -65,23 +85,24 @@
 	// Recompute whenever location or the calendar-day part of `time` changes.
 	// (Scrubbing within the same day moves the cursor but the band positions
 	// are stable for the day.)
-	let cancelGen = 0;
+	let readoutGen = 0;
+	let rangeGen = 0;
 	const dayKey = $derived(
 		`${time.getUTCFullYear()}-${time.getUTCMonth()}-${time.getUTCDate()}|${location.lat.toFixed(3)},${location.lon.toFixed(3)}`,
 	);
 	$effect(() => {
-		const myGen = ++cancelGen;
+		const myGen = ++readoutGen;
 		loading = true;
 		(async () => {
 			try {
 				const c = await loadClient();
 				const r = await c(location, time);
-				if (myGen === cancelGen) {
+				if (myGen === readoutGen) {
 					readout = r;
 					loading = false;
 				}
 			} catch (e) {
-				if (myGen === cancelGen) {
+				if (myGen === readoutGen) {
 					loading = false;
 					console.warn('EphemerisGantt: failed to compute readout', e);
 				}
@@ -92,63 +113,77 @@
 		dayKey;
 	});
 
-	// Grid-sample (4x4) across the viewport bounds to compute per-event
-	// min..max ranges. Only fires when bounds is provided. Recomputes when
-	// the bounds rect or the calendar day changes.
-	const boundsKey = $derived(
-		bounds
-			? `${bounds.north.toFixed(3)},${bounds.south.toFixed(3)},${bounds.east.toFixed(3)},${bounds.west.toFixed(3)}`
-			: '',
-	);
+	// Grid-sample across a coarse Web-Mercator tile cover, not the raw
+	// viewport rectangle. Small mobile pans inside the same summary tile
+	// cover reuse the same Promise and avoid churn in the dusk rail.
+	const summaryRequest = $derived(bounds ? makeEphemerisViewportSummaryRequest({ bounds, mapZoom: zoom, time }) : null);
+	const boundsKey = $derived(summaryRequest?.key ?? '');
 	$effect(() => {
-		if (!bounds) {
+		const key = boundsKey;
+		if (!key) {
 			ranges = {};
+			rangeStatus = { kind: 'idle' };
+			activeRangeKey = '';
+			hasDisplayedRanges = false;
 			return;
 		}
-		const myGen = ++cancelGen;
+		const req = untrack(() => summaryRequest);
+		if (!req) return;
+		const reqTime = untrack(() => time);
+		const myGen = ++rangeGen;
+		const previousKey = activeRangeKey;
+		rangeStatus =
+			hasDisplayedRanges && previousKey && previousKey !== key
+				? { kind: 'refreshing', key, previousKey }
+				: { kind: 'loading', key };
 		(async () => {
 			const c = await loadClient();
-			// 4x4 grid plus the center pin. Skip if the box is degenerate.
-			const points = viewportGridPoints(bounds, 4);
-			if (points.length === 0) return;
-			const readouts = await Promise.all(points.map((p) => c(p, time)));
-			if (myGen !== cancelGen) return;
-			const KEYS: EventKey[] = [
-				'astronomicalDawn',
-				'nauticalDawn',
-				'civilDawn',
-				'sunrise',
-				'solarNoon',
-				'sunset',
-				'civilDusk',
-				'nauticalDusk',
-				'astronomicalDusk',
-			];
-			const next: Partial<Record<EventKey, EventRange>> = {};
-			for (const k of KEYS) {
-				let min = Infinity;
-				let max = -Infinity;
-				for (const r of readouts) {
-					const d = r.events[k];
-					if (!d) continue;
-					const t = d.getTime();
-					if (t < min) min = t;
-					if (t > max) max = t;
-				}
-				if (Number.isFinite(min) && Number.isFinite(max)) {
-					next[k] = { min: new Date(min), max: new Date(max) };
-				}
-			}
-			ranges = next;
+			const summary = await viewportRangesFor(req, c, reqTime);
+			if (myGen !== rangeGen) return;
+			ranges = summary.ranges;
+			activeRangeKey = summary.key;
+			hasDisplayedRanges = Object.keys(summary.ranges).length > 0;
+			rangeStatus = {
+				kind: 'ready',
+				key: summary.key,
+				source: summary.source,
+				computedAtMs: summary.computedAtMs,
+			};
 		})().catch((e) => {
-			if (myGen === cancelGen) console.warn('EphemerisGantt: viewport sampling failed', e);
+			if (myGen === rangeGen) {
+				rangeStatus = hasDisplayedRanges
+					? { kind: 'stale', key, previousKey: activeRangeKey || undefined }
+					: { kind: 'error', key };
+				console.warn('EphemerisGantt: viewport sampling failed', e);
+			}
 		});
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		boundsKey;
+		key;
 	});
 
 	onDestroy(() => {
-		cancelGen++;
+		readoutGen++;
+		rangeGen++;
+	});
+
+	$effect(() => {
+		if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
+		const updateOnline = () => {
+			online = navigator.onLine;
+		};
+		window.addEventListener('online', updateOnline);
+		window.addEventListener('offline', updateOnline);
+		return () => {
+			window.removeEventListener('online', updateOnline);
+			window.removeEventListener('offline', updateOnline);
+		};
+	});
+
+	$effect(() => {
+		const id = setInterval(() => {
+			now = new Date();
+		}, 60_000);
+		return () => clearInterval(id);
 	});
 
 	// Strip covers a full UTC day for the date of `time`. Every twilight
@@ -165,44 +200,18 @@
 		return dt / DAY_MS;
 	};
 
-	// Twilight-strip color palette (Photographer's Ephemeris-ish).
-	const COLOR = {
-		night: '#06080d',
-		astro: '#0c1633',
-		nautical: '#1f3a73',
-		civil: '#d18b3a',
-		day: '#7fbbff',
-	};
-
-	type Stop = { frac: number; color: string };
-
-	const bandGradient = $derived.by((): string => {
-		if (!readout) return COLOR.night;
-		const e = readout.events;
-		// Build the gradient as a sequence of hard color stops. Missing
-		// events (polar day/night) hold the surrounding color.
-		const stops: Stop[] = [{ frac: 0, color: COLOR.night }];
-		const push = (f: number | null, before: string, after: string) => {
-			if (f === null) return;
-			stops.push({ frac: f, color: before });
-			stops.push({ frac: f, color: after });
-		};
-		push(fracOf(e.astronomicalDawn), COLOR.night, COLOR.astro);
-		push(fracOf(e.nauticalDawn), COLOR.astro, COLOR.nautical);
-		push(fracOf(e.civilDawn), COLOR.nautical, COLOR.civil);
-		push(fracOf(e.sunrise), COLOR.civil, COLOR.day);
-		push(fracOf(e.sunset), COLOR.day, COLOR.civil);
-		push(fracOf(e.civilDusk), COLOR.civil, COLOR.nautical);
-		push(fracOf(e.nauticalDusk), COLOR.nautical, COLOR.astro);
-		push(fracOf(e.astronomicalDusk), COLOR.astro, COLOR.night);
-		stops.push({ frac: 1, color: stops[stops.length - 1]?.color ?? COLOR.night });
-		return 'linear-gradient(to right, ' + stops.map((s) => `${s.color} ${(s.frac * 100).toFixed(2)}%`).join(', ') + ')';
-	});
+	// Twilight-phase segments (#197). The segment list is the contract;
+	// the gradient and the per-phase popover hitboxes both derive from it.
+	const phaseSegments = $derived<readonly TwilightPhaseSegment[]>(
+		readout ? buildPhaseSegments(readout.events, fracOf) : [],
+	);
+	const bandGradient = $derived(buildPhaseGradient(phaseSegments));
 
 	const cursorFrac = $derived.by(() => {
 		const f = fracOf(time);
 		return f === null ? 0 : f;
 	});
+	const nowFrac = $derived(fracOf(now));
 
 	const events = $derived(readout?.events);
 	const noonAt: Date | null = $derived(events ? events.solarNoon : null);
@@ -212,11 +221,46 @@
 	const sunriseFrac = $derived(fracOf(sunriseAt));
 	const sunsetFrac = $derived(fracOf(sunsetAt));
 
-	const handleClick = (ev: MouseEvent): void => {
-		if (!bar || !onTimeChange) return;
+	// Phase under the cursor + current time (the "now" staff). Drive the
+	// header chip and any per-event narration that needs to know which
+	// twilight band a marker falls inside.
+	const cursorPhase = $derived(phaseAt(phaseSegments, cursorFrac));
+	const nowPhase = $derived(nowFrac === null ? undefined : phaseAt(phaseSegments, nowFrac));
+
+	const timeFromClientX = (clientX: number): Date | null => {
+		if (!bar || !onTimeChange) return null;
 		const rect = bar.getBoundingClientRect();
-		const x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-		onTimeChange(new Date(dayStart.getTime() + x * DAY_MS));
+		const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+		return new Date(dayStart.getTime() + x * DAY_MS);
+	};
+
+	const setTimeFromClientX = (clientX: number): void => {
+		const next = timeFromClientX(clientX);
+		if (next) onTimeChange?.(next);
+	};
+
+	const handleClick = (ev: MouseEvent): void => {
+		setTimeFromClientX(ev.clientX);
+	};
+
+	const handlePointerDown = (ev: PointerEvent): void => {
+		if (!bar || !onTimeChange) return;
+		ev.preventDefault();
+		dragging = true;
+		bar.setPointerCapture?.(ev.pointerId);
+		setTimeFromClientX(ev.clientX);
+	};
+
+	const handlePointerMove = (ev: PointerEvent): void => {
+		if (!dragging) return;
+		ev.preventDefault();
+		setTimeFromClientX(ev.clientX);
+	};
+
+	const handlePointerEnd = (ev: PointerEvent): void => {
+		if (!dragging) return;
+		dragging = false;
+		bar?.releasePointerCapture?.(ev.pointerId);
 	};
 
 	const handleKey = (ev: KeyboardEvent): void => {
@@ -249,10 +293,10 @@
 
 	// Uncertainty stripes — pairs of (left%, width%) for each event whose
 	// viewport-range spans more than 1 minute.
-	type Stripe = { key: EventKey; left: number; width: number; deltaMin: number };
+	type Stripe = { key: EphemerisEventKey; left: number; width: number; deltaMin: number };
 	const stripes = $derived.by((): Stripe[] => {
 		const out: Stripe[] = [];
-		for (const [key, range] of Object.entries(ranges) as [EventKey, EventRange][]) {
+		for (const [key, range] of Object.entries(ranges) as [EphemerisEventKey, EventRange][]) {
 			const minF = fracOf(range.min);
 			const maxF = fracOf(range.max);
 			if (minF === null || maxF === null) continue;
@@ -272,8 +316,8 @@
 	// span as "civil dusk Δ 26 min" in the header.
 	const closestRange = $derived.by(() => {
 		const t = time.getTime();
-		let best: { key: EventKey; range: EventRange; distMs: number } | null = null;
-		for (const [key, range] of Object.entries(ranges) as [EventKey, EventRange][]) {
+		let best: { key: EphemerisEventKey; range: EventRange; distMs: number } | null = null;
+		for (const [key, range] of Object.entries(ranges) as [EphemerisEventKey, EventRange][]) {
 			const mid = (range.min.getTime() + range.max.getTime()) / 2;
 			const dist = Math.abs(t - mid);
 			if (!best || dist < best.distMs) best = { key, range, distMs: dist };
@@ -281,7 +325,73 @@
 		return best;
 	});
 
-	const labelFor = (k: EventKey): string => {
+	type EventTipLabel = {
+		readonly short: string;
+		readonly long: string;
+		readonly description: string;
+	};
+
+	const eventTipFor = (k: EphemerisEventKey): EventTipLabel => {
+		switch (k) {
+			case 'astronomicalDawn':
+				return {
+					short: 'astro',
+					long: 'Astronomical dawn',
+					description: 'Sun reaches −18° below the horizon. Astronomical twilight begins.',
+				};
+			case 'nauticalDawn':
+				return {
+					short: 'naut',
+					long: 'Nautical dawn',
+					description: 'Sun reaches −12° below the horizon. Horizon visible at sea.',
+				};
+			case 'civilDawn':
+				return {
+					short: 'civil',
+					long: 'Civil dawn',
+					description:
+						'Sun reaches −6° below the horizon. Outdoor activities without artificial light become possible.',
+				};
+			case 'sunrise':
+				return {
+					short: '↑',
+					long: 'Sunrise',
+					description: 'Sun crosses the horizon. Civil twilight ends, daylight begins.',
+				};
+			case 'solarNoon':
+				return {
+					short: 'noon',
+					long: 'Solar noon',
+					description: 'Sun is at its highest altitude for the day at the viewport center.',
+				};
+			case 'sunset':
+				return {
+					short: '↓',
+					long: 'Sunset',
+					description: 'Sun crosses the horizon. Daylight ends, civil twilight begins.',
+				};
+			case 'civilDusk':
+				return {
+					short: 'civil',
+					long: 'Civil dusk',
+					description: 'Sun reaches −6° below the horizon. Nautical twilight begins.',
+				};
+			case 'nauticalDusk':
+				return {
+					short: 'naut',
+					long: 'Nautical dusk',
+					description: 'Sun reaches −12° below the horizon. Astronomical twilight begins.',
+				};
+			case 'astronomicalDusk':
+				return {
+					short: 'astro',
+					long: 'Astronomical dusk',
+					description: 'Sun reaches −18° below the horizon. Full astronomical darkness begins.',
+				};
+		}
+	};
+
+	const labelFor = (k: EphemerisEventKey): string => {
 		switch (k) {
 			case 'astronomicalDawn':
 				return 'astro dawn';
@@ -306,12 +416,106 @@
 
 	const fmtDelta = (deltaMin: number): string =>
 		deltaMin < 60 ? `Δ ${Math.round(deltaMin)} min` : `Δ ${(deltaMin / 60).toFixed(1)} h`;
+
+	// The viewport-summary pill IS a cache-state badge — it reuses the shared
+	// CacheBadgeView shape + fmtAge from $lib/cache/badge (the module that
+	// generalized this very pill) while keeping its tile-cover-specific labels
+	// and detail copy, which are more informative than the generic strings.
+	const rangeBadge = $derived.by((): CacheBadgeView | null => {
+		switch (rangeStatus.kind) {
+			case 'idle':
+				return null;
+			case 'loading':
+				return {
+					label: online ? 'loading' : 'offline',
+					tone: 'loading',
+					detail: online
+						? 'Computing the tile-cover summary for this viewport.'
+						: 'Browser reports offline while the tile-cover summary is loading.',
+				};
+			case 'refreshing':
+				return {
+					label: online ? 'updating' : 'offline stale',
+					tone: 'stale',
+					detail: 'Showing the previous tile-cover summary until the current viewport summary finishes.',
+				};
+			case 'ready':
+				if (!online) {
+					return {
+						label: 'offline cache',
+						tone: 'cached',
+						detail: `Browser reports offline; using the latest local tile-cover summary from ${fmtAge(rangeStatus.computedAtMs, now.getTime())}.`,
+					};
+				}
+				return rangeStatus.source === 'computed'
+					? {
+							label: 'live',
+							tone: 'live',
+							detail: 'Freshly computed tile-cover summary for the visible viewport.',
+						}
+					: {
+							label: 'cache',
+							tone: 'cached',
+							detail: `Reused a local tile-cover summary computed ${fmtAge(rangeStatus.computedAtMs, now.getTime())}.`,
+						};
+			case 'stale':
+				return {
+					label: online ? 'stale' : 'offline stale',
+					tone: 'stale',
+					detail: 'The current viewport summary failed; the rail is keeping the previous tile-cover summary visible.',
+				};
+			case 'error':
+				return {
+					label: 'no range',
+					tone: 'error',
+					detail: 'The viewport summary failed. Point-level ephemeris can still render independently.',
+				};
+		}
+	});
 </script>
 
 <div class="gantt" aria-label="Twilight strip for viewport center">
 	<div class="header">
 		<span class="date">{fmtDate(dayStart)} UTC</span>
-		<span class="cursor-label">cursor {fmtClock(time)}</span>
+		<HelpTooltip
+			text={cursorPhase
+				? `Cursor sits in ${cursorPhase.label.toLowerCase()} — ${cursorPhase.description}`
+				: 'Time cursor across the UTC day. Drag the rail or use arrow keys to scrub.'}
+		>
+			{#snippet trigger()}
+				<span class="cursor-label">
+					cursor {fmtClock(time)}
+					{#if cursorPhase}
+						<span class="phase-dot" style="background: {cursorPhase.color};" aria-hidden="true"></span>
+						<span class="phase-name">{cursorPhase.label.toLowerCase()}</span>
+					{/if}
+				</span>
+			{/snippet}
+		</HelpTooltip>
+		{#if nowPhase}
+			<HelpTooltip text="Right now ({fmtClock(now)} UTC) is {nowPhase.label.toLowerCase()} — {nowPhase.description}">
+				{#snippet trigger()}
+					<span class="now-chip">
+						<span class="phase-dot" style="background: {nowPhase.color};" aria-hidden="true"></span>
+						now {fmtClock(now)}
+					</span>
+				{/snippet}
+			</HelpTooltip>
+		{/if}
+		{#if rangeBadge}
+			<HelpTooltip text={rangeBadge.detail}>
+				{#snippet trigger()}
+					<span
+						class="cache-pill"
+						class:cached={rangeBadge.tone === 'cached'}
+						class:error={rangeBadge.tone === 'error'}
+						class:live={rangeBadge.tone === 'live'}
+						class:loading={rangeBadge.tone === 'loading'}
+						class:stale={rangeBadge.tone === 'stale'}>{rangeBadge.label}</span
+					>
+				{/snippet}
+			</HelpTooltip>
+		{/if}
 		{#if closestRange}
 			<HelpTooltip>
 				{#snippet trigger()}
@@ -327,8 +531,8 @@
 					<div>
 						<strong>Event-time spread across the visible viewport.</strong>
 						<br />
-						Sampled at 16 points (4×4 grid) inside the map bounds. Δ shrinks as you zoom in; state-scale views can show tens
-						of minutes between the earliest and latest civil dusk.
+						Sampled at 16 points across the current tile-cover summary. Small pans inside that cover reuse the same cache
+						entry; selected pins and GPS fixes stay point-precise.
 					</div>
 				{/snippet}
 			</HelpTooltip>
@@ -352,6 +556,10 @@
 		class="bar"
 		bind:this={bar}
 		onclick={handleClick}
+		onpointerdown={handlePointerDown}
+		onpointermove={handlePointerMove}
+		onpointerup={handlePointerEnd}
+		onpointercancel={handlePointerEnd}
 		onkeydown={handleKey}
 		role="slider"
 		tabindex="0"
@@ -384,6 +592,9 @@
 			<span class="event sunset" style="left: {(sunsetFrac * 100).toFixed(2)}%;" title="Sunset {fmtClock(sunsetAt)} UTC"
 			></span>
 		{/if}
+		{#if nowFrac !== null}
+			<span class="staff" style="left: {(nowFrac * 100).toFixed(2)}%;" title="Current time {fmtClock(now)} UTC"></span>
+		{/if}
 		<span class="cursor" style="left: {(cursorFrac * 100).toFixed(2)}%;" aria-hidden="true"></span>
 	</div>
 	<div class="ticks" aria-hidden="true">
@@ -393,17 +604,36 @@
 	</div>
 	{#if readout}
 		<div class="events" aria-label="Twilight events for the day in UTC">
-			<span>astro {fmtClock(readout.events.astronomicalDawn)}</span>
-			<span>naut {fmtClock(readout.events.nauticalDawn)}</span>
-			<span>civil {fmtClock(readout.events.civilDawn)}</span>
-			<span class="sep">·</span>
-			<span class="sun-up">↑ {fmtClock(readout.events.sunrise)}</span>
-			<span>noon {fmtClock(readout.events.solarNoon)}</span>
-			<span class="sun-down">↓ {fmtClock(readout.events.sunset)}</span>
-			<span class="sep">·</span>
-			<span>civil {fmtClock(readout.events.civilDusk)}</span>
-			<span>naut {fmtClock(readout.events.nauticalDusk)}</span>
-			<span>astro {fmtClock(readout.events.astronomicalDusk)}</span>
+			{#each ['astronomicalDawn', 'nauticalDawn', 'civilDawn', 'sunrise', 'solarNoon', 'sunset', 'civilDusk', 'nauticalDusk', 'astronomicalDusk'] as evKey, i (evKey)}
+				{@const tip = eventTipFor(evKey as EphemerisEventKey)}
+				{@const at = readout.events[evKey as EphemerisEventKey]}
+				{#if i === 3 || i === 6}
+					<span class="sep">·</span>
+				{/if}
+				<HelpTooltip text="{tip.long} {fmtClock(at)} UTC — {tip.description}">
+					{#snippet trigger()}
+						<span
+							class="event-chip"
+							class:sun-up={evKey === 'sunrise'}
+							class:sun-down={evKey === 'sunset'}
+							aria-label="{tip.long} {fmtClock(at)} UTC">{tip.short} {fmtClock(at)}</span
+						>
+					{/snippet}
+				</HelpTooltip>
+			{/each}
+		</div>
+		<div class="phase-legend" aria-label="Twilight phase legend">
+			{#each Array.from(new Set(phaseSegments.map((s) => s.name))) as phaseName (phaseName)}
+				{@const def = PHASE_DEFINITIONS[phaseName]}
+				<HelpTooltip text="{def.label} — {def.description} ({def.altitudeRange})">
+					{#snippet trigger()}
+						<span class="phase-chip">
+							<span class="phase-dot" style="background: {def.color};" aria-hidden="true"></span>
+							{def.label.toLowerCase()}
+						</span>
+					{/snippet}
+				</HelpTooltip>
+			{/each}
 		</div>
 	{/if}
 </div>
@@ -414,7 +644,7 @@
 		left: 1rem;
 		/* Leave room for the MapToolbar's column on the right. */
 		right: var(--map-toolbar-inset-rem, 5rem);
-		bottom: var(--gantt-bottom-rem, 1rem);
+		bottom: calc(var(--gantt-bottom-rem, 0.75rem) + env(safe-area-inset-bottom, 0px));
 		background: rgba(8, 10, 16, 0.85);
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 6px;
@@ -437,6 +667,33 @@
 	}
 	.cursor-label {
 		font-variant-numeric: tabular-nums;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.now-chip {
+		font-variant-numeric: tabular-nums;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.05rem 0.35rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		background: rgba(255, 255, 255, 0.06);
+		color: rgba(233, 236, 243, 0.86);
+		font-size: 0.6rem;
+	}
+	.phase-dot {
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.35);
+		display: inline-block;
+		flex: 0 0 auto;
+	}
+	.phase-name {
+		opacity: 0.85;
+		text-transform: lowercase;
 	}
 	.bar {
 		position: relative;
@@ -446,6 +703,7 @@
 		border-radius: 3px;
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		cursor: pointer;
+		touch-action: none;
 		outline: none;
 	}
 	.bar:focus-visible {
@@ -462,15 +720,37 @@
 		top: -0.15rem;
 		bottom: -0.15rem;
 		width: 2px;
-		background: #ffd166;
+		background: var(--accent-amber);
 		transform: translateX(-50%);
-		box-shadow: 0 0 6px rgba(255, 209, 102, 0.7);
+		box-shadow: 0 0 6px rgba(var(--accent-amber-rgb), 0.7);
+	}
+	.staff {
+		position: absolute;
+		top: -0.28rem;
+		bottom: -0.28rem;
+		width: 3px;
+		background: #ffffff;
+		transform: translateX(-50%);
+		box-shadow:
+			0 0 0 1px rgba(6, 8, 13, 0.85),
+			0 0 8px rgba(255, 255, 255, 0.65);
+		pointer-events: none;
+	}
+	.staff::before {
+		content: 'now';
+		position: absolute;
+		top: -1rem;
+		left: 50%;
+		transform: translateX(-50%);
+		color: rgba(255, 255, 255, 0.82);
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.52rem;
 	}
 	.stripe {
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		background: rgba(255, 209, 102, 0.22);
+		background: rgba(var(--accent-amber-rgb), 0.22);
 		mix-blend-mode: screen;
 		pointer-events: none;
 	}
@@ -514,12 +794,81 @@
 	.events .sep {
 		opacity: 0.4;
 	}
-	.events .sun-up,
-	.events .sun-down {
-		color: #ffd166;
+	.event-chip {
+		font-variant-numeric: tabular-nums;
+		min-height: 1.1rem;
+		padding: 0.05rem 0.3rem;
+		border-radius: 4px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.04);
+		color: rgba(233, 236, 243, 0.85);
+		display: inline-block;
+	}
+	.event-chip.sun-up,
+	.event-chip.sun-down {
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.32);
+		background: rgba(var(--accent-amber-rgb), 0.08);
+	}
+	.phase-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-top: 0.35rem;
+		font-size: 0.6rem;
+		opacity: 0.85;
+	}
+	.phase-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		background: rgba(255, 255, 255, 0.05);
+		color: rgba(233, 236, 243, 0.86);
 	}
 	.phase {
 		opacity: 0.7;
+	}
+	.cache-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 1.1rem;
+		padding: 0.05rem 0.35rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		background: rgba(255, 255, 255, 0.08);
+		color: rgba(233, 236, 243, 0.86);
+		font-size: 0.58rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.cache-pill.live {
+		border-color: rgba(97, 220, 163, 0.38);
+		background: rgba(97, 220, 163, 0.14);
+		color: #b8f4d7;
+	}
+	.cache-pill.cached {
+		border-color: rgba(127, 187, 255, 0.4);
+		background: rgba(127, 187, 255, 0.14);
+		color: #c7ddff;
+	}
+	.cache-pill.loading {
+		border-color: rgba(255, 255, 255, 0.2);
+		background: rgba(255, 255, 255, 0.09);
+		color: rgba(233, 236, 243, 0.72);
+	}
+	.cache-pill.stale {
+		border-color: rgba(var(--accent-amber-rgb), 0.34);
+		background: rgba(var(--accent-amber-rgb), 0.14);
+		color: var(--accent-amber);
+	}
+	.cache-pill.error {
+		border-color: rgba(255, 118, 117, 0.42);
+		background: rgba(255, 118, 117, 0.14);
+		color: #ffb5b4;
 	}
 	.pill {
 		display: inline-flex;
@@ -527,14 +876,39 @@
 		align-items: baseline;
 		padding: 0.05rem 0.4rem;
 		border-radius: 999px;
-		background: rgba(255, 209, 102, 0.12);
-		border: 1px solid rgba(255, 209, 102, 0.3);
-		color: #ffd166;
+		background: rgba(var(--accent-amber-rgb), 0.12);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.3);
+		color: var(--accent-amber);
 		font-variant-numeric: tabular-nums;
 		font-size: 0.62rem;
 	}
 	.pill .delta {
 		opacity: 0.7;
 		color: #e9ecf3;
+	}
+	@media (max-width: 820px), (max-height: 500px) {
+		.gantt {
+			left: 0.75rem;
+			right: var(--map-toolbar-inset-rem, 5rem);
+			padding: 0.5rem 0.65rem;
+		}
+		.header {
+			flex-wrap: wrap;
+			gap: 0.35rem 0.6rem;
+		}
+		.events {
+			/* The 9-event clock row would wrap onto two lines and crowd the
+			   safe-area inset on phones. The phase-legend row below stays
+			   visible and carries the popovers a mobile user actually needs. */
+			display: none;
+		}
+		.phase-legend {
+			/* Compact dots-only on phones; tap still opens the popover. */
+			font-size: 0.58rem;
+		}
+		.now-chip,
+		.cursor-label {
+			font-size: 0.62rem;
+		}
 	}
 </style>

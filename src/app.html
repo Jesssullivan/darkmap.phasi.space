@@ -5,10 +5,15 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Ad-free reimplementation of lightpollutionmap.info. VIIRS DNB, Falchi 2016 World Atlas, SQM. Tailnet-only."
+			content="Dark-sky planning map with VIIRS DNB, Falchi 2016 World Atlas, terrain horizon, OSM search, and sun/moon timing."
 		/>
 		<meta name="color-scheme" content="light dark" />
+		<meta name="theme-color" content="#0c1018" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		<script>
 			// FOUC prevention: read color-mode and theme from localStorage and
 			// apply data-mode + data-theme synchronously before Svelte mounts.

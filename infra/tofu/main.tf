@@ -1,4 +1,4 @@
-# darkmap.tinyland.dev — namespace + upstream-key secret.
+# darkmap.phasi.space — namespace, public DNS, and legacy DNS.
 #
 # The Deployment / Service / Ingress / tailscale-svc are managed via
 # Kustomize (infra/kustomize/honey/darkmap/) so kubectl-apply lifecycle
@@ -8,27 +8,29 @@ resource "kubernetes_namespace_v1" "darkmap" {
   metadata {
     name = var.namespace
     labels = {
-      "tinyland.dev/site"     = "darkmap.tinyland.dev"
-      "tinyland.dev/exposure" = "tailnet-only"
+      "tinyland.dev/site"     = var.brand_domain
+      "tinyland.dev/exposure" = "cloudflare-tunnel"
     }
   }
 }
 
-resource "kubernetes_secret_v1" "darkmap_upstream" {
-  metadata {
-    name      = "darkmap-upstream"
-    namespace = kubernetes_namespace_v1.darkmap.metadata[0].name
-  }
-  type = "Opaque"
-  data = {
-    QUERY_RASTER_KEY = var.query_raster_key
-  }
+# Public Cloudflare DNS record for the canonical hostname. This points at the
+# retained Blahaj `honey-ingress` Cloudflare Tunnel and is gated off by default
+# so PR validation can prove the shape without mutating DNS.
+resource "cloudflare_dns_record" "darkmap_public_cname" {
+  count   = var.public_dns_enabled ? 1 : 0
+  zone_id = var.phasi_cloudflare_zone_id
+  name    = "darkmap"
+  type    = "CNAME"
+  content = var.cloudflare_tunnel_cname_target
+  ttl     = 1
+  proxied = true
+  comment = "darkmap.phasi.space public edge via honey-ingress Cloudflare Tunnel"
 }
 
-# Public CF DNS record pointing at the tailnet `tinyland-ingress` IP. CF
-# answers everyone, but only on-tailnet clients can actually route to
-# the 100.x.x.x address — same defense-in-depth pattern as tinyland.dev
-# itself.
+# Legacy CF DNS record pointing at the tailnet `tinyland-ingress` IP. CF answers
+# everyone, but only on-tailnet clients can actually route to the 100.x.x.x
+# address. Preserve until the legacy darkmap.tinyland.dev path is retired.
 resource "cloudflare_dns_record" "darkmap_a" {
   zone_id = var.cloudflare_zone_id
   name    = "darkmap"
@@ -105,12 +107,12 @@ module "spoke_runner_binding" {
   source = "${local.spoke_modules_source}/spoke-runner-binding?ref=${local.spoke_modules_ref}"
 
   spoke_slug             = "darkmap"
-  github_repository      = "Jesssullivan/darkmap.tinyland.dev"
+  github_repository      = "Jesssullivan/darkmap.phasi.space"
   allowed_runner_classes = var.spoke_allowed_runner_classes
   enforcement_mode       = var.spoke_runner_binding_enforcement_mode
 }
 
-# Wildcard PR-env DNS via external-dns. Pre-creates *.pr.darkmap.tinyland.dev
+# Wildcard PR-env DNS via external-dns. Pre-creates *.pr.darkmap.phasi.space
 # so Blahaj doesn't need DNS provisioning rights. lane_names is empty by
 # default (no stable per-lane DNS); set in tfvars if needed.
 module "spoke_dns_pr_env" {
@@ -118,19 +120,19 @@ module "spoke_dns_pr_env" {
   source = "${local.spoke_modules_source}/spoke-dns-pr-env?ref=${local.spoke_modules_ref}"
 
   spoke_slug     = "darkmap"
-  brand_domain   = "darkmap.tinyland.dev"
+  brand_domain   = var.brand_domain
   lane_names     = var.spoke_stable_lane_names
   ingress_target = var.spoke_ingress_target
 }
 
 # Blahaj GitHub App installation. Gated on installation_id > 0 — set to
-# the real ID once Blahaj is installed on Jesssullivan/darkmap.tinyland.dev
+# the real ID once Blahaj is installed on Jesssullivan/darkmap.phasi.space
 # and lane-env.yml is enabled (vars.BLAHAJ_LANE_ENV_ENABLED == 'true').
 module "spoke_blahaj_app_install" {
   count  = var.spoke_blahaj_installation_id > 0 ? 1 : 0
   source = "${local.spoke_modules_source}/spoke-blahaj-app-install?ref=${local.spoke_modules_ref}"
 
   spoke_slug        = "darkmap"
-  github_repository = "Jesssullivan/darkmap.tinyland.dev"
+  github_repository = "Jesssullivan/darkmap.phasi.space"
   installation_id   = var.spoke_blahaj_installation_id
 }
