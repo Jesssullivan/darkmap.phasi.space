@@ -1,7 +1,12 @@
 <script lang="ts">
+	import { ChevronDown, ChevronRight, Menu, X } from '@lucide/svelte';
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
+	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
+	import { healthLabel, healthTone } from '$lib/layers/health-state';
+	import { modelCardFor } from '$lib/atmospheric/model-cards';
+	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import Legend from './Legend.svelte';
 
 	export interface LayerState {
@@ -15,16 +20,39 @@
 		onchange: (id: string, partial: Partial<LayerState>) => void;
 		basemap: string;
 		onbasemapchange: (id: string) => void;
+		/**
+		 * Current ephemeris / forecast time. Drives the atmospheric "stale"
+		 * badge — atmospheric layers fetch near-real-time imagery and forecast
+		 * point data, so scrubbing too far from now flags those rows.
+		 */
+		time?: Date;
 	}
 
-	let { layers, states, onchange, basemap, onbasemapchange }: Props = $props();
+	let { layers, states, onchange, basemap, onbasemapchange, time }: Props = $props();
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
 
-	// VIIRS annual is rendered as a year picker below; filter it out of the
-	// generic per-layer toggle list.
-	const nonViirs = $derived(layers.filter((l) => l.group !== 'viirs_annual'));
+	// Category partition. VIIRS Annual is its own picker (below); the styled
+	// World Atlas sits in the Light Pollution section; atmospheric layers get
+	// their own collapsible group. (The unstyled WA_2015_raw grid is not a
+	// public overlay — it backs the point-query readout only.)
+	const lightExtras = $derived(layers.filter((l) => l.group === 'world_atlas'));
+	const atmosphericLayers = $derived(layers.filter((l) => l.group === 'atmospheric'));
+
+	let lightOpen = $state(true);
+	let atmosphereOpen = $state(false);
+
+	// 36 h crossover for the atmospheric stale badge. GIBS NRT is past-only
+	// (T+3 h SLA); Open-Meteo forecasts ~16 days forward. A user scrubbing
+	// more than a day and a half from "now" is likely outside the fetch
+	// window for at least one of the active overlays — flag the section so
+	// the absence of fresh tiles isn't read as a missing-data bug.
+	const ATMOSPHERIC_STALE_MS = 36 * 3_600_000;
+	const atmosphericStale = $derived.by(() => {
+		if (!time) return false;
+		return Math.abs(time.getTime() - Date.now()) > ATMOSPHERIC_STALE_MS;
+	});
 
 	// Active VIIRS year (single-select within the group). Falls back to the
 	// newest year if nothing's on, or the first .on entry otherwise.
@@ -54,22 +82,24 @@
 	}
 
 	function setViirsOpacity(opacity: number): void {
-		// Push the opacity to every VIIRS year that's currently on (in practice
-		// just one) so toggling years preserves the slider position.
-		for (const l of VIIRS_YEARS) {
-			if (states[l.id]?.on) onchange(l.id, { opacity });
-			else onchange(l.id, { opacity });
-		}
+		// Push the opacity to every VIIRS year so toggling years preserves
+		// the slider position.
+		for (const l of VIIRS_YEARS) onchange(l.id, { opacity });
 	}
 </script>
 
 <button
 	class="rail-toggle"
+	data-tour="rail-toggle"
 	aria-label={drawerOpen ? 'Close layers' : 'Open layers'}
 	aria-expanded={drawerOpen}
 	onclick={() => (drawerOpen = !drawerOpen)}
 >
-	{#if drawerOpen}✕{:else}☰{/if}
+	{#if drawerOpen}
+		<X size={16} aria-hidden="true" />
+	{:else}
+		<Menu size={16} aria-hidden="true" />
+	{/if}
 	<span class="rail-toggle-label">Layers</span>
 </button>
 
@@ -77,14 +107,41 @@
 	<div class="rail-backdrop" role="presentation" onclick={close} onkeydown={(e) => e.key === 'Escape' && close()}></div>
 {/if}
 
-<aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers">
+{#snippet modelInfo(id: string)}
+	{@const card = modelCardFor(id)}
+	{#if card}
+		<HelpTooltip positioning="right">
+			{#snippet trigger()}
+				<span class="model-help" role="img" aria-label="About {card.title}">?</span>
+			{/snippet}
+			{#snippet content()}
+				<div class="model-card">
+					<p class="model-card-head"><strong>{card.title}</strong><span class="model-kind">{card.kind}</span></p>
+					<p>{card.what}</p>
+					{#if card.units}<p class="model-units">Units: {card.units}</p>{/if}
+					<p class="model-src"><a href={card.href} target="_blank" rel="noopener">{card.source} ↗</a></p>
+				</div>
+			{/snippet}
+		</HelpTooltip>
+	{/if}
+{/snippet}
+
+<aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers" data-tour="rail">
 	<header>
 		<h2>Layers</h2>
-		<p>VIIRS · World Atlas · SQM</p>
+		<p>VIIRS · World Atlas · Atmosphere</p>
 	</header>
 
 	<section class="basemap-section" aria-label="Basemap">
-		<p class="section-title">Basemap</p>
+		<p class="section-title">
+			<span>Basemap</span>
+			{#if basemap}
+				{@const h = layerHealth.getHealth(basemap)}
+				{#if h.tag !== 'idle'}
+					<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>{healthLabel(h)}</span>
+				{/if}
+			{/if}
+		</p>
 		<div class="basemap-row" role="radiogroup" aria-label="Basemap">
 			{#each BASEMAPS as bm (bm.id)}
 				<button
@@ -101,95 +158,189 @@
 		</div>
 	</section>
 
-	<ul>
-		<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
-		<li>
-			<label class="layer-toggle">
-				<input
-					type="checkbox"
-					checked={viirsOn}
-					onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
-				/>
-				<span class="label">VIIRS Annual</span>
-			</label>
-			<div class="year-row" role="radiogroup" aria-label="VIIRS year">
-				{#each VIIRS_YEARS as l (l.id)}
-					<button
-						type="button"
-						class="year-chip"
-						class:active={activeViirsId === l.id}
-						aria-pressed={activeViirsId === l.id}
-						disabled={!viirsOn}
-						onclick={() => pickViirsYear(l.id)}
-					>
-						{l.year}
-					</button>
-				{/each}
-			</div>
-			<div class="opacity-row">
-				<input
-					type="range"
-					min="0"
-					max="1"
-					step="0.05"
-					value={viirsOpacity}
-					disabled={!viirsOn}
-					aria-label="VIIRS opacity"
-					oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
-				/>
-				<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
-			</div>
-			<p class="desc">NOAA VIIRS DNB annual composites, 2012–2019.</p>
-			{#if viirsOn}
-				<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
+	<section class="category" aria-label="Light Pollution" data-tour="light-pollution">
+		<button type="button" class="category-header" aria-expanded={lightOpen} onclick={() => (lightOpen = !lightOpen)}>
+			{#if lightOpen}
+				<ChevronDown size={14} aria-hidden="true" />
+			{:else}
+				<ChevronRight size={14} aria-hidden="true" />
 			{/if}
-		</li>
+			<span>Light Pollution</span>
+		</button>
 
-		<!-- Non-VIIRS layers: one toggle + opacity slider each. -->
-		{#each nonViirs as layer (layer.id)}
-			{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
-			<li>
-				<label class="layer-toggle">
-					<input
-						type="checkbox"
-						checked={ls.on}
-						onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
-					/>
-					<span class="label">{layer.label}</span>
-				</label>
-				<div class="opacity-row">
-					<input
-						type="range"
-						min="0"
-						max="1"
-						step="0.05"
-						value={ls.opacity}
-						disabled={!ls.on}
-						aria-label="{layer.label} opacity"
-						oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
-					/>
-					<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
-				</div>
-				<p class="desc">{layer.description}</p>
-				{#if ls.on}
-					{@const ramp = rampFor(layer.upstreamLayer)}
-					{#if ramp}
-						<Legend
-							{ramp}
-							title={layer.label === 'World Atlas 2015 (raw)' ? 'Falchi radiance' : layer.label + ' scale'}
+		{#if lightOpen}
+			<ul>
+				<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
+				<li>
+					<label class="layer-toggle">
+						<input
+							type="checkbox"
+							checked={viirsOn}
+							onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
 						/>
+						<span class="label">VIIRS Annual</span>
+						{#if viirsOn && activeViirsId}
+							{@const h = layerHealth.getHealth(activeViirsId)}
+							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+									{healthLabel(h)}
+								</span>
+							{/if}
+						{/if}
+					</label>
+					<div class="year-row" role="radiogroup" aria-label="VIIRS year">
+						{#each VIIRS_YEARS as l (l.id)}
+							<button
+								type="button"
+								class="year-chip"
+								class:active={activeViirsId === l.id}
+								aria-pressed={activeViirsId === l.id}
+								disabled={!viirsOn}
+								onclick={() => pickViirsYear(l.id)}
+							>
+								{l.year}
+							</button>
+						{/each}
+					</div>
+					{#if viirsOn}
+						<div class="opacity-row">
+							<input
+								type="range"
+								min="0"
+								max="1"
+								step="0.05"
+								value={viirsOpacity}
+								aria-label="VIIRS opacity"
+								oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
+							/>
+							<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
+						</div>
 					{/if}
+					<div class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</div>
+					{#if viirsOn}
+						<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
+					{/if}
+				</li>
+
+				<!-- World Atlas (styled): one toggle + opacity. -->
+				{#each lightExtras as layer (layer.id)}
+					{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+					<li>
+						<label class="layer-toggle">
+							<input
+								type="checkbox"
+								checked={ls.on}
+								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+							/>
+							<span class="label">{layer.label}</span>
+							{#if ls.on}
+								{@const h = layerHealth.getHealth(layer.id)}
+								{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+									<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+										{healthLabel(h)}
+									</span>
+								{/if}
+							{/if}
+						</label>
+						{#if ls.on}
+							<div class="opacity-row">
+								<input
+									type="range"
+									min="0"
+									max="1"
+									step="0.05"
+									value={ls.opacity}
+									aria-label="{layer.label} opacity"
+									oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
+								/>
+								<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
+							</div>
+						{/if}
+						<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
+						{#if ls.on && layer.upstreamLayer}
+							{@const ramp = rampFor(layer.upstreamLayer)}
+							{#if ramp}
+								<Legend {ramp} title="{layer.label} scale" />
+							{/if}
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+
+	{#if atmosphericLayers.length > 0}
+		<section class="category" aria-label="Atmosphere" data-tour="atmosphere">
+			<button
+				type="button"
+				class="category-header"
+				data-tour="atmosphere-header"
+				aria-expanded={atmosphereOpen}
+				onclick={() => (atmosphereOpen = !atmosphereOpen)}
+			>
+				{#if atmosphereOpen}
+					<ChevronDown size={14} aria-hidden="true" />
+				{:else}
+					<ChevronRight size={14} aria-hidden="true" />
 				{/if}
-			</li>
-		{/each}
-	</ul>
+				<span>Atmosphere</span>
+				{#if atmosphericStale}
+					<span class="stale-pill" title="Time is outside the typical fetch window">outside fetch window</span>
+				{/if}
+			</button>
+
+			{#if atmosphereOpen}
+				<ul>
+					{#each atmosphericLayers as layer (layer.id)}
+						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+						<li class:stale={atmosphericStale && ls.on}>
+							<div class="atmospheric-row-head">
+								<label class="layer-toggle">
+									<input
+										type="checkbox"
+										checked={ls.on}
+										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+									/>
+									<span class="label">{layer.label}</span>
+									{#if ls.on}
+										{@const h = layerHealth.getHealth(layer.id)}
+										{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+											<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+												{healthLabel(h)}
+											</span>
+										{/if}
+									{/if}
+								</label>
+							</div>
+							{#if ls.on}
+								<div class="opacity-row">
+									<input
+										type="range"
+										min="0"
+										max="1"
+										step="0.05"
+										value={ls.opacity}
+										aria-label="{layer.label} opacity"
+										oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
+									/>
+									<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
+								</div>
+							{/if}
+							<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 </aside>
 
 <style>
 	.rail-toggle {
 		position: fixed;
-		top: 4.25rem;
-		left: 1rem;
+		/* Stay clear of the notch in landscape (matches the stacking-contract safe-area rule). */
+		top: max(4.25rem, env(safe-area-inset-top));
+		left: max(1rem, env(safe-area-inset-left));
 		z-index: 12;
 		background: rgba(8, 10, 16, 0.85);
 		color: #e9ecf3;
@@ -205,7 +356,7 @@
 		gap: 0.5rem;
 	}
 	.rail-toggle:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 2px;
 	}
 	.rail-toggle-label {
@@ -273,6 +424,18 @@
 		opacity: 0.55;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
+		/* Allow the inline health pill to float right of the label. */
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.4rem;
+	}
+	.section-title > span {
+		flex: 0 0 auto;
+	}
+	.section-title .health-pill {
+		text-transform: none;
+		letter-spacing: 0;
 	}
 	.basemap-row {
 		display: grid;
@@ -296,22 +459,107 @@
 		background: rgba(255, 255, 255, 0.1);
 	}
 	.basemap-chip.active {
-		background: #ffd166;
+		background: var(--accent-amber);
 		color: #0a0e16;
-		border-color: #ffd166;
+		border-color: var(--accent-amber);
 		font-weight: 600;
 	}
 	.basemap-chip:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 1px;
 	}
+
+	.category {
+		margin-top: 0.85rem;
+	}
+	.category + .category {
+		margin-top: 1rem;
+		padding-top: 0.85rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.category-header {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		color: rgba(233, 236, 243, 0.85);
+		font: inherit;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		cursor: pointer;
+		text-align: left;
+	}
+	.category-header:hover {
+		color: var(--accent-amber);
+	}
+	.category-header:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 2px;
+	}
+	.atmospheric-row-head {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.atmospheric-row-head .layer-toggle {
+		flex: 1 1 auto;
+	}
+	.health-pill {
+		margin-left: 0.4rem;
+		padding: 0.05rem 0.35rem;
+		font-size: 0.6rem;
+		border-radius: 999px;
+		border: 1px solid transparent;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+		font-variant-numeric: tabular-nums;
+	}
+	.health-pill.health-neutral {
+		background: rgba(255, 255, 255, 0.06);
+		color: rgba(233, 236, 243, 0.65);
+		border-color: rgba(255, 255, 255, 0.12);
+	}
+	.health-pill.health-good {
+		background: rgba(94, 226, 208, 0.12);
+		color: #5ee2d0;
+		border-color: rgba(94, 226, 208, 0.35);
+	}
+	.health-pill.health-warn {
+		background: rgba(var(--accent-amber-rgb), 0.12);
+		color: var(--accent-amber);
+		border-color: rgba(var(--accent-amber-rgb), 0.35);
+	}
+	.health-pill.health-bad {
+		background: rgba(255, 107, 107, 0.15);
+		color: #ff6b6b;
+		border-color: rgba(255, 107, 107, 0.45);
+	}
+	.stale-pill {
+		margin-left: auto;
+		text-transform: none;
+		letter-spacing: 0;
+		font-size: 0.62rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		background: rgba(var(--accent-amber-rgb), 0.15);
+		color: var(--accent-amber);
+		border: 1px solid rgba(var(--accent-amber-rgb), 0.35);
+	}
+
 	ul {
 		list-style: none;
 		padding: 0;
-		margin: 0;
+		margin: 0.5rem 0 0;
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;
+	}
+	li.stale {
+		opacity: 0.65;
 	}
 	.layer-toggle {
 		display: flex;
@@ -346,9 +594,9 @@
 		background: rgba(255, 255, 255, 0.1);
 	}
 	.year-chip.active {
-		background: #ffd166;
+		background: var(--accent-amber);
 		color: #0a0e16;
-		border-color: #ffd166;
+		border-color: var(--accent-amber);
 		font-weight: 600;
 	}
 	.year-chip:disabled {
@@ -356,7 +604,7 @@
 		cursor: not-allowed;
 	}
 	.year-chip:focus-visible {
-		outline: 2px solid #ffd166;
+		outline: 2px solid var(--accent-amber);
 		outline-offset: 1px;
 	}
 
@@ -370,11 +618,8 @@
 	}
 	.opacity-row input[type='range'] {
 		width: 100%;
-		accent-color: #ffd166;
-	}
-	.opacity-row input[type='range']:disabled {
-		opacity: 0.35;
-		cursor: not-allowed;
+		accent-color: var(--accent-amber);
+		min-height: 1.25rem;
 	}
 	.opacity-pct {
 		font-variant-numeric: tabular-nums;
@@ -389,8 +634,68 @@
 		font-size: 0.72rem;
 		line-height: 1.35;
 	}
+	/* Inline "?" model-card affordance — opens a Popover explaining the layer. */
+	.model-help {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.05rem;
+		height: 1.05rem;
+		border-radius: 999px;
+		border: 1px solid rgba(127, 187, 255, 0.45);
+		color: #c7ddff;
+		font-size: 0.66rem;
+		font-weight: 700;
+		line-height: 1;
+		vertical-align: baseline;
+		cursor: pointer;
+		opacity: 0.85;
+	}
+	.model-help:hover {
+		opacity: 1;
+		background: rgba(127, 187, 255, 0.14);
+	}
+	:global(.model-card) {
+		max-width: min(17rem, calc(100vw - 4rem));
+		font-size: 0.72rem;
+		line-height: 1.4;
+		overflow-wrap: anywhere;
+	}
+	@media (max-width: 640px) {
+		:global(.model-card) {
+			max-width: min(15.5rem, calc(100vw - 5rem));
+		}
+	}
+	:global(.model-card p) {
+		margin: 0 0 0.3rem 0;
+	}
+	:global(.model-card-head) {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	:global(.model-kind) {
+		font-size: 0.58rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		opacity: 0.7;
+	}
+	:global(.model-units) {
+		opacity: 0.7;
+		font-variant-numeric: tabular-nums;
+	}
+	:global(.model-src a) {
+		color: var(--accent-amber);
+	}
 	input[type='checkbox'] {
-		accent-color: #ffd166;
+		accent-color: var(--accent-amber);
+	}
+
+	@media (pointer: coarse) {
+		.opacity-row input[type='range'] {
+			min-height: 2.75rem;
+		}
 	}
 
 	@media (max-width: 640px) {
@@ -402,14 +707,15 @@
 			left: 0;
 			max-width: 100vw;
 			width: 88vw;
-			max-height: 100vh;
-			height: 100vh;
+			max-height: calc(100dvh - env(safe-area-inset-bottom, 0px));
+			height: calc(100dvh - env(safe-area-inset-bottom, 0px));
 			border-radius: 0;
 			border-right: 1px solid rgba(255, 255, 255, 0.08);
 			border-top: 0;
 			border-bottom: 0;
 			border-left: 0;
 			padding-top: 4rem;
+			padding-bottom: calc(var(--field-bottom-reserve, 7.75rem) + 1rem);
 			transform: translateX(-100%);
 			transition: transform 0.2s ease-out;
 			animation: none;

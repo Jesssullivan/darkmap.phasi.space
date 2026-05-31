@@ -1,4 +1,4 @@
-# darkmap.tinyland.dev — SvelteKit static site task runner
+# darkmap.phasi.space — SvelteKit static site task runner
 # Prerequisites: just, direnv (loads Nix devShell), Nix with flakes
 # Quick Start: direnv allow && just setup && just dev
 #
@@ -90,15 +90,17 @@ test-local:
 test-bazel-local:
     cd {{ root }} && bazelisk test //src/lib/server/raster:raster_test
 
-# Run Playwright E2E tests
+# Run Playwright E2E tests. Remote-first: browserful e2e (full adapter-node
+# build + chromium) belongs in CI's e2e lane, which is the source of truth.
+# Set LOCAL=1 to force a local browserful run.
 test-e2e:
-    cd {{ root }} && pnpm run test:e2e
+    cd {{ root }} && if [ "${LOCAL:-}" = "1" ]; then pnpm run test:e2e; else echo "e2e is remote-first — CI's e2e lane is the source of truth. Run 'LOCAL=1 just test-e2e' to force a local browserful run."; fi
 
 # Run all tests (Bazel unit + e2e)
 test: test-unit test-e2e
 
 # Run lint + typecheck + unit (pre-commit gate)
-check: lint typecheck test-unit
+check: lint typecheck test-unit ha-state-live-candidate-status-check
     @echo "All checks passed."
 
 # Run full CI pipeline locally
@@ -183,6 +185,67 @@ tofu-init-reconfigure:
 tofu-validate:
     cd {{ tofu_dir }} && tofu fmt -check -recursive && tofu validate
 
+# HA state readiness gate. Without --expect-interim this should stay red until
+# #141 has a filled live endpoint package.
+tofu-state-ha-readiness *args:
+    cd {{ root }} && node scripts/ha-state-live-candidate-status.mjs {{ args }}
+
+# Validate the checked-in public status artifact while RustFS is still interim-only
+ha-state-live-candidate-status-check:
+    cd {{ root }} && node scripts/ha-state-live-candidate-status.mjs --expect-interim
+
+# Offline guard tests for the HA state live-candidate status validator
+ha-state-live-candidate-status-self-test:
+    cd {{ root }} && node scripts/ha-state-live-candidate-status.mjs --self-test
+
+# Validate a non-secret HA OpenTofu state endpoint package before scratch proof
+ha-state-endpoint-package-check package:
+    cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --package "{{ package }}"
+
+# Validate that the checked-in endpoint package template stays structurally aligned
+ha-state-endpoint-package-template-check:
+    cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --package docs/contracts/ha-opentofu-state-endpoint-package.template.json --allow-template
+
+# Run offline guard tests for the HA state endpoint package validator
+ha-state-endpoint-package-self-test:
+    cd {{ root }} && node scripts/ha-state-endpoint-package-check.mjs --self-test
+
+# Run the guarded #142 scratch S3 proof with a filled endpoint package
+ha-state-scratch-proof endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
+
+# Run the guarded #144 disposable OpenTofu proof with a filled endpoint package
+ha-state-disposable-tofu-proof endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" --run-disposable-tofu --use-lockfile {{ args }}
+
+# Contract-stable candidate proof entrypoint for scratch and disposable phases
+ha-state-candidate-proof *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs {{ args }}
+
+# Non-mutating #141 credential boundary check for scoped proof credentials
+ha-state-credential-boundary-check endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --endpoint-package "{{ endpoint_package }}" --credential-boundary-check {{ args }}
+
+# Offline guard tests for the scratch S3 and disposable OpenTofu proof harness
+ha-state-scratch-proof-self-test:
+    cd {{ root }} && node scripts/ha-state-scratch-proof.mjs --self-test
+
+# Render a reviewed backend config plan for the protected #145 migration
+ha-state-migration-plan endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-migration-plan.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
+
+# Offline guard tests for the protected migration plan renderer
+ha-state-migration-plan-self-test:
+    cd {{ root }} && node scripts/ha-state-migration-plan.mjs --self-test
+
+# Validate public-safe #142/#144/#145 HA state evidence checkpoints before tracker closeout
+ha-state-proof-evidence-check endpoint_package *args:
+    cd {{ root }} && node scripts/ha-state-proof-evidence-check.mjs --endpoint-package "{{ endpoint_package }}" {{ args }}
+
+# Offline guard tests for the HA state evidence checker
+ha-state-proof-evidence-self-test:
+    cd {{ root }} && node scripts/ha-state-proof-evidence-check.mjs --self-test
+
 # Print the planned diff (non-empty on first run; clean after apply)
 tofu-plan:
     cd {{ tofu_dir }} && tofu plan -out=darkmap.tfplan
@@ -232,14 +295,14 @@ deploy: kustomize-apply
 # ─────────────────────────────────────────────
 
 # Offline portion of the launch smoke. Runs check + build, starts the
-# adapter-node bundle with a placeholder key on :3055, exercises /
+# adapter-node bundle on :3055, exercises /
 # and /api/raster, asserts no ad/tracking headers leak, and stops.
 smoke-local: check build
     #!/usr/bin/env bash
     set -euo pipefail
     if rg -q ad_prebid build/ 2>/dev/null; then echo "FAIL: ad_prebid found in build/" >&2; exit 1; fi
     echo "PASS: no ad_prebid string in build artifact"
-    QUERY_RASTER_KEY=PLACEHOLDER_SMOKE PORT=3055 HOST=127.0.0.1 node build/index.js > /tmp/darkmap-smoke.log 2>&1 &
+    PORT=3055 HOST=127.0.0.1 node build/index.js > /tmp/darkmap-smoke.log 2>&1 &
     SERVER_PID=$!
     trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
     sleep 2
@@ -248,7 +311,7 @@ smoke-local: check build
     echo "PASS: GET / -> 200"
     if curl -s http://127.0.0.1:3055/ | rg -q ad_prebid; then echo "FAIL: ad_prebid in served HTML" >&2; exit 1; fi
     echo "PASS: served HTML clean of ad_prebid"
-    RASTER_HEADERS=$(curl -sI 'http://127.0.0.1:3055/api/raster?layer=viirs_2021&qt=tile&qd=8/74/96')
+    RASTER_HEADERS=$(curl -sI 'http://127.0.0.1:3055/api/raster?layer=viirs_2019&z=8&x=74&y=96')
     if echo "$RASTER_HEADERS" | rg -iq 'set-cookie|prebid|googletag|x-ad-'; then
       echo "FAIL: raster response leaked an ad/tracking header" >&2
       echo "$RASTER_HEADERS" >&2
@@ -276,8 +339,8 @@ install-hooks:
 
 # Show environment info
 info:
-    @echo "Site:    darkmap.tinyland.dev"
-    @echo "Repo:    Jesssullivan/darkmap.tinyland.dev"
+    @echo "Site:    darkmap.phasi.space"
+    @echo "Repo:    Jesssullivan/darkmap.phasi.space"
     @echo "Node:    $(node --version 2>/dev/null || echo 'not available')"
     @echo "pnpm:    $(pnpm --version 2>/dev/null || echo 'not available')"
     @echo "Just:    $(just --version 2>/dev/null || echo 'not available')"
@@ -286,7 +349,7 @@ info:
 
 # View the GitHub repo (opens in browser)
 gh-repo:
-    gh repo view Jesssullivan/darkmap.tinyland.dev --web
+    gh repo view Jesssullivan/darkmap.phasi.space --web
 
 # ─────────────────────────────────────────────
 # CI-SCHEMA v1.0 (lanes, flywheel, conformance — see docs/CI-SCHEMA.md)
@@ -300,6 +363,10 @@ lanes-list:
 # Validate .github/lanes.json against docs/schemas/lanes.schema.json
 lanes-validate:
     cd {{ root }} && python3 scripts/validate-lanes.py
+
+# Validate tinyland.repo.json against docs/schemas/tinyland-repo-manifest.schema.json
+repo-manifest-validate:
+    cd {{ root }} && python3 scripts/validate-lanes.py --schema docs/schemas/tinyland-repo-manifest.schema.json --instance tinyland.repo.json
 
 # Dry-run construct the Blahaj provision payload for a PR
 lane-dispatch pr filter="all":

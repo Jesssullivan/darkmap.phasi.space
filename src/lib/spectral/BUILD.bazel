@@ -1,0 +1,115 @@
+"""Bazel targets for the darkmap spectral unit-test slice."""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+js_library(
+    name = "spectral_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "spectral_srcs",
+    srcs = glob(["*.ts"]),
+)
+
+# Consumed by the atmospheric slice (`$lib/spectral/transmission-axes`); the
+# axis table is a pure, dependency-free constant. Wrapped in a js_library so
+# the cross-package consumer gets a bin-tree copy (aspect_rules_js rule).
+js_library(
+    name = "transmission_axes",
+    srcs = ["transmission-axes.ts"],
+    visibility = ["//visibility:public"],
+)
+
+# Cross-package VALUE sources pulled into the effect/services slice
+# (MieScatteringService / TransmissionEstimator / LineByLineService reach for
+# `$lib/spectral/{aerosol-types,mie,analytical,hitran-bands}`). aspect_rules_js
+# rejects raw cross-package file labels in `data`, so each module is bin-copied
+# via its own js_library. Their intra-package `import type ./mie` /
+# `import type ./transmission-axes` references are erased by the transpiler, so
+# no further staging is required at runtime.
+js_library(
+    name = "aerosol_types",
+    srcs = ["aerosol-types.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "mie",
+    srcs = ["mie.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "analytical",
+    srcs = ["analytical.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "hitran_bands",
+    srcs = ["hitran-bands.ts"],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "spectral_typecheck",
+    srcs = [":spectral_srcs"],
+    declaration = False,
+    no_emit = True,
+    tsconfig = "tsconfig.bazel.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        "//:node_modules",
+        "//:node_modules/@types/node",
+        "//:node_modules/effect",
+        "//:node_modules/vitest",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+vitest.vitest_test(
+    name = "spectral_test",
+    data = [
+        ":spectral_srcs",
+        # Runfiles fixture for hitran-bands.test.ts (read via process.cwd());
+        # staged at `data/hitran/curated-lines.json` so the test resolves it
+        # hermetically under `bazel test`. See //:hitran_curated_lines.
+        "//:hitran_curated_lines",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/spectral/aerosol-types.test.ts",
+        "src/lib/spectral/analytical.test.ts",
+        "src/lib/spectral/band-guidance.test.ts",
+        "src/lib/spectral/hitran-bands.test.ts",
+        "src/lib/spectral/mie.test.ts",
+        "src/lib/spectral/smarts-analog.test.ts",
+        "src/lib/spectral/voigt.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)

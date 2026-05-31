@@ -54,3 +54,18 @@ export function parseTileCoord(z: string, x: string, y: string): TileCoord {
 	}
 	return { z: zn, x: xn, y: yn };
 }
+
+/**
+ * Fold a high-zoom XYZ request back to the parent tile supported by a fixed
+ * native matrix set. Map renderers can overzoom visually, but GIBS only serves
+ * the matrix levels advertised in the layer capabilities.
+ */
+export function clampTileToMaxNativeZoom(tile: TileCoord, maxNativeZoom: number | undefined): TileCoord {
+	if (maxNativeZoom === undefined || tile.z <= maxNativeZoom) return tile;
+	const factor = Math.pow(2, tile.z - maxNativeZoom);
+	return {
+		z: maxNativeZoom,
+		x: Math.floor(tile.x / factor),
+		y: Math.floor(tile.y / factor),
+	};
+}

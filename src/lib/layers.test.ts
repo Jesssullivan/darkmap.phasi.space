@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYERS, rasterUrlTemplate, VIIRS_YEARS } from './layers';
+import { LAYERS, rasterUrlTemplate, utcDayKey, VIIRS_YEARS, type RasterLayerDef } from './layers';
 
 describe('layer manifest — VIIRS annual', () => {
 	it('exposes 8 VIIRS annual layers (2012-2019)', () => {
@@ -14,8 +14,12 @@ describe('layer manifest — VIIRS annual', () => {
 });
 
 describe('layer manifest — composition', () => {
-	it('LAYERS contains exactly the union of annual + 2 world atlas', () => {
-		expect(LAYERS.length).toBe(VIIRS_YEARS.length + 2);
+	it('LAYERS contains the VIIRS annual union + styled world atlas + atmospheric overlays', () => {
+		const worldAtlas = LAYERS.filter((l) => l.group === 'world_atlas').length;
+		const atmospheric = LAYERS.filter((l) => l.group === 'atmospheric').length;
+		// One styled World Atlas overlay; the raw radiance grid is point-query-only (#247).
+		expect(worldAtlas).toBe(1);
+		expect(LAYERS.length).toBe(VIIRS_YEARS.length + worldAtlas + atmospheric);
 	});
 
 	it('all ids are unique', () => {
@@ -25,5 +29,105 @@ describe('layer manifest — composition', () => {
 
 	it('rasterUrlTemplate roundtrips through the API proxy', () => {
 		expect(rasterUrlTemplate('viirs_2019')).toBe('/api/raster?layer=viirs_2019&z={z}&x={x}&y={y}');
+	});
+});
+
+describe('layer manifest — atmospheric group (PR-A)', () => {
+	it("'atmospheric' is a valid LayerGroup discriminator on RasterLayerDef", () => {
+		const atmospheric: RasterLayerDef = {
+			id: 'test-atmospheric',
+			upstreamUrlTemplate: 'https://example.test/{z}/{x}/{y}.png',
+			label: 'Test Atmospheric',
+			description: 'Fixture used only by this test.',
+			group: 'atmospheric',
+			defaultEnabled: false,
+			opacity: 0.7,
+		};
+		expect(atmospheric.group).toBe('atmospheric');
+		expect(atmospheric.upstreamUrlTemplate).toContain('{z}');
+		// Atmospheric layers do not carry an upstreamLayer (mutually exclusive).
+		expect(atmospheric.upstreamLayer).toBeUndefined();
+	});
+
+	it("rasterUrlTemplate appends '&kind=atmospheric' when the layer is atmospheric", () => {
+		expect(rasterUrlTemplate('clouds-modis-terra')).toBe(
+			'/api/raster?layer=clouds-modis-terra&z={z}&x={x}&y={y}&kind=atmospheric',
+		);
+	});
+
+	it('rasterUrlTemplate appends an explicit atmospheric UTC day when provided', () => {
+		expect(rasterUrlTemplate('clouds-modis-terra', { time: new Date('2026-05-28T23:50:00Z') })).toBe(
+			'/api/raster?layer=clouds-modis-terra&z={z}&x={x}&y={y}&kind=atmospheric&time=2026-05-28',
+		);
+	});
+
+	it("rasterUrlTemplate omits the 'kind' hint for non-atmospheric layers", () => {
+		expect(rasterUrlTemplate('viirs_2019')).not.toContain('kind=atmospheric');
+		expect(rasterUrlTemplate('viirs_2019', { time: '2026-05-28' })).not.toContain('time=');
+	});
+
+	it('utcDayKey is stable across local timezone offsets', () => {
+		expect(utcDayKey(new Date('2026-05-29T00:30:00+02:00'))).toBe('2026-05-28');
+	});
+
+	it('MODIS Terra clouds entry exists with GIBS WMTS template + NASA EOSDIS attribution', () => {
+		const modis = LAYERS.find((l) => l.id === 'clouds-modis-terra');
+		expect(modis).toBeDefined();
+		expect(modis?.group).toBe('atmospheric');
+		expect(modis?.upstreamUrlTemplate).toContain('MODIS_Terra_CorrectedReflectance_TrueColor');
+		expect(modis?.upstreamUrlTemplate).toContain('{TIME}');
+		expect(modis?.upstreamUrlTemplate).toContain('{z}');
+		expect(modis?.upstreamUrlTemplate).toContain('{x}');
+		expect(modis?.upstreamUrlTemplate).toContain('{y}');
+		expect(modis?.attribution).toMatch(/NASA EOSDIS GIBS/);
+		// Atmospheric entries don't carry a GeoServer counterpart.
+		expect(modis?.upstreamLayer).toBeUndefined();
+	});
+
+	const PR_D_LAYERS: ReadonlyArray<{ id: string; tag: string }> = [
+		{ id: 'clouds-viirs-noaa20', tag: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor' },
+		{ id: 'aerosol-modis-aod', tag: 'MODIS_Combined_Value_Added_AOD' },
+		{ id: 'water-vapor-airs', tag: 'MODIS_Terra_Water_Vapor_5km_Day' },
+	];
+
+	it('records native GIBS matrix depth so MapLibre overzooms instead of requesting unsupported tiles', () => {
+		const caps = Object.fromEntries(
+			LAYERS.filter((l) => l.group === 'atmospheric' && l.upstreamUrlTemplate).map((l) => [l.id, l.maxNativeZoom]),
+		);
+		expect(caps).toEqual({
+			'aerosol-modis-aod': 6,
+			'clouds-modis-terra': 9,
+			'clouds-viirs-noaa20': 9,
+			'water-vapor-airs': 6,
+		});
+
+		for (const def of LAYERS.filter((l) => l.group === 'atmospheric' && l.upstreamUrlTemplate)) {
+			expect(def.upstreamUrlTemplate).toContain(`GoogleMapsCompatible_Level${def.maxNativeZoom}`);
+		}
+	});
+
+	for (const { id, tag } of PR_D_LAYERS) {
+		it(`${id} is registered with GIBS template + attribution`, () => {
+			const def = LAYERS.find((l) => l.id === id);
+			expect(def).toBeDefined();
+			expect(def?.group).toBe('atmospheric');
+			expect(def?.upstreamUrlTemplate).toContain(tag);
+			expect(def?.upstreamUrlTemplate).toMatch(/\{z\}.+\{y\}.+\{x\}|\{z\}.+\{x\}.+\{y\}/s);
+			expect(def?.upstreamUrlTemplate).toContain('{TIME}');
+			expect(def?.attribution).toMatch(/NASA EOSDIS GIBS/);
+			expect(def?.upstreamLayer).toBeUndefined();
+			expect(def?.defaultEnabled).toBe(false);
+		});
+	}
+
+	it('OpenAQ PM2.5 smog overlay (PR-F) is a point-source layer', () => {
+		const smog = LAYERS.find((l) => l.id === 'smog-openaq-pm25');
+		expect(smog).toBeDefined();
+		expect(smog?.group).toBe('atmospheric');
+		expect(smog?.pointSourceUrl).toBe('/api/atmospheric/openaq');
+		expect(smog?.upstreamUrlTemplate).toBeUndefined();
+		expect(smog?.upstreamLayer).toBeUndefined();
+		expect(smog?.maxNativeZoom).toBeUndefined();
+		expect(smog?.attribution).toMatch(/OpenAQ/i);
 	});
 });

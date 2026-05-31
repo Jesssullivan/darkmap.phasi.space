@@ -18,7 +18,7 @@ reviewed static snapshots from `tinyland.dev`.
   `bazelisk` directly outside the Justfile unless adding a new recipe.
 - **Shell**: `nix develop` (auto-loaded by `direnv`) — never assume host
   toolchain. CI runs `nix develop --command just <recipe>`.
-- **Build**: `just build` produces a static `build/` (adapter-static).
+- **Build**: `just build` runs `pnpm run build` (SvelteKit **adapter-node**) and emits a Node server bundle in `build/`. The server hosts the app plus thin proxy/normalization API routes (`/api/raster`, `/api/geocode`, `/api/atmospheric/*`, point-query) — no DB, no auth, no business data owned.
 - **Check**: `just check` runs lint, typecheck, and Bazel unit tests.
 
 ## Bazel Posture
@@ -44,6 +44,13 @@ reviewed static snapshots from `tinyland.dev`.
 - Unit tests: `just test-unit` runs `bazelisk test //...`; with
   `GF_BAZEL_CONFIG=flywheel` it runs `bazelisk --config=flywheel test //...`.
   Use `just test-local` only as a direct Vitest fallback.
+
+## Remote-first testing
+
+- Browserful Playwright e2e and the adapter-node build are **remote-first**.
+  Locally use `just check` / `just ci-quick`; do **not** run `just test-e2e`
+  browserful locally — it requires `LOCAL=1`. CI's e2e lane is the source of
+  truth.
 
 ## Theme & Skeleton
 
@@ -112,30 +119,34 @@ After creating a new sister site from this scaffold:
 
 ## Flywheel Binding
 
-- Two configs, two contracts (see `docs/CI-SCHEMA.md` §5):
-  - `--config=flywheel` — remote *cache* only. Safe everywhere with
-    cluster reachability. Vendored in `.bazelrc.flywheel`.
-  - `--config=flywheel-executor` — remote *executor* + cache.
-    Proved-class-only, cluster-runner-only. The `flywheel-bazel`
-    composite action in `tinyland-inc/ci-templates` refuses to set
-    this on `ubuntu-latest`.
-- Coexists with darkmap's bespoke `--config=ci-cached` and
-  `--config=executor-backed` profiles which use
-  `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution
-  (no hardcoded URL). Both flows are valid:
-  - `--config=flywheel[-executor]` when the cluster cache DNS is
-    stable (e.g. running on `tinyland-nix` ARC runners).
-  - `--config=ci-cached` / `--config=executor-backed` when the
-    runner pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
-- Proved-for-spoke target classes (mirrored from
-  `tinyland-inc/GloriousFlywheel/config/rbe-target-eligibility.json`):
-  `sveltekit-app-build`, `sveltekit-unit-tests`,
-  `deployment-bundle-packaging`, `docs-site-static-build`. Candidate
-  (still rejected at runtime): `web-playwright-chromium-static-smoke`.
-- **Hard NOs**: no rustfs **RBE state / action-cache** authority; no
-  OpenTofu RBE (`opentofu-validate`/`opentofu-fmt` are blocked); no
-  developer-server RBE (`//app:dev` cannot run on REAPI); cache hits
-  ≠ RBE.
+The normative Flywheel contract — the two config axes
+(`--config=flywheel` cache-only vs `--config=flywheel-executor`
+executor+cache), the proved-for-spoke target-class allowlist, and the
+hard invariants (no RustFS RBE authority, no OpenTofu RBE, no
+devserver RBE, cache hits ≠ RBE) — lives in `docs/CI-SCHEMA.md` §5.
+Read it before touching any Flywheel/RBE surface.
+
+**darkmap-specific binding** (not in §5):
+
+- Coexisting with the §5 Flywheel configs, darkmap keeps bespoke
+  `--config=ci-cached` and `--config=executor-backed` profiles that use
+  `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution (no
+  hardcoded URL). Both flows are valid:
+  - `--config=flywheel[-executor]` when the cluster cache DNS is stable
+    (e.g. running on `tinyland-nix` ARC runners).
+  - `--config=ci-cached` / `--config=executor-backed` when the runner
+    pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
+- Browserful Playwright is modeled as Bazel RBE smoke targets, not a
+  developer-machine check. Use `//:playwright_browser_rbe_smoke_suite` for the
+  whole current suite, or a narrower target such as
+  `//:playwright_mobile_hud_matrix_smoke` for focused proof. Dispatch through
+  GloriousFlywheel `gf-reapi-cell-proof.yml` with `bazel_command=test` and
+  require a verified artifact with `countable_remote_execution=true` and
+  `remote_processes > 0`. `.github/workflows/browser-rbe-proof.yml` is the
+  repo-local PR signal for that path once operators configure
+  `GF_REAPI_PROOF_ENABLED=true` and the `GF_REAPI_PROOF_DISPATCH_TOKEN` secret;
+  until then, manual GF proof runs remain the authority. Do not count local
+  Playwright, GitHub runner placement, or remote-cache-only hits as browser RBE.
 - Local DX: `nix develop` for the toolchain, `FLYWHEEL=local|cache|executor|auto`
   env knob picks the bazelrc config for the `just flywheel-build` /
   `just flywheel-test` recipes. `auto` probes cluster cache
@@ -148,17 +159,20 @@ After creating a new sister site from this scaffold:
   provisioned via the `tinyland-inc/blahaj` GitHub App
   (`repository_dispatch` payload schema:
   `docs/schemas/blahaj-dispatch.schema.json`).
-- DNS naming: `pr-{PR_NUMBER}-{LANE}.darkmap.tinyland.dev`.
+- DNS naming: `pr-{PR_NUMBER}-{LANE}.darkmap.phasi.space`.
 - Image tag template: `pr-{PR_NUMBER}-sha-{COMMIT_SHA}`.
 - TTL: default 72h. Per-PR raise via labels `lane-ttl/7d`,
   `lane-ttl/30d`, `lane-ttl/keep` (capped at 720h). Reap on PR close
   + hourly TTL backstop + manual `workflow_dispatch`. Reap is
   idempotent.
-- **Blahaj installation status on darkmap: NOT YET WIRED.** M3
-  (`.github/workflows/lane-env.yml`) is gated on
-  `tinyland-inc/ci-templates@v1.0.0` shipping; the lane-env workflow
-  will be added at that time. Whether Blahaj also gets installed on
-  this repo is an operator decision tracked in
+- **Blahaj installation status on darkmap: NOT YET WIRED.** The M3
+  wrapper (`.github/workflows/lane-env.yml`) is present and pinned to
+  `tinyland-inc/ci-templates@v2`, whose optional
+  `BLAHAJ_DISPATCH_TOKEN` gate is fork-safe and skips cleanly when the
+  token is absent. Actual provision/reap dispatch remains disabled
+  until operators set `vars.BLAHAJ_LANE_ENV_ENABLED == 'true'` and add
+  the repo secret. Whether Blahaj also gets installed on this repo is
+  an operator decision tracked in
   [TIN-1384](https://linear.app/tinyland/issue/TIN-1384).
 - Local dry-run available today: `just lane-dispatch <pr>` prints
   the payload Blahaj would receive; `just lane-reap <pr>` does the
@@ -181,12 +195,42 @@ After creating a new sister site from this scaffold:
   using it for `terraform.tfstate` is legitimate.
 - State key path will move to `spokes/darkmap/terraform.tfstate`
   when M4 lands; current key is per `infra/tofu/backend.hcl`.
+- Public HA-state readiness is machine-readable at
+  `docs/contracts/ha-opentofu-state-live-candidate-status.json`.
+  While #141/TIN-1026 remains blocked on external endpoint provisioning,
+  `just tofu-state-ha-readiness --expect-interim` must pass and
+  `just tofu-state-ha-readiness` must fail with `NO_LIVE_HA_STATE_CANDIDATE`.
+- Protected HA-state migration must follow
+  `docs/HA_OPENTOFU_STATE_MIGRATION.md`: generate a reviewable backend config
+  first, keep private state snapshots out of git, use OpenTofu backend
+  migration, validate the credential boundary and proof checkpoint bundle with
+  `just ha-state-credential-boundary-check` and
+  `just ha-state-proof-evidence-check`, and verify Tofu apply, GitOps drift, and
+  public smoke before closing #145.
 - Modules to be composed (post-M4):
   - `spoke-state-namespace` — S3 prefix + reaper IAM.
-  - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.tinyland.dev`.
+  - `spoke-dns-pr-env` — wildcard CNAME `*.pr.darkmap.phasi.space`.
   - `spoke-cache-quota` — Attic + Bazel cache allocation.
   - `spoke-runner-binding` — runner-class ACL (hard-deny).
   - `spoke-blahaj-app-install` — only if Blahaj is to be installed.
+
+## Secrets
+
+The site is static-first and holds exactly one runtime secret today:
+
+- **`OPENAQ_API_KEY`** — OpenAQ v3 key for the Smog (PM2.5) overlay + the
+  PM2.5-diffusion → transmission-AOD bridge. The `/api/atmospheric/openaq`
+  route reads it via `$env/dynamic/private`; the browser never sees it.
+  Without it the proxy soft-degrades (`degraded: true`, empty features) and the
+  smog overlay shows "unavailable" — it does NOT crash. Free key at
+  https://openaq.org.
+
+Provisioning (production, honey): the value lives in the lab sops+age store and
+is materialized as the `darkmap-secrets` k8s Secret in the darkmap namespace.
+`deployment.yaml` consumes it via `secretKeyRef … optional: true`, so the pod
+starts whether or not the secret exists (the same out-of-band model as the
+`ghcr-registry` image-pull secret — provisioning is an operator concern outside
+this public repo). Local dev: copy `.env.example` → `.env` and set the key.
 
 ## Conformance
 

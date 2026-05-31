@@ -1,20 +1,25 @@
 <script lang="ts">
 	/**
 	 * HelpTooltip — convenience wrapper around Skeleton 4.15.2's
-	 * Zag-backed Tooltip primitive for our map-overlay readouts.
+	 * Zag-backed Popover primitive for our map-overlay readouts.
 	 *
-	 * Lets a chip render rich, screen-reader-friendly help on hover or
-	 * focus without each consumer wiring `Tooltip` /
-	 * `Tooltip.Trigger` / `Tooltip.Positioner` / `Tooltip.Content`
-	 * by hand. The trigger slot is the visible chip; the content slot
-	 * (or `text` prop for one-liners) shows in the floating panel.
+	 * Was built on `Tooltip` originally, but the Zag tooltip machine is
+	 * hover/focus driven and dismisses on `pointerdown`, so a touch tap
+	 * on the trigger opens and immediately re-closes the panel. Mobile
+	 * users could not read the help text. Migrated to `Popover`, whose
+	 * Zag machine is click/tap driven with `closeOnInteractOutside` +
+	 * `closeOnEscape`, exactly matching the "touch-friendly Skeleton
+	 * popover" promise in issue #197.
 	 *
-	 * For rich help (formula, links, multi-line) use the `content`
-	 * snippet. For a single string, set `text="…"` instead.
+	 * Public API is unchanged: callers still pass `text` or a `content`
+	 * snippet plus a `trigger` snippet. The component name is kept for
+	 * call-site stability — renaming the wrapper would churn dozens of
+	 * imports across the map UI for zero behavior delta.
 	 */
 
-	import { Tooltip } from '@skeletonlabs/skeleton-svelte';
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import type { Snippet } from 'svelte';
+	import { portal } from '$lib/actions/portal';
 
 	interface Props {
 		text?: string;
@@ -26,20 +31,42 @@
 	let { text, positioning = 'top', trigger, content }: Props = $props();
 </script>
 
-<Tooltip positioning={{ placement: positioning }} openDelay={200} closeDelay={120}>
-	<Tooltip.Trigger class="help-tooltip-trigger">
+<!-- `strategy: 'fixed'` measures against the visual viewport, not the portaled
+     positioner's clipping ancestors — without it floating-ui's shift() lets the
+     panel spill ~5px past the screen edge on narrow (mobile) viewports.
+     The explicit overflow padding and viewport-fit flags keep that inset
+     load-bearing at the call site. -->
+<Popover
+	positioning={{
+		placement: positioning,
+		strategy: 'fixed',
+		overflowPadding: 12,
+		flip: true,
+		slide: true,
+		fitViewport: true,
+	}}
+>
+	<Popover.Trigger class="help-tooltip-trigger" aria-label="Show help">
 		{@render trigger()}
-	</Tooltip.Trigger>
-	<Tooltip.Positioner>
-		<Tooltip.Content class="help-tooltip-content">
-			{#if content}
-				{@render content()}
-			{:else if text}
-				{text}
-			{/if}
-		</Tooltip.Content>
-	</Tooltip.Positioner>
-</Tooltip>
+	</Popover.Trigger>
+	<Popover.Positioner>
+		<!-- Portal the positioner to <body> so a trigger inside a scroll
+		     container (LayerRail) doesn't clip the popover at the rail edge.
+		     The `element` override lets us attach the portal action while
+		     keeping Zag's positioner attributes. -->
+		{#snippet element(attributes)}
+			<div {...attributes} use:portal>
+				<Popover.Content class="help-tooltip-content">
+					{#if content}
+						{@render content()}
+					{:else if text}
+						{text}
+					{/if}
+				</Popover.Content>
+			</div>
+		{/snippet}
+	</Popover.Positioner>
+</Popover>
 
 <style>
 	:global(.help-tooltip-trigger) {
@@ -51,7 +78,8 @@
 		color: inherit;
 		font: inherit;
 		padding: 0;
-		cursor: help;
+		/* Click/tap-activated now, so a pointer cursor is the correct hint. */
+		cursor: pointer;
 	}
 	:global(.help-tooltip-content) {
 		background: rgba(8, 10, 16, 0.95);
@@ -62,13 +90,16 @@
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.7rem;
 		line-height: 1.4;
-		max-width: 22rem;
+		/* Cap to the viewport so the portaled popover never overflows the
+		   screen edge on narrow (mobile) widths. */
+		box-sizing: border-box;
+		max-width: min(22rem, calc(100vw - 3rem));
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		backdrop-filter: blur(6px);
 		z-index: 50;
 	}
 	:global(.help-tooltip-content a) {
-		color: #ffd166;
+		color: var(--accent-amber);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}

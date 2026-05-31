@@ -1,0 +1,149 @@
+/// <reference types="@sveltejs/kit" />
+/// <reference no-default-lib="true"/>
+/// <reference lib="esnext" />
+/// <reference lib="webworker" />
+
+/**
+ * darkmap service worker — app-shell precache + per-bucket runtime caches
+ * (GH #100). Cache buckets are named with stable prefixes so the
+ * `OfflineCacheServiceBrowser` adapter can attribute entries back to the
+ * `CacheEntryMeta.bucket` taxonomy without sniffing URLs at snapshot time.
+ *
+ * Cache shape:
+ *   `darkmap-app-shell-v${version}`  → precached SvelteKit build/files/prerendered
+ *   `darkmap-raster-tile`            → /api/raster (QueryRaster GeoServer) responses
+ *   `darkmap-atmospheric-tile`       → /api/raster?kind=atmospheric (NASA GIBS) responses
+ *   `darkmap-ephemeris`              → /api/featureinfo, /api/elevation
+ *   `darkmap-static-projection`      → checked-in projection JSON
+ *   `darkmap-route`                  → reserved for user-imported routes
+ *
+ * Out of scope for this PR (intentional):
+ *   - Push notifications, background sync, periodic sync.
+ *   - Cache TTL eviction inside the SW (handled by OfflineCacheService.evict
+ *     from the page side; SW only writes).
+ *   - Workbox / sw-toolbox — we own ~150 lines and skip the framework debt.
+ */
+
+import { build, files, prerendered, version } from '$service-worker';
+import {
+	isAtmosphericRequestPath,
+	isEphemerisRequestPath,
+	isRasterTileRequestPath,
+	isStaticProjectionRequestPath,
+} from '$lib/effect/services/OfflineCacheRoutes';
+import { cacheFirst as cacheFirstStrategy, networkFirst as networkFirstStrategy } from '$lib/sw/runtime-cache';
+
+const sw = self as unknown as ServiceWorkerGlobalScope;
+
+// Strategy deps — the SW global's `caches` + `fetch`. Extracted so the
+// caching logic lives in a unit-tested module (#254).
+const runtimeDeps = { caches, fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init) };
+
+/** Runtime API buckets cache under a normalized key; app-shell stays exact. */
+const cacheFirst = (request: Request, cacheName: string, normalize = false): Promise<Response> =>
+	cacheFirstStrategy(runtimeDeps, request, cacheName, { normalize });
+
+const networkFirst = (request: Request, cacheName: string): Promise<Response> =>
+	networkFirstStrategy(runtimeDeps, request, cacheName);
+
+const APP_SHELL = `darkmap-app-shell-v${version}`;
+const RASTER_TILE = 'darkmap-raster-tile';
+const ATMOSPHERIC_TILE = 'darkmap-atmospheric-tile';
+const EPHEMERIS = 'darkmap-ephemeris';
+const STATIC_PROJECTION = 'darkmap-static-projection';
+
+const RUNTIME_BUCKETS = [RASTER_TILE, ATMOSPHERIC_TILE, EPHEMERIS, STATIC_PROJECTION, 'darkmap-route'] as const;
+
+const ASSETS = [...build, ...files, ...prerendered];
+
+sw.addEventListener('install', (event) => {
+	event.waitUntil(
+		(async () => {
+			const cache = await caches.open(APP_SHELL);
+			await cache.addAll(ASSETS);
+			await sw.skipWaiting();
+		})(),
+	);
+});
+
+sw.addEventListener('activate', (event) => {
+	event.waitUntil(
+		(async () => {
+			const keys = await caches.keys();
+			await Promise.all(
+				keys.map((key) => {
+					// Drop old app-shell versions; keep runtime buckets across deploys
+					// so a cached raster tile survives a JS rebuild.
+					if (key.startsWith('darkmap-app-shell-') && key !== APP_SHELL) {
+						return caches.delete(key);
+					}
+					return undefined;
+				}),
+			);
+			await sw.clients.claim();
+		})(),
+	);
+});
+
+sw.addEventListener('fetch', (event) => {
+	const request = event.request;
+	if (request.method !== 'GET') return;
+
+	const url = new URL(request.url);
+	if (url.origin !== sw.location.origin) return;
+
+	// /api/raster?layer=... — opaque PNG tiles, cache-first. Atmospheric tiles
+	// carry `?kind=atmospheric` and bucket separately so eviction can drain
+	// GIBS cache without touching QueryRaster tiles the user explicitly enabled.
+	if (isRasterTileRequestPath(url.pathname)) {
+		const bucket = url.searchParams.get('kind') === 'atmospheric' ? ATMOSPHERIC_TILE : RASTER_TILE;
+		event.respondWith(cacheFirst(request, bucket, true));
+		return;
+	}
+
+	// /api/atmospheric/* — non-tile atmospheric responses (Open-Meteo point JSON).
+	// Share the atmospheric bucket so all atmospheric-flavored cache entries
+	// drain under a single eviction policy.
+	if (isAtmosphericRequestPath(url.pathname)) {
+		event.respondWith(cacheFirst(request, ATMOSPHERIC_TILE, true));
+		return;
+	}
+
+	// /api/featureinfo and /api/elevation — small JSON, cache-first.
+	if (isEphemerisRequestPath(url.pathname)) {
+		event.respondWith(cacheFirst(request, EPHEMERIS, true));
+		return;
+	}
+
+	// Static-projection JSON.
+	if (isStaticProjectionRequestPath(url.pathname)) {
+		event.respondWith(cacheFirst(request, STATIC_PROJECTION, true));
+		return;
+	}
+
+	// Skip /api/geocode — search queries vary too widely to cache effectively.
+	if (url.pathname.startsWith('/api/')) return;
+
+	// HTML navigations — network-first with offline fallback to app shell.
+	if (request.mode === 'navigate') {
+		event.respondWith(networkFirst(request, APP_SHELL));
+		return;
+	}
+
+	// Same-origin static assets (already in APP_SHELL precache from build).
+	if (ASSETS.includes(url.pathname)) {
+		event.respondWith(cacheFirst(request, APP_SHELL));
+		return;
+	}
+});
+
+// Re-exported only so unit tests can assert the bucket name contract without
+// instantiating the SW global. Not consumed at runtime.
+export const __test = {
+	APP_SHELL_PREFIX: 'darkmap-app-shell-',
+	RUNTIME_BUCKETS,
+	RASTER_TILE,
+	ATMOSPHERIC_TILE,
+	EPHEMERIS,
+	STATIC_PROJECTION,
+};

@@ -1,9 +1,9 @@
 {
-	"name": "darkmap.tinyland.dev",
+	"name": "darkmap.phasi.space",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"description": "Dark-sky planning map with VIIRS, Falchi, terrain horizon, geocoder, and ephemeris tools",
+	"description": "Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and low-light logistics",
 	"homepage": "https://darkmap.phasi.space",
 	"repository": {
 		"type": "git",
@@ -26,7 +26,10 @@
 		"test": "vitest",
 		"test:unit": "vitest run",
 		"test:coverage": "vitest run --coverage",
-		"test:e2e": "playwright test"
+		"test:e2e": "playwright test",
+		"bake:spectral": "tsx scripts/bake-spectral-lut.ts",
+		"bake:spectral-smarts-analog": "tsx scripts/bake-spectral-lut-smarts-analog.ts",
+		"bake:spectral-lbl": "tsx scripts/bake-spectral-lbl.ts"
 	},
 	"dependencies": {
 		"@effect/platform": "^0.96.0",
@@ -69,6 +72,10 @@
 		"vitest": "^4.1.6"
 	},
 	"pnpm": {
+		"overrides": {
+			"cookie": "0.7.2",
+			"fast-uri": "3.1.2"
+		},
 		"onlyBuiltDependencies": [
 			"@tailwindcss/oxide",
 			"esbuild"

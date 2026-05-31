@@ -33,7 +33,9 @@ jobs:
       - id: preflight
         name: Check cluster runner route
         env:
+          RUNNER_ROUTE_PREFLIGHT_TOKEN: ${{ secrets.RUNNER_ROUTE_PREFLIGHT_TOKEN || github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          ALLOW_UNVERIFIED_SELF_HOSTED_ROUTE: 'true'
           TOFU_LINUX_RUNNER_LABELS_JSON: ${{ vars.TOFU_LINUX_RUNNER_LABELS_JSON || '' }}
           PRIMARY_LINUX_RUNNER_LABELS_JSON: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
         run: node scripts/ci-tofu-route-preflight.mjs
@@ -93,7 +95,7 @@ jobs:
           tofu_wrapper: false
 
       - name: Install kubectl + kustomize
-        uses: yokawasa/action-setup-kube-tools@v0.11.2
+        uses: yokawasa/action-setup-kube-tools@v0.13.5
         with:
           kubectl: '1.31.0'
           kustomize: '5.4.3'
@@ -112,6 +114,7 @@ jobs:
           mkdir -p "$kube_dir"
           echo "$KUBE_CONFIG_HONEY" | base64 -d > "$kubeconfig"
           chmod 600 "$kubeconfig"
+          "$CHECKOUT_PATH/scripts/ci-normalize-kubeconfig.sh" "$kubeconfig" honey
           echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
           echo "TF_VAR_kubeconfig=$kubeconfig" >> "$GITHUB_ENV"
 
@@ -120,7 +123,14 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-        run: tofu init -backend-config=backend.hcl -lockfile=readonly
+        run: ../../scripts/ci-tofu-init-retry.sh -backend-config=backend.hcl -lockfile=readonly
+
+      - name: tofu state backend check
+        working-directory: ${{ env.CHECKOUT_PATH }}/infra/tofu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
+        run: ../../scripts/ci-tofu-state-check.sh
 
       - name: tofu drift plan
         id: tofu_drift
@@ -128,7 +138,6 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RUSTFS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RUSTFS_SECRET_ACCESS_KEY }}
-          TF_VAR_query_raster_key: ${{ secrets.QUERY_RASTER_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set +e
@@ -153,6 +162,10 @@ jobs:
       - name: kustomize server diff
         working-directory: ${{ env.CHECKOUT_PATH }}/infra/kustomize/honey/darkmap
         run: |
+          TAG="${GITHUB_SHA:0:7}"
+          kustomize edit set image "darkmap=ghcr.io/jesssullivan/darkmap.phasi.space:${TAG}"
+          echo "Kustomize desired image: ghcr.io/jesssullivan/darkmap.phasi.space:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
           kustomize build . > /tmp/kustomize-rendered.yaml
 
           set +e
@@ -182,3 +195,16 @@ jobs:
             echo "- OpenTofu/RustFS state: clean"
             echo "- Kustomize live state: clean"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload drift evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitops-drift-${{ github.run_id }}
+          path: |
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-init.log
+            ${{ env.CHECKOUT_PATH }}/infra/tofu/tofu-state-list.log
+            /tmp/tofu-drift.txt
+            /tmp/kustomize-drift.txt
+          if-no-files-found: ignore
+          retention-days: 30

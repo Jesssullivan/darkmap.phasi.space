@@ -42,13 +42,12 @@ Current acceptable public-edge state:
 <Cloudflare edge addresses, no 100.64.0.0/10 address>
 ```
 
-Authority may still be served by DreamHost while the zone handoff finishes.
 Audit `dig +short NS phasi.space @a.nic.space` separately from the A/AAAA
-answers. The intended registrar-side Cloudflare nameservers are:
+answers. The registrar-side Cloudflare nameservers are:
 
 ```text
-izabella.ns.cloudflare.com.
-sullivan.ns.cloudflare.com.
+austin.ns.cloudflare.com.
+oaklyn.ns.cloudflare.com.
 ```
 
 Then verify the public edge:
@@ -64,7 +63,7 @@ Expected:
 - homepage status is `200`
 - `ad_prebid` count is `0`
 - the final header scan exits with no matches
-- once recursive DNS reaches Cloudflare, headers include `server: cloudflare`
+- headers include `server: cloudflare`
 
 ## Hosted Public Smoke
 
@@ -79,13 +78,88 @@ six-hour schedule, and manually. It uses only public HTTP checks:
 This workflow proves the public edge only. It does not prove Kubernetes deploy,
 OpenTofu state, or RustFS backend reachability.
 
+## Browser RBE Smoke
+
+Browserful regression checks are GloriousFlywheel REAPI proofs, not local
+Playwright runs. The current aggregate target is:
+
+```text
+//:playwright_browser_rbe_smoke_suite
+```
+
+It expands to the narrow browser smoke slices for shell load, mobile layers,
+MapLibre canvas readiness, point readout, mobile HUD, and the mobile HUD
+viewport matrix. Each slice serves the declared `//:app_build` adapter-node
+output inside the Bazel test action and uses the Chromium binary pinned in the
+GF worker image.
+
+### PR Proof Workflow
+
+`.github/workflows/browser-rbe-proof.yml` is the repo-local PR status for this
+proof path. It dispatches `tinyland-inc/GloriousFlywheel`
+`gf-reapi-cell-proof.yml`, waits for the GF run, downloads the uploaded proof
+artifact, and verifies the machine-readable `proof-result.json`.
+
+The workflow intentionally does not run Playwright locally. It only orchestrates
+and verifies the GF proof.
+
+Operator setup:
+
+- Set repo variable `GF_REAPI_PROOF_ENABLED=true`.
+- Set repo secret `GF_REAPI_PROOF_DISPATCH_TOKEN` to a token that can dispatch
+  and read Actions runs/artifacts in `tinyland-inc/GloriousFlywheel`.
+- Optional: set repo variable `GF_REAPI_CELL_IMAGE_DIGEST` when the proved GF
+  browser worker image digest changes. The workflow defaults to the digest
+  proved during the darkmap browser-RBE tranche.
+
+Same-repo PRs run automatically after the variable and secret are present.
+External fork PRs do not receive the cross-repo dispatch secret; after
+maintainer review, run the workflow manually with `workflow_dispatch` against
+the reviewed commit SHA.
+
+Branch protection should not require `browser-rbe-proof` until the variable and
+secret are configured. Once required, treat a skipped workflow as missing proof
+unless the PR is an external fork awaiting a maintainer-triggered dispatch.
+
+Dispatch the suite from `tinyland-inc/GloriousFlywheel`:
+
+```bash
+gh workflow run gf-reapi-cell-proof.yml \
+  --repo tinyland-inc/GloriousFlywheel \
+  --ref main \
+  -f image_digest=sha256:a567696e341f6eb0589ece9efd6014a2133a4f10831bdad31e8dd84055eff8a0 \
+  -f target=//:playwright_browser_rbe_smoke_suite \
+  -f bazel_command=test \
+  -f consumer_repository=Jesssullivan/darkmap.phasi.space \
+  -f consumer_ref=<commit-or-pr-head-sha> \
+  -f consumer_checkout_authority=github-app \
+  -f force_execution=true
+```
+
+Acceptance for a browser-RBE claim:
+
+- `countable_remote_execution=true`
+- `remote_processes > 0`
+- proof verifier passes
+- worker image digest is recorded
+- the proof target is `//:playwright_browser_rbe_smoke_suite` or a named
+  narrower `//:playwright_*_smoke` target
+
+Remote-cache hits, GitHub runner placement, deployed-site smoke, and local
+Playwright are not browser-RBE evidence.
+
 ## CI/CD Route Smoke
 
 Cluster deploy and OpenTofu/RustFS jobs first run
-`scripts/ci-tofu-route-preflight.mjs` on a hosted runner. If the selected
-`TOFU_LINUX_RUNNER_LABELS_JSON` labels are not visible to this repository, the
-workflow writes a GitHub summary and skips the cluster job instead of queuing
-forever.
+`scripts/ci-tofu-route-preflight.mjs` on a hosted runner. PR `tofu plan` stays
+strict unless a runner-read token is configured. Default-branch apply, deploy,
+and drift workflows may dispatch the configured self-hosted ARC labels even
+when GitHub's workflow token cannot list repository runners or the scale set is
+currently at zero warm runners.
+
+The route guard never rewrites `TOFU_LINUX_RUNNER_LABELS_JSON` to
+`ubuntu-latest`; hosted runners must not touch RustFS state or apply
+Kubernetes manifests.
 
 Use `.github/workflows/gitops-drift.yml` for the scheduled/manual state check.
 When the runner route is ready, it runs:
@@ -93,8 +167,17 @@ When the runner route is ready, it runs:
 - `tofu plan -detailed-exitcode` against the RustFS-backed state backend
 - `kubectl diff` against the checked-in Kustomize overlay
 
-Until the runner route is bound to this public repo, the drift workflow reports
-the route blocker rather than attempting a hosted-runner fallback.
+Cluster jobs normalize the checked-in kubeconfig secret to the in-cluster API
+endpoint before running OpenTofu or `kubectl`, then fail fast if that API is not
+reachable.
+
+When `GitOps drift` fails on OpenTofu state symptoms, capture the run URL and
+the uploaded drift evidence before any platform recovery. The public-safe
+evidence path and RustFS recovery boundary are in
+[`TOFU_STATE_GUARDRAILS.md`](./TOFU_STATE_GUARDRAILS.md).
+
+The next non-RustFS state authority gate is the HA endpoint package documented
+in [`HA_OPENTOFU_STATE_ENDPOINT.md`](./HA_OPENTOFU_STATE_ENDPOINT.md).
 
 ## Browser Smoke
 

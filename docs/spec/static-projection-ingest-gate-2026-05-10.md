@@ -2,7 +2,7 @@
 
 Linear: `TIN-1028`, `TIN-1024`, `TIN-731`
 
-`darkmap.tinyland.dev` provides the house static-site ingestion gate for reviewed
+`darkmap.phasi.space` provides the house static-site ingestion gate for reviewed
 Tinyland snapshots. The gate exists so generated sister sites can consume
 Tinyland hub projections without becoming brokers, mutation APIs, checkout
 owners, media authorities, or ActivityPub delivery workers.

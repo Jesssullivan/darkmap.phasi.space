@@ -1,13 +1,14 @@
 """
-Root BUILD.bazel for darkmap.tinyland.dev.
+Root BUILD.bazel for darkmap.phasi.space.
 
 Minimal: just create the @npm//... node_modules tree. The SvelteKit
 static site is built by `pnpm run build` (vite build) — Bazel does not
 produce build/.
 """
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -37,6 +38,356 @@ exports_files(
         "tsconfig.json",
         "vitest.bazel.config.ts",
         "vitest.config.ts",
+    ],
+    visibility = ["//visibility:public"],
+)
+# Cross-slice `$lib/...` sources pulled into flywheel-enrolled unit-test
+# slices (atmospheric/cache/sw). These files live in the root Bazel package
+# (no nearer BUILD.bazel). aspect_rules_js requires cross-package inputs to be
+# copied to the bin tree via a js_library (raw file labels are rejected), so
+# each is wrapped here and consumed from the slice filegroups.
+js_library(
+    name = "lib_layers",
+    srcs = ["src/lib/layers.ts"],
+    visibility = ["//visibility:public"],
+)
+
+# Basemap catalogue consumed by the layers slice (`toast-bridge.ts` imports
+# `$lib/basemaps`'s BASEMAPS as a VALUE). Self-contained root-package module.
+js_library(
+    name = "lib_basemaps",
+    srcs = ["src/lib/basemaps.ts"],
+    visibility = ["//visibility:public"],
+)
+
+# Note: the former //:lib_cache_policy / //:lib_offline_cache_service /
+# //:lib_offline_cache_routes wrappers moved into
+# //src/lib/effect/services:{cache_policy,offline_cache_service,offline_cache_routes}
+# once that directory gained its own BUILD.bazel (a subpackage's files can no
+# longer be referenced from the root package).
+
+# Atmospheric capability table consumed by the effect/services slice
+# (AtmosphericTileService imports `$lib/atmospheric-capabilities`). Lives in the
+# root Bazel package (no nearer BUILD.bazel); its sole intra-root import of
+# `./layers` is `import type` (erased), so the bin-copy needs no companion.
+js_library(
+    name = "lib_atmospheric_capabilities",
+    srcs = ["src/lib/atmospheric-capabilities.ts"],
+    visibility = ["//visibility:public"],
+)
+
+# Curated HITRAN line archive consumed by the spectral slice's
+# hitran-bands.test.ts. The test resolves it via
+# `resolve(process.cwd(), 'data', 'hitran', 'curated-lines.json')`; the vitest
+# runner's cwd is the runfiles root, and js_library stages the file at its
+# root-package path (`data/hitran/...`), so the same `process.cwd()` lookup
+# resolves identically under `pnpm test` and `bazel test`. Lives in the root
+# Bazel package (no nearer BUILD.bazel), so wrapped here like the cross-slice
+# `$lib/...` sources above.
+js_library(
+    name = "hitran_curated_lines",
+    srcs = ["data/hitran/curated-lines.json"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# sveltekit-app-build — RBE-enrolled adapter-node build target
+#
+# Wraps the canonical `pnpm run build` (vite build + SvelteKit adapter-node)
+# as a hermetic Bazel action so it earns remote-cache + RBE acceleration under
+# the proved `sveltekit-app-build` target class. Modeled on tinyland.dev's
+# //:app_node_build (the proved TS-RBE reference).
+#
+# The runner stages all srcs into an isolated temp workspace, runs
+# `svelte-kit sync` + `vite build`, and copies the adapter-node bundle back to
+# the exec-root `build/` directory, which rules_js captures via out_dirs.
+#
+# tags:
+#   - flywheel-eligible : gates dispatch under --config=flywheel-executor
+#                         (--build_tag_filters=flywheel-eligible).
+#   - manual            : excluded from bare `bazelisk build //...` so the
+#                         8-min app build never runs on incidental wildcards.
+# =============================================================================
+
+js_binary(
+    name = "app_build_tool",
+    entry_point = "scripts/bazel/run-vite-node-build.mjs",
+    visibility = ["//visibility:public"],
+)
+
+js_run_binary(
+    name = "app_build",
+    srcs = glob(
+        [
+            "src/**/*",
+            "static/**/*",
+            "data/**/*",
+        ],
+        allow_empty = True,
+    ) + [
+        # Bazel globs stop at sub-package boundaries, so the root `src/**/*`
+        # glob omits the two nested packages under src/lib. The SvelteKit SSR
+        # build imports their modules (e.g. `$lib/server/raster/RasterClient`),
+        # so pull their source filegroups in explicitly or the build fails with
+        # UNLOADABLE_DEPENDENCY / "No such file or directory".
+        "//src/lib/server/raster:raster_app_srcs",
+        "//src/lib/ephemeris:ephemeris_app_srcs",
+        # Newly-created unit-test packages also become sub-package boundaries the
+        # root `src/**/*` glob stops at; the SSR build imports their modules, so
+        # pull each one's non-test sources in explicitly. The real executor proof
+        # relies on this complete source tree because Vite runs inside a remote
+        # action sandbox instead of the developer checkout.
+        "//src/lib/actions:actions_app_srcs",
+        "//src/lib/atmospheric:atmospheric_app_srcs",
+        "//src/lib/cache:cache_app_srcs",
+        "//src/lib/device:device_app_srcs",
+        "//src/lib/effect/services:services_app_srcs",
+        "//src/lib/geocoder:geocoder_app_srcs",
+        "//src/lib/layers:layers_app_srcs",
+        "//src/lib/map:map_app_srcs",
+        "//src/lib/projection:projection_app_srcs",
+        "//src/lib/routes:routes_app_srcs",
+        "//src/lib/server/geocoder:geocoder_app_srcs",
+        "//src/lib/spectral:spectral_app_srcs",
+        "//src/lib/sw:sw_app_srcs",
+        "//src/lib/transmission:transmission_app_srcs",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "tsconfig.json",
+        "svelte.config.js",
+        "vite.config.ts",
+        ":node_modules",
+    ],
+    out_dirs = ["build"],
+    tool = ":app_build_tool",
+    tags = [
+        "flywheel-eligible",
+        "manual",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# playwright_local_route_smoke — explicit GloriousFlywheel browser-RBE candidate
+#
+# Narrow Playwright/Chromium smoke for the browser-runtime authority path:
+# declared adapter-node output from //:app_build is served inside the Bazel test
+# action, then Chromium is launched through GF_RBE_CHROMIUM_EXECUTABLE=/bin/chromium.
+# This is intentionally manual so `bazel test //...` and local fallback recipes do
+# not run browserful work by accident. Invoke explicitly through GF proof /
+# flywheel-executor once #324 / TIN-1745 is wired.
+# =============================================================================
+js_test(
+    name = "playwright_local_route_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_mobile_layers_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-mobile-layers-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-mobile-layers-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "mobile-layers-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_mobile_hud_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-mobile-hud-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-mobile-hud-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "mobile-hud-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_mobile_hud_matrix_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-mobile-hud-matrix-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-mobile-hud-matrix-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "mobile-hud-matrix-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_map_canvas_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-map-canvas-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-map-canvas-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "map-canvas-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_point_readout_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-point-readout-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-point-readout-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+        "point-readout-smoke",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# playwright_browser_rbe_smoke_suite — one GF-dispatchable browser proof surface
+#
+# The individual Playwright/Chromium targets above stay split so proof failures
+# point at the smallest UI contract. This suite is the operator-facing entry
+# point for GloriousFlywheel proof dispatch: it keeps all browserful work manual,
+# tagged as RBE-candidate, and out of wildcard/local `bazel test //...` runs.
+#
+# test_suite.tags are filters, not just metadata. Keep this list to tags shared
+# by every member target; adding a suite-only tag filters the suite to zero tests.
+# =============================================================================
+test_suite(
+    name = "playwright_browser_rbe_smoke_suite",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+    ],
+    tests = [
+        ":playwright_local_route_smoke",
+        ":playwright_mobile_layers_smoke",
+        ":playwright_map_canvas_smoke",
+        ":playwright_point_readout_smoke",
+        ":playwright_mobile_hud_smoke",
+        ":playwright_mobile_hud_matrix_smoke",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# root_lib_test — top-level src/lib unit-test slice
+#
+# The `src/lib` top-level modules (basemaps, layers, url-hash, viewportGrid,
+# atmospheric-capabilities) live in the ROOT Bazel package (no nearer
+# BUILD.bazel), so their *.test.ts slices are enrolled here rather than via a
+# nested package. Every dep is an intra-root same-package file, referenced by
+# plain label; all are self-contained (no cross-package `$lib`, no DOM/maplibre
+# at module load). atmospheric-capabilities.ts's only intra-root import
+# (`./layers`) is `import type` (erased).
+# =============================================================================
+vitest.vitest_test(
+    name = "root_lib_test",
+    data = [
+        "src/lib/atmospheric-capabilities.test.ts",
+        "src/lib/atmospheric-capabilities.ts",
+        "src/lib/basemaps.ts",
+        "src/lib/layers.invariants.test.ts",
+        "src/lib/layers.test.ts",
+        "src/lib/layers.ts",
+        "src/lib/url-hash.test.ts",
+        "src/lib/url-hash.ts",
+        "src/lib/viewportGrid.test.ts",
+        "src/lib/viewportGrid.ts",
+        ":node_modules",
+        ":package_json",
+        ":vitest_bazel_config",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/atmospheric-capabilities.test.ts",
+        "src/lib/layers.invariants.test.ts",
+        "src/lib/layers.test.ts",
+        "src/lib/url-hash.test.ts",
+        "src/lib/viewportGrid.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
     ],
     visibility = ["//visibility:public"],
 )

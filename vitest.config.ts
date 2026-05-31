@@ -14,6 +14,13 @@ export default defineConfig({
 		include: ['src/**/*.test.ts', 'src/**/*.test.svelte.ts', 'scripts/**/*.test.mts'],
 		environment: 'node',
 		globals: true,
+		// The ephemeris/astronomy-engine slices (e.g. pinEphemeris memoisation,
+		// SkyCompass trajectory) do real multi-day orbital math and sit close to
+		// the 5s default; under CPU contention (parallel Bazel builds, loaded CI)
+		// they flake on timeout despite ~1s of actual work. 15s is ample headroom
+		// while still catching a genuine hang. CI runs the Bazel path, which is
+		// less contended, but the local `pnpm test:unit` fallback hit this.
+		testTimeout: 15_000,
 		// Allow vacuous green on empty test set (M0.4 → M0.6 ramp).
 		// Set to false in M3 once content + smoke tests land.
 		passWithNoTests: true,

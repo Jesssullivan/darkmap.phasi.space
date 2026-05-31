@@ -1,0 +1,32 @@
+{
+	"status_schema": "darkmap.ha_state_live_candidate_status.v1",
+	"status": "NO_LIVE_HA_STATE_CANDIDATE",
+	"issue": "https://github.com/Jesssullivan/darkmap.phasi.space/issues/141",
+	"umbrella_issue": "https://github.com/Jesssullivan/darkmap.phasi.space/issues/139",
+	"linear_tickets": ["TIN-1026", "TIN-1012"],
+	"recorded_on": "2026-05-29",
+	"current_authority": "interim RustFS singleton at attic-rustfs-hl.nix-cache.svc:9000",
+	"current_authority_posture": "interim-only; guarded by retry wrappers and drift checks; not an HA candidate",
+	"accepted_candidate_contract": "docs/contracts/ha-opentofu-state-managed-s3-candidate.json",
+	"endpoint_package_path": null,
+	"proof_credential_status": "not present in this public repo",
+	"forbidden_live_candidate_classes": [
+		"current interim RustFS singleton",
+		"staging MinIO or other staging-only S3 service",
+		"TCFS/search-adjacent storage",
+		"Attic cache",
+		"Bazel cache",
+		"BCR/Bzlmod mirror storage",
+		"RBE CAS or action-cache storage"
+	],
+	"required_next_evidence": [
+		"filled non-secret endpoint package validated by just ha-state-endpoint-package-check",
+		"scoped proof credentials from the private secret authority",
+		"just ha-state-credential-boundary-check checkpoint",
+		"scratch proof checkpoints for baseline, post-maintenance, and post-failure-domain",
+		"disposable OpenTofu proof checkpoints for baseline, post-maintenance, and post-failure-domain",
+		"just ha-state-proof-evidence-check bundle validation",
+		"reviewed protected migration plan from just ha-state-migration-plan"
+	],
+	"non_secret": true
+}

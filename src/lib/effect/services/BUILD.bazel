@@ -1,0 +1,115 @@
+"""Bazel targets for the darkmap Effect-services unit-test slice."""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:vitest/package_json.bzl", vitest = "bin")
+
+# The ten Effect-service slices are node-safe: pure Effect programs with
+# fetch/cache/serviceWorker dependencies injected as fakes (none touch
+# window/document/WebGL at module load). Several services (and their tests)
+# reach for `$lib/...` VALUES across package boundaries; aspect_rules_js rejects
+# raw cross-package file labels in `data`, so each is pulled in via a
+# js_library bin-copy:
+#   - AtmosphericTileService -> $lib/layers (//:lib_layers),
+#       $lib/atmospheric-capabilities (//:lib_atmospheric_capabilities),
+#       $lib/server/raster/TileMath (//src/lib/server/raster:tile_math)
+#   - LineByLineService -> $lib/spectral/hitran-bands
+#       (//src/lib/spectral:hitran_bands)
+#   - MieScatteringService -> $lib/spectral/aerosol-types, $lib/spectral/mie
+#       (//src/lib/spectral:aerosol_types, //src/lib/spectral:mie)
+#   - TransmissionEstimator -> $lib/spectral/analytical,
+#       $lib/spectral/transmission-axes
+#       (//src/lib/spectral:analytical, //src/lib/spectral:transmission_axes)
+# Intra-module `import type` references inside those wrapped files (e.g.
+# aerosol-types -> ./mie, analytical -> ./transmission-axes,
+# atmospheric-capabilities -> ./layers) are erased by the transpiler.
+# Implementation sources (no *.test.ts) for the root //:app_build SSR build,
+# which imports `$lib/effect/services/...` broadly. Creating this BUILD.bazel
+# turns the directory into a Bazel package, so the root `src/**/*` glob no
+# longer descends into it. See the raster package BUILD for the rationale.
+js_library(
+    name = "services_app_srcs",
+    srcs = glob(
+        ["*.ts"],
+        exclude = ["*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# Individual service modules consumed by sibling slices across the package
+# boundary (the cache and sw slices import `$lib/effect/services/...` VALUES).
+# These previously lived as root-package //:lib_* js_libraries, but creating
+# this BUILD.bazel turned `src/lib/effect/services` into its own Bazel package,
+# so the wrappers must live here (the root package can no longer reference these
+# files by label). aspect_rules_js bin-copies within the owning package, so the
+# cross-package consumers pull these labels into their filegroups.
+js_library(
+    name = "cache_policy",
+    srcs = ["CachePolicy.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "offline_cache_service",
+    srcs = ["OfflineCacheService.ts"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "offline_cache_routes",
+    srcs = ["OfflineCacheRoutes.ts"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "services_srcs",
+    srcs = glob(["*.ts"]) + [
+        "//:lib_atmospheric_capabilities",
+        "//:lib_layers",
+        "//src/lib/server/raster:tile_math",
+        "//src/lib/spectral:aerosol_types",
+        "//src/lib/spectral:analytical",
+        "//src/lib/spectral:hitran_bands",
+        "//src/lib/spectral:mie",
+        "//src/lib/spectral:transmission_axes",
+    ],
+)
+
+vitest.vitest_test(
+    name = "services_test",
+    data = [
+        ":services_srcs",
+        "//:node_modules",
+        "//:package_json",
+        "//:vitest_bazel_config",
+        "tsconfig.bazel.json",
+    ],
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "vitest.bazel.config.ts",
+        "src/lib/effect/services/AirQualityService.test.ts",
+        "src/lib/effect/services/AtmosphericPointService.test.ts",
+        "src/lib/effect/services/AtmosphericTileService.test.ts",
+        "src/lib/effect/services/CachePolicy.test.ts",
+        "src/lib/effect/services/LineByLineService.test.ts",
+        "src/lib/effect/services/MieScatteringService.test.ts",
+        "src/lib/effect/services/OfflineCacheRoutes.test.ts",
+        "src/lib/effect/services/OfflineCacheService.test.ts",
+        "src/lib/effect/services/OfflineCacheServiceBrowser.test.ts",
+        "src/lib/effect/services/OpenAQHistoryService.test.ts",
+        "src/lib/effect/services/OpenAQService.test.ts",
+        "src/lib/effect/services/TransmissionEstimator.test.ts",
+    ],
+    log_level = "info",
+    tags = [
+        # flywheel-eligible: --config=flywheel-executor's tag filter dispatches
+        # only targets carrying this tag; without it the executor config matched
+        # zero targets (a silent no-op). Cache mode (--config=flywheel) ignores
+        # tag filters, so this does not change the current cache-backed CI.
+        "flywheel-eligible",
+        "gloriousflywheel-cache-candidate",
+        "vitest",
+    ],
+    visibility = ["//visibility:public"],
+)
