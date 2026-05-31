@@ -78,9 +78,9 @@ try {
 	await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 	await page.getByRole('button', { name: /open layers|close layers/i }).waitFor({ timeout: 20_000 });
 	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
-	await page.getByText('Layers').waitFor({ timeout: 20_000 });
+	await page.getByRole('heading', { name: 'Layers' }).waitFor({ timeout: 20_000 });
 	await page.getByText('VIIRS Annual').waitFor({ timeout: 20_000 });
-	await page.getByText('Atmosphere').waitFor({ timeout: 20_000 });
+	await page.getByRole('heading', { name: 'Atmosphere' }).waitFor({ timeout: 20_000 });
 	await page.getByText(/daylight|night|civil twilight|nautical twilight|astronomical twilight/i).waitFor({
 		timeout: 20_000,
 	});
