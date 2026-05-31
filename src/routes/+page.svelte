@@ -20,7 +20,14 @@
 	} from '$lib/effect/services/TransmissionEstimator';
 	import { MieScatteringServiceLive } from '$lib/effect/services/MieScatteringService';
 	import { LineByLineService, LineByLineServiceLive, type BandCurve } from '$lib/effect/services/LineByLineService';
-	import { elevationToZenithDeg, lookAngleAirmass } from '$lib/transmission/slant-geometry';
+	import {
+		checkOcclusion,
+		elevationToZenithDeg,
+		lookAngleAirmass,
+		normalizeAzimuthDeg,
+	} from '$lib/transmission/slant-geometry';
+	import type { LookTarget } from '$lib/transmission/look-angle';
+	import { computePinEphemeris, type PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
@@ -201,8 +208,29 @@
 	// sun/moon targeting + terrain occlusion arrive with the LookAngleControl (V3-4);
 	// here the boresight stays at zenith but the geometry is no longer hardcoded.
 	let transmissionElevationDeg = $state(90);
+	let transmissionAzimuthDeg = $state(0);
+	let transmissionLookTarget = $state<LookTarget>('zenith');
 	let transmissionO3 = $state(350);
+	// V3-4 — per-pin ephemeris (sun/moon alt-az + DEM horizon polygon) backing the
+	// boresight: drives "aim at sun/moon" and terrain occlusion. Lifted to page
+	// level (PointReadout computes its own, memoised — so this shares the cache).
+	let transmissionPin = $state<PinEphemerisReadout | null>(null);
+	let transmissionPinGen = 0;
+	// True when the boresight is below the local terrain horizon — no line-of-sight
+	// path, so the curve is suppressed (honest: a blocked path has no T(λ)).
+	let transmissionBlocked = $state(false);
 	let transmissionRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// Boresight geometry derived from the current look-angle (display + occlusion).
+	const lookZenithDeg = $derived(elevationToZenithDeg(transmissionElevationDeg));
+	const lookAirmass = $derived(lookAngleAirmass(transmissionElevationDeg));
+	const lookOcclusion = $derived.by(() => {
+		const polygon = transmissionPin?.polygon;
+		if (!polygon) return { occluded: false, horizonAltitudeDeg: null as number | null };
+		return checkOcclusion({ azimuthDeg: transmissionAzimuthDeg, elevationDeg: transmissionElevationDeg }, polygon);
+	});
+	const sunAvailable = $derived((transmissionPin?.flat.sun.altitudeDeg ?? -1) > 0);
+	const moonAvailable = $derived((transmissionPin?.flat.moon.altitudeDeg ?? -1) > 0);
 	// #275 — when the smog overlay is on, a clicked point's AOD input can be
 	// driven by the local PM2.5 kernel-diffusion estimate. `transmissionAodSource`
 	// captions the widget so users know the AOD is modeled (with confidence),
@@ -222,6 +250,16 @@
 	const TRANSMISSION_LAYER = Layer.merge(TransmissionEstimatorLive, MieScatteringServiceLive);
 
 	async function refreshTransmission(): Promise<void> {
+		// V3-4 — a terrain-occluded boresight has no line-of-sight path; show the
+		// blocked state rather than a curve computed at a meaningless airmass.
+		if (lookOcclusion.occluded) {
+			transmissionBlocked = true;
+			transmissionLoading = false;
+			transmissionError = undefined;
+			transmissionCurve = undefined;
+			return;
+		}
+		transmissionBlocked = false;
 		const pwv = readout?.data?.atmospheric?.pwv ?? 15;
 		const input = {
 			pwvMm: pwv,
@@ -261,7 +299,60 @@
 	// were removed; the tool is meaningless without a selected point.)
 	function openTransmissionForPoint(): void {
 		transmissionOpen = true;
+		void loadTransmissionPin();
 		void refreshTransmission();
+	}
+
+	// Load the per-pin ephemeris (sun/moon alt-az + DEM horizon) for the selected
+	// point + time. Generation-guarded like the readout fetch so a stale point's
+	// result can't clobber a newer one. Memoised in computePinEphemeris.
+	async function loadTransmissionPin(): Promise<void> {
+		if (!readout) {
+			transmissionPin = null;
+			return;
+		}
+		const gen = ++transmissionPinGen;
+		const { lat, lon } = readout;
+		try {
+			const pin = await computePinEphemeris({ lat, lon }, ephemerisTime);
+			if (gen === transmissionPinGen) {
+				transmissionPin = pin;
+				// A live sun/moon target re-snaps once geometry resolves.
+				if (transmissionLookTarget === 'sun' || transmissionLookTarget === 'moon') reaimFromEphemeris();
+			}
+		} catch {
+			if (gen === transmissionPinGen) transmissionPin = null;
+		}
+	}
+
+	// Snap the boresight to the sun's or moon's current alt-az. Below-horizon
+	// altitudes clamp to 0 so the occlusion/blocked path is surfaced honestly.
+	function reaimFromEphemeris(): void {
+		if (!transmissionPin) return;
+		const body = transmissionLookTarget === 'moon' ? transmissionPin.flat.moon : transmissionPin.flat.sun;
+		transmissionAzimuthDeg = normalizeAzimuthDeg(body.azimuthDeg);
+		transmissionElevationDeg = Math.max(0, body.altitudeDeg);
+	}
+
+	function onLookTargetChange(t: LookTarget): void {
+		transmissionLookTarget = t;
+		if (t === 'zenith') {
+			transmissionAzimuthDeg = 0;
+			transmissionElevationDeg = 90;
+		} else if (t === 'sun' || t === 'moon') {
+			reaimFromEphemeris();
+		}
+		scheduleTransmissionRefresh();
+	}
+	function onLookAzimuthChange(v: number): void {
+		transmissionAzimuthDeg = v;
+		transmissionLookTarget = 'manual';
+		scheduleTransmissionRefresh();
+	}
+	function onLookElevationChange(v: number): void {
+		transmissionElevationDeg = v;
+		transmissionLookTarget = 'manual';
+		scheduleTransmissionRefresh();
 	}
 
 	function onAerosolTypeChange(value: AerosolType | null): void {
@@ -347,6 +438,10 @@
 		// Reset the boresight to the zenith default so the next open starts honestly
 		// straight up rather than inheriting a stale look-angle.
 		transmissionElevationDeg = 90;
+		transmissionAzimuthDeg = 0;
+		transmissionLookTarget = 'zenith';
+		transmissionPin = null;
+		transmissionBlocked = false;
 	}
 
 	// GPS follow-mode state (#124). Service stays in lib/device; this is just
@@ -707,8 +802,13 @@
 			applyPm25DerivedAod(lat, lon);
 			// V3 — the curve is point-anchored: a new point's PWV (and AOD) must
 			// reseed the open sheet. applyPm25DerivedAod only reschedules when it
-			// derives an AOD, so this covers the smog-off / PWV-only path.
-			if (transmissionOpen) scheduleTransmissionRefresh();
+			// derives an AOD, so this covers the smog-off / PWV-only path. Reload
+			// the per-pin ephemeris too so the boresight's sun/moon snap + terrain
+			// occlusion track the new location.
+			if (transmissionOpen) {
+				void loadTransmissionPin();
+				scheduleTransmissionRefresh();
+			}
 		} catch (e) {
 			if (myGen !== readoutGen || controller.signal.aborted) return;
 			readout = { lat, lon, loading: false, error: e instanceof Error ? e.message : String(e) };
@@ -816,6 +916,12 @@
 		const nextDay = utcDayKey(next);
 		ephemerisTime = next;
 		if (previousDay !== nextDay) remountAtmosphericRasterLayersForDay(nextDay);
+		// V3-4 — sun/moon boresight geometry is time-dependent; reload the pin
+		// ephemeris (which re-snaps a live target) and recompute the open sheet.
+		if (transmissionOpen) {
+			void loadTransmissionPin();
+			scheduleTransmissionRefresh();
+		}
 	}
 
 	function setLayerOpacity(l: RasterLayerDef, op: number): void {
@@ -1347,6 +1453,20 @@
 		bandLoading={transmissionBandLoading}
 		bandError={transmissionBandError}
 		{onBandSelect}
+		lookAzimuthDeg={transmissionAzimuthDeg}
+		lookElevationDeg={transmissionElevationDeg}
+		lookTarget={transmissionLookTarget}
+		{lookZenithDeg}
+		{lookAirmass}
+		lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
+		lookOccluded={lookOcclusion.occluded}
+		blocked={transmissionBlocked}
+		{sunAvailable}
+		{moonAvailable}
+		lookHorizon={transmissionPin?.polygon ?? null}
+		{onLookTargetChange}
+		{onLookAzimuthChange}
+		{onLookElevationChange}
 	/>
 {/if}
 

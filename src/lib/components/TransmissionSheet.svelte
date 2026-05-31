@@ -20,6 +20,9 @@
 	import { findHitranBand, HITRAN_BANDS } from '$lib/spectral/hitran-bands';
 	import { bandGuidance } from '$lib/spectral/band-guidance';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import LookAngleControl from '$lib/components/LookAngleControl.svelte';
+	import type { LookTarget } from '$lib/transmission/look-angle';
+	import type { HorizonPolygon } from '$lib/ephemeris/horizonAtAzimuth';
 
 	interface Props {
 		curve: TransmissionCurve | undefined;
@@ -41,6 +44,23 @@
 		bandLoading?: boolean;
 		bandError?: string;
 		onBandSelect?: (bandId: string | null) => void;
+		// V3-4 — directable boresight. Parent owns geometry; the sheet hosts the
+		// LookAngleControl when these are wired. `blocked` suppresses the chart when
+		// the boresight is occluded by terrain (no line-of-sight path).
+		lookAzimuthDeg?: number;
+		lookElevationDeg?: number;
+		lookTarget?: LookTarget;
+		lookZenithDeg?: number;
+		lookAirmass?: number | null;
+		lookHorizonAltDeg?: number | null;
+		lookOccluded?: boolean;
+		blocked?: boolean;
+		sunAvailable?: boolean;
+		moonAvailable?: boolean;
+		lookHorizon?: HorizonPolygon | null;
+		onLookTargetChange?: (t: LookTarget) => void;
+		onLookAzimuthChange?: (v: number) => void;
+		onLookElevationChange?: (v: number) => void;
 	}
 
 	let {
@@ -60,6 +80,20 @@
 		bandLoading = false,
 		bandError = undefined,
 		onBandSelect,
+		lookAzimuthDeg = 0,
+		lookElevationDeg = 90,
+		lookTarget = 'zenith',
+		lookZenithDeg = 0,
+		lookAirmass = 1,
+		lookHorizonAltDeg = null,
+		lookOccluded = false,
+		blocked = false,
+		sunAvailable = false,
+		moonAvailable = false,
+		lookHorizon = null,
+		onLookTargetChange,
+		onLookAzimuthChange,
+		onLookElevationChange,
 	}: Props = $props();
 
 	const WIDTH = 360;
@@ -172,10 +206,32 @@
 		</button>
 	</header>
 
+	{#if onLookTargetChange}
+		<LookAngleControl
+			azimuthDeg={lookAzimuthDeg}
+			elevationDeg={lookElevationDeg}
+			target={lookTarget}
+			zenithDeg={lookZenithDeg}
+			airmass={lookAirmass}
+			horizonAltDeg={lookHorizonAltDeg}
+			occluded={lookOccluded}
+			{sunAvailable}
+			{moonAvailable}
+			horizon={lookHorizon}
+			onTargetChange={onLookTargetChange}
+			onAzimuthChange={onLookAzimuthChange ?? (() => {})}
+			onElevationChange={onLookElevationChange ?? (() => {})}
+		/>
+	{/if}
+
 	{#if loading}
 		<p class="loading">Computing T(λ)…</p>
 	{:else if error}
 		<p class="error">Error: {error}</p>
+	{:else if blocked}
+		<p class="loading">
+			Boresight blocked by terrain — lower the elevation or change the bearing for a line-of-sight path.
+		</p>
 	{:else if curve}
 		<!-- V2-D: aerosol picker + live recompute controls. "Off" leaves the
 		LUT-only analytical path active; any other choice switches to live Mie. -->
