@@ -1941,7 +1941,7 @@
 	.attribution a {
 		color: var(--accent-amber);
 	}
-	@media (max-width: 820px) {
+	@media (max-width: 820px), (max-height: 500px) {
 		.field-hud :global(.readout[role='dialog']) {
 			bottom: calc(
 				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
@@ -1960,10 +1960,11 @@
 			max-height: min(24dvh, 10rem) !important;
 		}
 		.field-hud[data-transmission='open'] :global(.toolbar) {
-			top: calc(4.25rem + env(safe-area-inset-top, 0px)) !important;
+			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 			bottom: auto !important;
 		}
 		.field-hud[data-transmission='open'] :global(.sheet) {
+			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 			bottom: var(--field-panel-bottom) !important;
 			max-height: var(--field-panel-max-height) !important;
 			border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -1978,7 +1979,7 @@
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 		}
 	}
-	@media (max-width: 820px) and (orientation: landscape), (max-width: 820px) and (max-height: 500px) {
+	@media (max-width: 820px) and (orientation: landscape), (max-height: 500px) {
 		.field-hud[data-transmission='open'][data-readout='open'] {
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
@@ -1988,6 +1989,9 @@
 		}
 		.field-hud[data-transmission='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
+		}
+		.field-hud[data-transmission='open'] :global(.sheet) {
+			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 		}
 	}
 	:global(.follow-marker) {

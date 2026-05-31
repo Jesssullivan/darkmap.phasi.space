@@ -8,8 +8,9 @@ import { chromium } from '@playwright/test';
 
 process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
 
-const VIEWPORT = { width: 390, height: 844 };
+const DEFAULT_VIEWPORT = { width: 390, height: 844 };
 const SMOKE_SCENARIO = process.env.DARKMAP_RBE_SMOKE_SCENARIO ?? 'shell';
+const SMOKE_VIEWPORTS = parseViewportList(process.env.DARKMAP_RBE_SMOKE_VIEWPORTS);
 const MAP_CANVAS_SELECTOR = '[data-tour="map"] canvas, canvas.maplibregl-canvas';
 const TRANSPARENT_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
@@ -66,38 +67,49 @@ try {
 		args: ['--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--no-sandbox', '--use-gl=swiftshader'],
 	});
 
-	const context = await browser.newContext({
-		geolocation: { latitude: 42.443, longitude: -76.501 },
-		viewport: VIEWPORT,
-	});
-	await context.grantPermissions(['geolocation'], { origin: baseURL });
-	const page = await context.newPage();
-	const pageErrors = [];
-	const consoleErrors = [];
-	page.on('pageerror', (err) => {
-		pageErrors.push(err.message);
-		console.log(`darkmap pageerror observed: ${err.message}`);
-	});
-	page.on('console', (msg) => {
-		if (msg.type() === 'error') {
-			consoleErrors.push(msg.text());
-			console.log(`darkmap console error observed: ${msg.text()}`);
+	for (const viewport of SMOKE_VIEWPORTS) {
+		const viewportLabel = `${viewport.width}x${viewport.height}`;
+		const context = await browser.newContext({
+			geolocation: { latitude: 42.443, longitude: -76.501 },
+			viewport,
+		});
+		await context.grantPermissions(['geolocation'], { origin: baseURL });
+		const page = await context.newPage();
+		const pageErrors = [];
+		const consoleErrors = [];
+		page.on('pageerror', (err) => {
+			pageErrors.push(err.message);
+			console.log(`darkmap pageerror observed at ${viewportLabel}: ${err.message}`);
+		});
+		page.on('console', (msg) => {
+			if (msg.type() === 'error') {
+				consoleErrors.push(msg.text());
+				console.log(`darkmap console error observed at ${viewportLabel}: ${msg.text()}`);
+			}
+		});
+		await installNetworkGuards(page, baseURL);
+		await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
+
+		try {
+			await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+			await runSmokeScenario(page, SMOKE_SCENARIO);
+
+			if (pageErrors.length > 0) {
+				throw new Error(
+					`page errors during browser-RBE ${SMOKE_SCENARIO} smoke at ${viewportLabel}: ${pageErrors.join(' | ')}`,
+				);
+			}
+			if (consoleErrors.length > 0) {
+				console.log(
+					`darkmap ${SMOKE_SCENARIO} smoke observed console errors at ${viewportLabel}: ${consoleErrors.join(' | ')}`,
+				);
+			}
+
+			console.log(`darkmap Playwright ${SMOKE_SCENARIO} smoke passed at ${viewportLabel} with ${chromiumPath}`);
+		} finally {
+			await context.close();
 		}
-	});
-	await installNetworkGuards(page, baseURL);
-	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
-
-	await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-	await runSmokeScenario(page, SMOKE_SCENARIO);
-
-	if (pageErrors.length > 0) {
-		throw new Error(`page errors during browser-RBE ${SMOKE_SCENARIO} smoke: ${pageErrors.join(' | ')}`);
 	}
-	if (consoleErrors.length > 0) {
-		console.log(`darkmap ${SMOKE_SCENARIO} smoke observed console errors: ${consoleErrors.join(' | ')}`);
-	}
-
-	console.log(`darkmap Playwright ${SMOKE_SCENARIO} smoke passed with ${chromiumPath}`);
 } finally {
 	await browser?.close();
 	await stopServer(server);
@@ -195,18 +207,26 @@ async function runMobileLayersSmoke(page) {
 
 async function runMapCanvasSmoke(page) {
 	await page.locator('[data-tour="map"]').waitFor({ state: 'attached', timeout: 20_000 });
+	const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	const minCanvasWidth = Math.min(300, Math.floor(viewport.width * 0.9));
+	const minCanvasHeight = Math.min(300, Math.floor(viewport.height * 0.9));
 	try {
 		await page.locator(MAP_CANVAS_SELECTOR).first().waitFor({ state: 'attached', timeout: 30_000 });
 		await page.waitForFunction(
-			(selector) => {
+			({ selector, minCanvasWidth, minCanvasHeight }) => {
 				const map = document.querySelector('[data-tour="map"]');
 				const canvas = document.querySelector(selector);
 				if (!(map instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false;
 				const mapRect = map.getBoundingClientRect();
 				const canvasRect = canvas.getBoundingClientRect();
-				return mapRect.width > 300 && mapRect.height > 500 && canvasRect.width > 300 && canvasRect.height > 500;
+				return (
+					mapRect.width >= minCanvasWidth &&
+					mapRect.height >= minCanvasHeight &&
+					canvasRect.width >= minCanvasWidth &&
+					canvasRect.height >= minCanvasHeight
+				);
 			},
-			MAP_CANVAS_SELECTOR,
+			{ selector: MAP_CANVAS_SELECTOR, minCanvasWidth, minCanvasHeight },
 			{ timeout: 30_000 },
 		);
 	} catch (err) {
@@ -248,7 +268,8 @@ async function runPointReadoutSmoke(page) {
 	await runMapCanvasSmoke(page);
 
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	await canvas.click({ position: { x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2) } });
+	const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	await canvas.click({ position: { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) } });
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
@@ -284,7 +305,8 @@ async function runMobileHudSmoke(page) {
 	await page.locator('.toolbar').waitFor({ state: 'visible', timeout: 20_000 });
 
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	await canvas.click({ position: { x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2) } });
+	const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	await canvas.click({ position: { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) } });
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ state: 'visible', timeout: 20_000 });
@@ -380,27 +402,48 @@ async function collectHudMetrics(page) {
 			'.gantt',
 			'.attribution',
 		];
-		return Object.fromEntries(
-			selectors.map((selector) => {
-				const node = document.querySelector(selector);
-				if (!(node instanceof HTMLElement)) return [selector, null];
-				const rect = node.getBoundingClientRect();
-				const style = getComputedStyle(node);
-				return [
-					selector,
-					{
-						bottom: rect.bottom,
-						display: style.display,
-						height: rect.height,
-						left: rect.left,
-						right: rect.right,
-						top: rect.top,
-						visibility: style.visibility,
-						width: rect.width,
-					},
-				];
-			}),
-		);
+		return {
+			viewport: { height: window.innerHeight, width: window.innerWidth },
+			boxes: Object.fromEntries(
+				selectors.map((selector) => {
+					const node = document.querySelector(selector);
+					if (!(node instanceof HTMLElement)) return [selector, null];
+					const rect = node.getBoundingClientRect();
+					const style = getComputedStyle(node);
+					return [
+						selector,
+						{
+							bottom: rect.bottom,
+							display: style.display,
+							height: rect.height,
+							left: rect.left,
+							right: rect.right,
+							top: rect.top,
+							visibility: style.visibility,
+							width: rect.width,
+						},
+					];
+				}),
+			),
+		};
+	});
+}
+
+function parseViewportList(raw) {
+	if (!raw?.trim()) return [DEFAULT_VIEWPORT];
+
+	return raw.split(',').map((item) => {
+		const trimmed = item.trim();
+		const match = /^(\d+)x(\d+)$/.exec(trimmed);
+		if (!match) {
+			throw new Error(`invalid DARKMAP_RBE_SMOKE_VIEWPORTS entry "${trimmed}"; expected WIDTHxHEIGHT`);
+		}
+		const width = Number(match[1]);
+		const height = Number(match[2]);
+		if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+			throw new Error(`invalid DARKMAP_RBE_SMOKE_VIEWPORTS dimensions "${trimmed}"`);
+		}
+		return { width, height };
 	});
 }
 
