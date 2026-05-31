@@ -56,6 +56,7 @@ vitest.vitest_test(
         "src/lib/atmospheric/path-constituents.test.ts",
         "src/lib/atmospheric/pollen-extinction.test.ts",
         "src/lib/atmospheric/tx-constituents.test.ts",
+        "src/lib/atmospheric/viewport-summary.test.ts",
     ],
     log_level = "info",
     tags = [

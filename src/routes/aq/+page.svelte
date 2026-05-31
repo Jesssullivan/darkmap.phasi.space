@@ -47,6 +47,7 @@
 	import { computeAqi, type AqiPollutant, type AqiResult } from '$lib/atmospheric/aqi';
 	import { crossValidate, type CrossValResult } from '$lib/atmospheric/aq-crossval';
 	import { type HistorySeries, type HistoryPollutantName } from '$lib/atmospheric/openaq-history-shape';
+	import { buildViewportSummary, type ViewportSummary } from '$lib/atmospheric/viewport-summary';
 	import { modelCardFor } from '$lib/atmospheric/model-cards';
 
 	interface Selected {
@@ -111,6 +112,10 @@
 
 	const aqiResult = $derived.by<AqiResult | null>(() =>
 		computeAqi(perPollutant.map((r) => ({ pollutant: r.pollutant, value: r.est.valueUgm3 as number, units: r.units }))),
+	);
+
+	const viewportSummary = $derived.by<ViewportSummary | null>(() =>
+		openaqReached ? buildViewportSummary(stations) : null,
 	);
 
 	const crossVal = $derived.by<CrossValResult | null>(() => {
@@ -422,6 +427,50 @@
 					</p>
 				{/if}
 			</section>
+
+			<!-- Area overview (the bbox the point was diffused from) -->
+			<section class="card">
+				<div class="card-head">
+					<h2 class="h5">Area overview</h2>
+					<span
+						class="card-info"
+						title="OpenAQ stations within ±0.75° of the point (server-filtered to recent readings).">ⓘ</span
+					>
+				</div>
+				{#if loadingPoint && !openaqReached}
+					<p class="muted">Loading stations…</p>
+				{:else if !viewportSummary || viewportSummary.stationCount === 0}
+					<p class="muted">No OpenAQ stations in this area{openaqDegraded ? ' (OpenAQ unavailable)' : ''}.</p>
+				{:else}
+					<p class="area-count">
+						<strong>{viewportSummary.stationCount}</strong> station{viewportSummary.stationCount === 1 ? '' : 's'}
+						· <strong>{viewportSummary.pm25StationCount}</strong> reporting PM2.5
+					</p>
+					{#if viewportSummary.aqi}
+						{@const a = viewportSummary.aqi}
+						<div class="spread" aria-label={`PM2.5 AQI spread ${a.min} to ${a.max}`}>
+							<span class="spread-end">{a.min}</span>
+							<span class="spread-bar">
+								<span class="spread-fill" style={`--cat:${a.maxCategory.color}`}></span>
+								<span class="spread-median" title={`median ${a.median}`}>{a.median}</span>
+							</span>
+							<span class="spread-end" style={`color:${a.maxCategory.color}`}>{a.max}</span>
+						</div>
+						<p class="muted area-cat">PM2.5 AQI · worst {a.maxCategory.name}</p>
+					{:else}
+						<p class="muted">No PM2.5 readings to index across the area.</p>
+					{/if}
+					<ul class="pollutant-counts">
+						{#each viewportSummary.pollutantCounts as c (c.pollutant)}
+							<li><span class="p-name">{POLLUTANT_LABELS[c.pollutant]}</span><span class="p-c">{c.count}</span></li>
+						{/each}
+					</ul>
+					<p class="provenance">
+						Raw station counts within ±0.75° of the point — an observed sample, not full-area coverage. Stations are
+						server-filtered to recent readings; sparse areas read as sparse.
+					</p>
+				{/if}
+			</section>
 		</div>
 	{/if}
 </div>
@@ -579,6 +628,69 @@
 		font-size: 0.68rem;
 		opacity: 0.6;
 		text-align: right;
+	}
+
+	/* Area overview */
+	.area-count {
+		margin: 0 0 0.6rem;
+		font-size: 0.85rem;
+	}
+	.spread {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.8rem;
+	}
+	.spread-bar {
+		position: relative;
+		flex: 1 1 auto;
+		height: 0.5rem;
+		border-radius: 999px;
+		background: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1));
+		overflow: visible;
+	}
+	.spread-fill {
+		position: absolute;
+		inset: 0;
+		border-radius: 999px;
+		background: linear-gradient(to right, #00e400, var(--cat));
+		opacity: 0.55;
+	}
+	.spread-median {
+		position: absolute;
+		top: -1.1rem;
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 0.65rem;
+		opacity: 0.7;
+	}
+	.spread-end {
+		font-weight: 600;
+	}
+	.area-cat {
+		margin: 0.35rem 0 0;
+	}
+	.pollutant-counts {
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.5rem;
+		margin: 0.7rem 0 0;
+		padding: 0;
+	}
+	.pollutant-counts li {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.3rem;
+		font-size: 0.72rem;
+		padding: 0.15rem 0.45rem;
+		border-radius: 5px;
+		background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.06));
+	}
+	.pollutant-counts .p-c {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		opacity: 0.7;
 	}
 
 	/* History controls + stats */
