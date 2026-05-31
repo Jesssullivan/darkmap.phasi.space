@@ -654,6 +654,10 @@
 		justify-content: space-between;
 		margin-bottom: 0.4rem;
 	}
+	.title {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
 	h3 {
 		margin: 0;
 		font-size: 0.85rem;
@@ -661,10 +665,15 @@
 	}
 	.point-coords {
 		display: block;
+		width: 100%;
+		max-width: 100%;
 		margin: 0.1rem 0 0;
 		font-size: 0.66rem;
 		line-height: 1.2;
 		min-height: 0.8rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		color: rgba(233, 236, 243, 0.55);
 		font-variant-numeric: tabular-nums;
 	}
