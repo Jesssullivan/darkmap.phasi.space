@@ -70,6 +70,8 @@
 		onBeamToggle?: (show: boolean) => void;
 		onBeamwidthChange?: (v: number) => void;
 		onBeamRangeChange?: (v: number) => void;
+		/** AOD variation sampled along the beam centerline (PM2.5 field); null when unavailable. */
+		pathAod?: { min: number; max: number; mean: number; samples: number } | null;
 	}
 
 	let {
@@ -110,6 +112,7 @@
 		onBeamToggle,
 		onBeamwidthChange,
 		onBeamRangeChange,
+		pathAod = null,
 	}: Props = $props();
 
 	const WIDTH = 360;
@@ -275,6 +278,12 @@
 						oninput={(e) => onBeamRangeChange?.(Number((e.target as HTMLInputElement).value))}
 					/>
 				</label>
+				{#if pathAod}
+					<p class="beam-path">
+						Path AOD<sub>550</sub>: {pathAod.min.toFixed(2)}–{pathAod.max.toFixed(2)} (mean
+						{pathAod.mean.toFixed(2)}) along the beam · {pathAod.samples} samples from the PM2.5 field.
+					</p>
+				{/if}
 			{/if}
 		</section>
 	{/if}
@@ -708,6 +717,12 @@
 	.beam-row .val {
 		color: var(--accent-amber);
 		font-variant-numeric: tabular-nums;
+	}
+	.beam-path {
+		margin: 0.15rem 0 0;
+		font-size: 0.68rem;
+		line-height: 1.3;
+		color: rgba(233, 236, 243, 0.7);
 	}
 	@media (pointer: coarse) {
 		.beam-toggle {

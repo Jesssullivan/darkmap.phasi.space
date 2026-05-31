@@ -67,6 +67,21 @@ export const beamSectorPolygon = (p: BeamParams, arcSteps = 48): GeoJSONPolygon 
 	return { type: 'Polygon', coordinates: [ring] };
 };
 
+/**
+ * Sample points evenly along the boresight centerline, from the origin (i=0) to
+ * the far end at `rangeKm` (i=n). Returns `n + 1` points — used to profile how a
+ * constituent field varies along a directed beam.
+ */
+export const beamSamplePoints = (p: BeamParams, n: number): LonLat[] => {
+	const steps = Math.max(1, Math.floor(n));
+	const points: LonLat[] = [];
+	for (let i = 0; i <= steps; i++) {
+		const distM = (p.rangeKm * 1000 * i) / steps;
+		points.push(destination(p.origin.lat, p.origin.lon, p.azimuthDeg, distM));
+	}
+	return points;
+};
+
 /** The boresight centerline: origin → range along the azimuth. */
 export const beamCenterline = (p: BeamParams): GeoJSONLineString => {
 	const d = destination(p.origin.lat, p.origin.lon, p.azimuthDeg, p.rangeKm * 1000);

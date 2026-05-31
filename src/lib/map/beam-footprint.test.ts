@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beamCenterline, beamSectorPolygon, type BeamParams } from './beam-footprint';
+import { beamCenterline, beamSamplePoints, beamSectorPolygon, type BeamParams } from './beam-footprint';
 
 const origin = { lon: 8.55, lat: 47.36 };
 
@@ -55,6 +55,24 @@ describe('beamSectorPolygon', () => {
 		const last = bearingDeg([origin.lon, origin.lat], arc[arc.length - 1]);
 		expect(first).toBeCloseTo(70, 0); // 90 - 20
 		expect(last).toBeCloseTo(110, 0); // 90 + 20
+	});
+});
+
+describe('beamSamplePoints', () => {
+	it('returns n+1 points from the origin to the far end', () => {
+		const pts = beamSamplePoints(params({ rangeKm: 30 }), 6);
+		expect(pts.length).toBe(7);
+		expect(pts[0].lon).toBeCloseTo(origin.lon, 9);
+		expect(pts[0].lat).toBeCloseTo(origin.lat, 9);
+		expect(haversineKm([origin.lon, origin.lat], [pts[6].lon, pts[6].lat])).toBeCloseTo(30, 1);
+	});
+
+	it('spaces samples evenly along the centerline', () => {
+		const pts = beamSamplePoints(params({ rangeKm: 40 }), 4);
+		const d = (i: number) => haversineKm([origin.lon, origin.lat], [pts[i].lon, pts[i].lat]);
+		expect(d(1)).toBeCloseTo(10, 1);
+		expect(d(2)).toBeCloseTo(20, 1);
+		expect(d(3)).toBeCloseTo(30, 1);
 	});
 });
 
