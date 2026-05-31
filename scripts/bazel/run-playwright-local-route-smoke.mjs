@@ -10,6 +10,7 @@ process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
 
 const VIEWPORT = { width: 390, height: 844 };
 const SMOKE_SCENARIO = process.env.DARKMAP_RBE_SMOKE_SCENARIO ?? 'shell';
+const MAP_CANVAS_SELECTOR = '[data-tour="map"] canvas, canvas.maplibregl-canvas';
 const TRANSPARENT_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
 	'base64',
@@ -69,9 +70,15 @@ try {
 	const page = await context.newPage();
 	const pageErrors = [];
 	const consoleErrors = [];
-	page.on('pageerror', (err) => pageErrors.push(err.message));
+	page.on('pageerror', (err) => {
+		pageErrors.push(err.message);
+		console.log(`darkmap pageerror observed: ${err.message}`);
+	});
 	page.on('console', (msg) => {
-		if (msg.type() === 'error') consoleErrors.push(msg.text());
+		if (msg.type() === 'error') {
+			consoleErrors.push(msg.text());
+			console.log(`darkmap console error observed: ${msg.text()}`);
+		}
 	});
 	await installNetworkGuards(page, baseURL);
 	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
@@ -178,23 +185,28 @@ async function runMobileLayersSmoke(page) {
 
 async function runMapCanvasSmoke(page) {
 	await page.locator('[data-tour="map"]').waitFor({ state: 'attached', timeout: 20_000 });
-	await page.locator('canvas.maplibregl-canvas').first().waitFor({ state: 'attached', timeout: 30_000 });
-	await page.waitForFunction(
-		() => {
-			const map = document.querySelector('[data-tour="map"]');
-			const canvas = document.querySelector('canvas.maplibregl-canvas');
-			if (!(map instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false;
-			const mapRect = map.getBoundingClientRect();
-			const canvasRect = canvas.getBoundingClientRect();
-			return mapRect.width > 300 && mapRect.height > 500 && canvasRect.width > 300 && canvasRect.height > 500;
-		},
-		null,
-		{ timeout: 30_000 },
-	);
+	try {
+		await page.locator(MAP_CANVAS_SELECTOR).first().waitFor({ state: 'attached', timeout: 30_000 });
+		await page.waitForFunction(
+			(selector) => {
+				const map = document.querySelector('[data-tour="map"]');
+				const canvas = document.querySelector(selector);
+				if (!(map instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false;
+				const mapRect = map.getBoundingClientRect();
+				const canvasRect = canvas.getBoundingClientRect();
+				return mapRect.width > 300 && mapRect.height > 500 && canvasRect.width > 300 && canvasRect.height > 500;
+			},
+			MAP_CANVAS_SELECTOR,
+			{ timeout: 30_000 },
+		);
+	} catch (err) {
+		const diagnostics = await collectMapDiagnostics(page);
+		throw new Error(`MapLibre canvas did not attach: ${err?.message ?? err}; diagnostics=${JSON.stringify(diagnostics)}`);
+	}
 
 	const metrics = await page.evaluate(() => {
 		const map = document.querySelector('[data-tour="map"]');
-		const canvas = document.querySelector('canvas.maplibregl-canvas');
+		const canvas = document.querySelector('[data-tour="map"] canvas, canvas.maplibregl-canvas');
 		const mapRect = map instanceof HTMLElement ? map.getBoundingClientRect() : null;
 		const canvasRect = canvas instanceof HTMLCanvasElement ? canvas.getBoundingClientRect() : null;
 		const gl =
@@ -218,6 +230,32 @@ async function runMapCanvasSmoke(page) {
 	}
 
 	console.log(`darkmap map-canvas smoke observed ${JSON.stringify(metrics)}`);
+}
+
+async function collectMapDiagnostics(page) {
+	return page.evaluate(() => {
+		const map = document.querySelector('[data-tour="map"]');
+		const mapRect = map instanceof HTMLElement ? map.getBoundingClientRect() : null;
+		const canvases = Array.from(document.querySelectorAll('canvas')).map((canvas) => {
+			const rect = canvas.getBoundingClientRect();
+			return {
+				className: canvas.className,
+				height: rect.height,
+				id: canvas.id,
+				width: rect.width,
+			};
+		});
+		return {
+			bodyText: document.body.innerText.slice(0, 500),
+			canvasCount: canvases.length,
+			canvases,
+			mapClass: map instanceof HTMLElement ? map.className : '',
+			mapHeight: mapRect?.height ?? 0,
+			mapHtml: map instanceof HTMLElement ? map.innerHTML.slice(0, 500) : '',
+			mapWidth: mapRect?.width ?? 0,
+			scriptCount: document.scripts.length,
+		};
+	});
 }
 
 function findBuildDir() {
