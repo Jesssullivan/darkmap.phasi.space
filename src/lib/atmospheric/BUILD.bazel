@@ -45,6 +45,7 @@ vitest.vitest_test(
         "--reporter=verbose",
         "--config",
         "vitest.bazel.config.ts",
+        "src/lib/atmospheric/aqi.test.ts",
         "src/lib/atmospheric/model-cards.test.ts",
         "src/lib/atmospheric/ozone-climatology.test.ts",
         "src/lib/atmospheric/pm25-diffusion.test.ts",
