@@ -74,6 +74,12 @@
 		 * lives here rather than as an independent rail CTA.
 		 */
 		onTransmissionForPoint?: () => void;
+		/**
+		 * Open the dedicated AQ-analysis dashboard (`/aq`) seeded from THIS point
+		 * + time. The dashboard pulls the full time-series + multi-pollutant +
+		 * source cross-validation for the location (V6-4).
+		 */
+		onAqDashboardForPoint?: () => void;
 	}
 
 	let {
@@ -91,6 +97,7 @@
 		historyLoading = false,
 		onclose,
 		onTransmissionForPoint,
+		onAqDashboardForPoint,
 	}: Props = $props();
 
 	const POLLEN_LABELS: Record<keyof PollenReading, string> = {
@@ -672,6 +679,21 @@
 			<span class="cta-text">
 				<span class="cta-label">Spectral transmission T(λ)</span>
 				<span class="cta-sub">directable boresight · AOD · band guidance</span>
+			</span>
+			<span class="cta-caret" aria-hidden="true">→</span>
+		</button>
+	{/if}
+
+	{#if onAqDashboardForPoint && data}
+		<button
+			type="button"
+			class="transmission-link aq-dashboard-link"
+			aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
+			onclick={onAqDashboardForPoint}
+		>
+			<span class="cta-text">
+				<span class="cta-label">Air-quality dashboard</span>
+				<span class="cta-sub">history · multi-pollutant AQI · source cross-check</span>
 			</span>
 			<span class="cta-caret" aria-hidden="true">→</span>
 		</button>
