@@ -309,6 +309,36 @@ js_test(
 )
 
 # =============================================================================
+# playwright_browser_rbe_smoke_suite — one GF-dispatchable browser proof surface
+#
+# The individual Playwright/Chromium targets above stay split so proof failures
+# point at the smallest UI contract. This suite is the operator-facing entry
+# point for GloriousFlywheel proof dispatch: it keeps all browserful work manual,
+# tagged as RBE-candidate, and out of wildcard/local `bazel test //...` runs.
+# =============================================================================
+test_suite(
+    name = "playwright_browser_rbe_smoke_suite",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+        "playwright-browser-rbe-suite",
+    ],
+    tests = [
+        ":playwright_local_route_smoke",
+        ":playwright_mobile_layers_smoke",
+        ":playwright_map_canvas_smoke",
+        ":playwright_point_readout_smoke",
+        ":playwright_mobile_hud_smoke",
+        ":playwright_mobile_hud_matrix_smoke",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
 # root_lib_test — top-level src/lib unit-test slice
 #
 # The `src/lib` top-level modules (basemaps, layers, url-hash, viewportGrid,

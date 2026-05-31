@@ -136,6 +136,14 @@ Read it before touching any Flywheel/RBE surface.
     (e.g. running on `tinyland-nix` ARC runners).
   - `--config=ci-cached` / `--config=executor-backed` when the runner
     pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
+- Browserful Playwright is modeled as manual Bazel RBE smoke targets, not a
+  developer-machine check. Use `//:playwright_browser_rbe_smoke_suite` for the
+  whole current suite, or a narrower target such as
+  `//:playwright_mobile_hud_matrix_smoke` for focused proof. Dispatch through
+  GloriousFlywheel `gf-reapi-cell-proof.yml` with `bazel_command=test` and
+  require a verified artifact with `countable_remote_execution=true` and
+  `remote_processes > 0`. Do not count local Playwright, GitHub runner
+  placement, or remote-cache-only hits as browser RBE.
 - Local DX: `nix develop` for the toolchain, `FLYWHEEL=local|cache|executor|auto`
   env knob picks the bazelrc config for the `just flywheel-build` /
   `just flywheel-test` recipes. `auto` probes cluster cache
