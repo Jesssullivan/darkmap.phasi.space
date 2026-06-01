@@ -132,6 +132,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'mobile-hud':
 			await runMobileHudSmoke(page);
 			return;
+		case 'lens':
+			await runLensSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -340,6 +343,70 @@ async function runMobileHudSmoke(page) {
 
 	const metrics = await collectHudMetrics(page);
 	console.log(`darkmap mobile-hud smoke observed ${JSON.stringify(metrics)}`);
+}
+
+async function runLensSmoke(page) {
+	// The lens switch only re-weights derived surfaces and writes the hash via
+	// scheduleHashWrite, which no-ops until the map is up — so wait for the
+	// canvas (mapInstance ready) before asserting hash writes.
+	await runMapCanvasSmoke(page);
+
+	const nav = page.getByRole('navigation', { name: 'Map lens' });
+	await nav.waitFor({ timeout: 20_000 });
+	const chip = (name) => nav.getByRole('button', { name });
+	const sky = chip('Sky');
+	const air = chip('Air');
+	const links = chip('Links');
+	const orbit = chip('Orbit');
+
+	const ariaPressed = (locator) => locator.getAttribute('aria-pressed');
+	const hashOf = () => page.evaluate(() => window.location.hash);
+	const seg = (hash, key) => {
+		const m = new RegExp(`(?:^#|&)${key}=([^&]*)`).exec(hash);
+		return m ? m[1] : null;
+	};
+
+	// Cold start: Sky active (default), and the default is omitted from the hash.
+	await sky.waitFor({ timeout: 20_000 });
+	if ((await ariaPressed(sky)) !== 'true') {
+		throw new Error(`expected Sky lens active on load, got aria-pressed=${await ariaPressed(sky)}`);
+	}
+
+	// Click Air → active toggles, hash gains lens=air, the map view is serialized.
+	await air.click();
+	await page.waitForFunction(() => window.location.hash.includes('lens=air'), null, { timeout: 20_000 });
+	if ((await ariaPressed(air)) !== 'true' || (await ariaPressed(sky)) !== 'false') {
+		throw new Error('Air chip did not become the sole active lens');
+	}
+	const mapView = seg(await hashOf(), 'm');
+	if (!mapView) throw new Error('expected scheduleHashWrite to serialize the map view (m=) on lens switch');
+
+	// Number key 3 → Links; the map view must be untouched by a lens switch.
+	await page.keyboard.press('3');
+	await page.waitForFunction(() => window.location.hash.includes('lens=links'), null, { timeout: 20_000 });
+	if ((await ariaPressed(links)) !== 'true') throw new Error('number key 3 did not activate Links');
+	const afterKey = seg(await hashOf(), 'm');
+	if (afterKey !== mapView) throw new Error(`lens switch moved the map view: ${mapView} -> ${afterKey}`);
+
+	// Number key 1 → back to Sky → the default lens drops out of the hash.
+	await page.keyboard.press('1');
+	await page.waitForFunction(() => !/(?:^#|&)lens=/.test(window.location.hash), null, { timeout: 20_000 });
+	if ((await ariaPressed(sky)) !== 'true') throw new Error('number key 1 did not return to Sky');
+
+	// Never-gate: every chip stays enabled + named regardless of the active lens.
+	for (const [name, locator] of [
+		['Sky', sky],
+		['Air', air],
+		['Links', links],
+		['Orbit', orbit],
+	]) {
+		const disabled = await locator.getAttribute('aria-disabled');
+		if (disabled === 'true' || !(await locator.isEnabled())) {
+			throw new Error(`lens chip "${name}" must never be gated (aria-disabled=${disabled})`);
+		}
+	}
+
+	console.log('darkmap lens smoke verified Sky→Air→Links→Sky (chip + keys 1–4), map view preserved, never-gated');
 }
 
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {
