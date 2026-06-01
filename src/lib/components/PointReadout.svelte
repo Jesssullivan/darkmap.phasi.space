@@ -814,6 +814,18 @@
 	.readout > [data-tier='1'] {
 		opacity: 1;
 	}
+	/* Lens-diff cross-fade: only the dim/emphasis transitions (opacity), never
+	   the map or layout. Reordering is instant; the tier change eases. */
+	.readout > [data-section],
+	.readout > [data-cta] {
+		transition: opacity var(--lens-diff-ms, 200ms) ease;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.readout > [data-section],
+		.readout > [data-cta] {
+			transition: none;
+		}
+	}
 	.bortle-lead {
 		margin-bottom: 0.5rem;
 		padding-bottom: 0.5rem;

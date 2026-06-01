@@ -499,8 +499,16 @@
 	}
 	/* Off-lens group dims (Tier-3) but its header + rows stay fully clickable —
 	   re-weight, never gate (no aria-disabled / display:none / pointer-events). */
+	.category {
+		transition: opacity var(--lens-diff-ms, 200ms) ease;
+	}
 	.category[data-tier='3'] {
 		opacity: var(--rail-tier3-opacity, 0.6);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.category {
+			transition: none;
+		}
 	}
 	.category-header {
 		display: inline-flex;
