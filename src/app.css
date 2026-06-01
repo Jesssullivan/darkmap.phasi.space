@@ -63,12 +63,16 @@ html {
 	-moz-osx-font-smoothing: grayscale;
 	text-rendering: optimizeLegibility;
 	--field-bottom-reserve: 7.75rem;
-	--map-toolbar-inset-rem: 5rem;
+	/* Desktop: the labeled MapToolbar strip is wider, so the gantt / readout /
+	   sheet inset further to clear it (see MapToolbar.svelte). ≤820px the
+	   toolbar collapses to icon-only and this drops back to 5rem. */
+	--map-toolbar-inset-rem: 8rem;
 }
 
 @media (max-width: 820px) {
 	html {
 		--field-bottom-reserve: 8.75rem;
+		--map-toolbar-inset-rem: 5rem;
 	}
 }
 

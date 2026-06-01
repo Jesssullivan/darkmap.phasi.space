@@ -135,6 +135,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'lens':
 			await runLensSmoke(page);
 			return;
+		case 'toolbar-labels':
+			await runToolbarLabelsSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -407,6 +410,60 @@ async function runLensSmoke(page) {
 	}
 
 	console.log('darkmap lens smoke verified Sky→Air→Links→Sky (chip + keys 1–4), map view preserved, never-gated');
+}
+
+async function runToolbarLabelsSmoke(page) {
+	const toolbar = page.locator('.toolbar');
+	await toolbar.waitFor({ state: 'visible', timeout: 20_000 });
+
+	// Every tool stays reachable by its full accessible name (aria-label) at
+	// every viewport — what AT and the existing role-name queries depend on.
+	await page.getByRole('button', { name: /twilight strip/i }).waitFor({ timeout: 20_000 });
+	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
+
+	const width = (page.viewportSize() ?? { width: 0 }).width;
+	// No hover is issued before this read — the mouse sits at its default
+	// position. The contract is font-independent: the desktop media query
+	// renders the label (display != none, real text), ≤820px collapses it to
+	// display:none. We deliberately do NOT assert pixel width — the headless
+	// proof container can lack system fonts (zero glyph advance), which would
+	// false-fail a width check though the label renders fine on real devices.
+	const labels = await page.evaluate(() =>
+		Array.from(document.querySelectorAll('.toolbar .tool')).map((btn) => {
+			const span = btn.querySelector('.tool-label');
+			return {
+				aria: btn.getAttribute('aria-label') ?? '',
+				text: span ? (span.textContent ?? '').trim() : '',
+				display: span ? getComputedStyle(span).display : 'missing',
+			};
+		}),
+	);
+	if (labels.length < 4) throw new Error(`expected at least 4 toolbar tools, saw ${labels.length}`);
+
+	if (width > 820) {
+		for (const l of labels) {
+			if (l.display === 'none' || l.text.length === 0) {
+				throw new Error(`toolbar label not rendered without hover at ${width}px: ${JSON.stringify(l)}`);
+			}
+		}
+		const texts = labels.map((l) => l.text);
+		for (const expected of ['Twilight', 'Follow', 'Tour']) {
+			if (!texts.includes(expected)) {
+				throw new Error(`expected a "${expected}" toolbar label at ${width}px, saw ${JSON.stringify(texts)}`);
+			}
+		}
+		console.log(`darkmap toolbar-labels smoke: labels rendered without hover at ${width}px ${JSON.stringify(texts)}`);
+	} else {
+		for (const l of labels) {
+			if (l.display !== 'none') {
+				throw new Error(
+					`toolbar label must collapse to icon-only <=820px, got display=${l.display}: ${JSON.stringify(l)}`,
+				);
+			}
+			if (l.aria.length === 0) throw new Error(`toolbar button lost its accessible name at ${width}px`);
+		}
+		console.log(`darkmap toolbar-labels smoke: compact icon-only + named at ${width}px`);
+	}
 }
 
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {

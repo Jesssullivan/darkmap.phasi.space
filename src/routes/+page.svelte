@@ -1899,6 +1899,7 @@
 			{
 				id: 'ephemeris',
 				label: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
+				shortLabel: 'Twilight',
 				icon: SunMoon,
 				title: ephemerisOpen ? 'Hide twilight strip' : 'Show twilight strip',
 				pressed: ephemerisOpen,
@@ -1913,6 +1914,7 @@
 			{
 				id: 'follow',
 				label: followButtonLabel(),
+				shortLabel: 'Follow',
 				icon: LocateFixed,
 				title: followButtonLabel(),
 				pressed: followStatus !== 'off',
@@ -1921,6 +1923,7 @@
 			{
 				id: 'route',
 				label: currentRoute ? `Clear imported route (${currentRoute.name})` : 'Import KML / GPX / GeoJSON route',
+				shortLabel: currentRoute ? 'Clear' : 'Route',
 				icon: currentRoute ? X : Upload,
 				title: currentRoute ? `Clear ${currentRoute.name}` : 'Import KML / GPX / GeoJSON route',
 				pressed: currentRoute !== null,
@@ -1929,6 +1932,7 @@
 			{
 				id: 'tour',
 				label: 'Take the guided tour',
+				shortLabel: 'Tour',
 				icon: Compass,
 				title: 'Take the guided tour',
 				pressed: tourOpen,
