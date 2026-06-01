@@ -149,3 +149,29 @@ describe('decodeHash', () => {
 		expect(back.view).toEqual({ lat: 42.4434, lon: -76.5019, zoom: 9 });
 	});
 });
+
+describe('lens segment', () => {
+	it('encodes a non-default lens', () => {
+		expect(encodeHash({ lens: 'air' })).toBe('#lens=air');
+		expect(encodeHash({ lens: 'orbit' })).toBe('#lens=orbit');
+	});
+
+	it('omits the default sky lens', () => {
+		expect(encodeHash({ lens: 'sky' })).toBe('');
+		expect(encodeHash({ view: { lat: 1, lon: 2, zoom: 3 }, lens: 'sky' })).toBe('#m=1,2,3');
+	});
+
+	it('decodes + validates the lens against the exact union', () => {
+		expect(decodeHash('#lens=links').lens).toBe('links');
+		expect(decodeHash('#lens=weather').lens).toBeUndefined();
+		expect(decodeHash('#lens=Sky').lens).toBeUndefined(); // case-sensitive
+	});
+
+	it('round-trips a non-default lens alongside view/basemap', () => {
+		const out = decodeHash('#m=42.44,-76.5,9&b=satellite&lens=air');
+		expect(out.lens).toBe('air');
+		expect(out.basemap).toBe('satellite');
+		expect(out.view).toEqual({ lat: 42.44, lon: -76.5, zoom: 9 });
+		expect(decodeHash(encodeHash(out)).lens).toBe('air');
+	});
+});

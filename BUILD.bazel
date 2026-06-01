@@ -343,13 +343,14 @@ test_suite(
 # =============================================================================
 # root_lib_test — top-level src/lib unit-test slice
 #
-# The `src/lib` top-level modules (basemaps, layers, url-hash, viewportGrid,
-# atmospheric-capabilities) live in the ROOT Bazel package (no nearer
-# BUILD.bazel), so their *.test.ts slices are enrolled here rather than via a
-# nested package. Every dep is an intra-root same-package file, referenced by
-# plain label; all are self-contained (no cross-package `$lib`, no DOM/maplibre
-# at module load). atmospheric-capabilities.ts's only intra-root import
-# (`./layers`) is `import type` (erased).
+# The `src/lib` top-level modules (basemaps, layers, lens, url-hash,
+# viewportGrid, atmospheric-capabilities) live in the ROOT Bazel package (no
+# nearer BUILD.bazel), so their *.test.ts slices are enrolled here rather than
+# via a nested package. Every dep is an intra-root same-package file, referenced
+# by plain label; all are self-contained (no cross-package `$lib`, no DOM/
+# maplibre at module load). atmospheric-capabilities.ts's only intra-root import
+# (`./layers`) is `import type` (erased); url-hash.ts imports `./lens` (pure
+# type + guards — the rune store `lens.svelte.ts` is NOT in this slice).
 # =============================================================================
 vitest.vitest_test(
     name = "root_lib_test",
@@ -360,6 +361,8 @@ vitest.vitest_test(
         "src/lib/layers.invariants.test.ts",
         "src/lib/layers.test.ts",
         "src/lib/layers.ts",
+        "src/lib/lens.test.ts",
+        "src/lib/lens.ts",
         "src/lib/url-hash.test.ts",
         "src/lib/url-hash.ts",
         "src/lib/viewportGrid.test.ts",
@@ -376,6 +379,7 @@ vitest.vitest_test(
         "src/lib/atmospheric-capabilities.test.ts",
         "src/lib/layers.invariants.test.ts",
         "src/lib/layers.test.ts",
+        "src/lib/lens.test.ts",
         "src/lib/url-hash.test.ts",
         "src/lib/viewportGrid.test.ts",
     ],
