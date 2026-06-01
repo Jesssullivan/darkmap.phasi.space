@@ -39,6 +39,9 @@ importers:
       maplibre-gl:
         specifier: ^5.5.0
         version: 5.24.0
+      satellite.js:
+        specifier: ^7.0.1
+        version: 7.0.1
     devDependencies:
       '@playwright/test':
         specifier: ^1.60.0
@@ -2368,6 +2371,9 @@ packages:
 
   safe-buffer@5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
+
+  satellite.js@7.0.1:
+    resolution: {integrity: sha512-43hMdoom4miUvwX7FkroaHGq4JHIFQRNcUx570xD9KkZjsVssoWxHp8uk6KwDm+lmrW6GTuP2+G4PwvtHfr62A==}
 
   semver@7.7.4:
     resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
@@ -5016,6 +5022,8 @@ snapshots:
       mri: 1.2.0
 
   safe-buffer@5.2.1: {}
+
+  satellite.js@7.0.1: {}
 
   semver@7.7.4: {}
 
