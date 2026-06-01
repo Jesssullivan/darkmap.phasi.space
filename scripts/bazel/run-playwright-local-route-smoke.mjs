@@ -150,6 +150,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'smog':
 			await runSmogSmoke(page);
 			return;
+		case 'aq-dashboard':
+			await runAqDashboardSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -936,6 +939,38 @@ async function runSmogSmoke(page) {
 	console.log(`darkmap smog smoke: Air lens nudged Smog (PM2.5) on; OpenAQ fetched (bbox=${bbox})`);
 }
 
+async function runAqDashboardSmoke(page) {
+	// TIN-1815: the /aq dashboard populates from the mocked OpenAQ stations +
+	// history. Navigate straight to the dashboard with a point in the hash (NYC,
+	// where the canned stations sit) — `m=lat,lon,zoom` → applyHash → loadPoint.
+	// The proof cell has no WebGL AND no system fonts, so we assert the DASHBOARD
+	// behaviour + DOM presence/text — never visibility/bbox (text-only nodes
+	// collapse to zero size without fonts and read as "hidden"). The OpenAQ fetch
+	// fires, the AQI badge computes a number, the Area overview reports stations
+	// (not the empty state). Remove the data path ⇒ this fails.
+	const openaqRequest = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/atmospheric/openaq', {
+		timeout: 20_000,
+	});
+	await page.goto(`${baseURL}/aq#m=40.75,-73.95,9`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+	await openaqRequest; // the dashboard pulled stations for the seeded point
+
+	// AQI badge computes from the mocked stations (estimate → US-EPA AQI). Wait
+	// for it ATTACHED (not visible) — the font-less cell renders text nodes at
+	// zero size; the value is in textContent regardless.
+	const aqiNum = page.locator('.aqi-badge .aqi-num');
+	await aqiNum.waitFor({ state: 'attached', timeout: 20_000 });
+	const aqiText = ((await aqiNum.textContent()) ?? '').trim();
+	if (!/\d/.test(aqiText)) throw new Error(`aq-dashboard: AQI badge empty/non-numeric: "${aqiText}"`);
+
+	// Area overview must report stations, not the no-stations empty state.
+	const emptyState = await page.evaluate(() => /No OpenAQ stations in this area/.test(document.body.textContent ?? ''));
+	if (emptyState) {
+		throw new Error('aq-dashboard: Area overview shows the no-stations empty state despite mocked stations');
+	}
+
+	console.log(`darkmap aq-dashboard smoke: /aq populated — AQI=${aqiText}, stations present (no empty state)`);
+}
+
 async function installNetworkGuards(page, baseURL) {
 	const localOrigin = new URL(baseURL).origin;
 	await page.route('**/*', async (route) => {
@@ -1032,12 +1067,36 @@ async function installNetworkGuards(page, baseURL) {
 				return;
 			}
 			if (url.pathname === '/api/atmospheric/openaq-history') {
-				// No specific station resolved in the proof cell — the degraded
-				// contract (series:null) is the readout sparkline's graceful path.
+				// The /aq dashboard smoke needs a populated History card; every other
+				// scenario exercises the graceful degraded path (series:null).
+				const series =
+					SMOKE_SCENARIO === 'aq-dashboard'
+						? {
+								parameter: 'pm25',
+								units: 'µg/m³',
+								points: [
+									{ at: '2026-05-31T20:00:00Z', value: 3.1 },
+									{ at: '2026-05-31T22:00:00Z', value: 3.4 },
+									{ at: '2026-06-01T00:00:00Z', value: 2.9 },
+									{ at: '2026-06-01T02:00:00Z', value: 3.6 },
+								],
+								sampleCount: 4,
+								mean: 3.25,
+								min: 2.9,
+								max: 3.6,
+								windowFrom: '2026-05-31T18:00:00Z',
+								windowTo: '2026-06-01T02:00:00Z',
+								latestAt: '2026-06-01T02:00:00Z',
+								latestValue: 3.6,
+								trend: 'rising',
+								trendDelta: 0.3,
+								stale: false,
+							}
+						: null;
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify({ series: null, degraded: true }),
+					body: JSON.stringify({ series, degraded: series === null }),
 				});
 				return;
 			}
