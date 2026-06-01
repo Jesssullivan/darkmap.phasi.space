@@ -20,6 +20,7 @@
 	import { findHitranBand, HITRAN_BANDS } from '$lib/spectral/hitran-bands';
 	import { bandGuidance } from '$lib/spectral/band-guidance';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import LinkBudgetPanel from '$lib/components/LinkBudgetPanel.svelte';
 	import LookAngleControl from '$lib/components/LookAngleControl.svelte';
 	import type { LookTarget } from '$lib/transmission/look-angle';
 	import type { HorizonPolygon } from '$lib/ephemeris/horizonAtAzimuth';
@@ -535,6 +536,8 @@
 				{/each}
 			</div>
 		{/if}
+
+		<LinkBudgetPanel {curve} rangeKm={beamRangeKm} />
 
 		<p class="disclaimer">
 			Engineering estimate (V0 analytical bake — Rayleigh + Ångström + H₂O bands + O₃). PR-G2 will swap in SMARTS +

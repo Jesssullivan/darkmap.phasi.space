@@ -34,6 +34,33 @@ export function atmosphericLossDb(transmittance: number): number {
 	return -10 * Math.log10(t);
 }
 
+/**
+ * Linear-interpolate the slant transmittance at the operating wavelength (nm)
+ * from a T(λ) curve (wavelengths in µm, sorted ascending). Clamps to the curve
+ * ends rather than returning null — the FSO operating wavelength is always
+ * inside our 0.3–30 µm grid. Returns 1 (loss-free) for an empty curve.
+ */
+export function sampleTransmittance(
+	wavelengthsUm: readonly number[],
+	transmission: readonly number[],
+	targetNm: number,
+): number {
+	const w = wavelengthsUm;
+	const t = transmission;
+	if (w.length === 0) return 1;
+	const um = targetNm / 1000;
+	if (um <= w[0]) return clamp(t[0], 0, 1);
+	if (um >= w[w.length - 1]) return clamp(t[t.length - 1], 0, 1);
+	for (let i = 1; i < w.length; i++) {
+		if (um <= w[i]) {
+			const span = w[i] - w[i - 1];
+			const f = span === 0 ? 0 : (um - w[i - 1]) / span;
+			return clamp(t[i - 1] + f * (t[i] - t[i - 1]), 0, 1);
+		}
+	}
+	return clamp(t[t.length - 1], 0, 1);
+}
+
 // ───────────────────────────── geometric ────────────────────────────────
 
 export interface GeometricLossInput {
