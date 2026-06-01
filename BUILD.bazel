@@ -396,6 +396,28 @@ js_test(
     visibility = ["//visibility:public"],
 )
 
+js_test(
+    name = "playwright_orbit_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-orbit-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-orbit-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "orbit-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # playwright_browser_rbe_smoke_suite — one GF-dispatchable browser proof surface
 #
@@ -428,6 +450,7 @@ test_suite(
         ":playwright_toolbar_labels_smoke",
         ":playwright_lens_reweight_smoke",
         ":playwright_link_budget_smoke",
+        ":playwright_orbit_smoke",
     ],
     visibility = ["//visibility:public"],
 )

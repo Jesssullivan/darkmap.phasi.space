@@ -83,6 +83,7 @@
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import LensSwitcher from '$lib/components/LensSwitcher.svelte';
+	import PassPlanPanel from '$lib/components/PassPlanPanel.svelte';
 	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
@@ -223,6 +224,7 @@
 	// zenith. AOD pixel sampling lands in a follow-up; PR-H uses a sensible
 	// default (0.15) and shows it in the readout so users know it's not measured.
 	let transmissionOpen = $state(false);
+	let passPlanOpen = $state(false);
 	let transmissionCurve = $state<TransmissionCurve | undefined>(undefined);
 	let transmissionLoading = $state(false);
 	let transmissionError = $state<string | undefined>(undefined);
@@ -370,9 +372,19 @@
 	// that point. (The old independent LayerRail CTA / per-row (i) entry points
 	// were removed; the tool is meaningless without a selected point.)
 	function openTransmissionForPoint(): void {
+		passPlanOpen = false;
 		transmissionOpen = true;
 		void loadTransmissionPin();
 		void refreshTransmission();
+	}
+
+	// Orbit deep tool: SGP4 passes gated by the local DEM horizon for this pin.
+	function openPassPlanForPoint(): void {
+		transmissionOpen = false;
+		passPlanOpen = true;
+	}
+	function closePassPlan(): void {
+		passPlanOpen = false;
 	}
 
 	// Hand off to the dedicated AQ-analysis dashboard (/aq, V6-4), seeded from the
@@ -1855,6 +1867,7 @@
 	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
 	data-readout={readout ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
+	data-passplan={passPlanOpen ? 'open' : 'closed'}
 >
 	{#if transmissionOpen}
 		<TransmissionSheet
@@ -1899,6 +1912,10 @@
 			{onBeamRangeChange}
 			pathAod={beamPathAod}
 		/>
+	{/if}
+
+	{#if passPlanOpen && readout}
+		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
 	{/if}
 
 	{#if ephemerisOpen}
@@ -1988,6 +2005,7 @@
 			onclose={closeReadout}
 			onTransmissionForPoint={openTransmissionForPoint}
 			onAqDashboardForPoint={openAqDashboardForPoint}
+			onPlanPassForPoint={openPassPlanForPoint}
 		/>
 	{/if}
 
@@ -2038,6 +2056,7 @@
 	.field-hud :global(.gantt),
 	.field-hud :global(.readout[role='dialog']),
 	.field-hud :global(.sheet),
+	.field-hud :global(.pass-plan),
 	.field-hud :global(.sky),
 	.field-hud :global(.toolbar),
 	.field-hud .attribution {
@@ -2078,7 +2097,8 @@
 	   bottom-docked detail sheet) instead of unmounting it (§11.5 overview+detail,
 	   never occlude). The ≤820px rules below override with a compact placement;
 	   this is the desktop default. */
-	.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
+	.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
+	.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
 		top: calc(1rem + env(safe-area-inset-top, 0px));
 		right: 1rem;
 		bottom: auto;
@@ -2099,13 +2119,15 @@
 				100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 5rem
 			) !important;
 		}
-		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
+		.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
+		.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
 			top: calc(4.75rem + env(safe-area-inset-top, 0px)) !important;
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 			bottom: auto !important;
 			max-height: min(24dvh, 10rem) !important;
 		}
-		.field-hud[data-transmission='open'] :global(.toolbar) {
+		.field-hud[data-transmission='open'] :global(.toolbar),
+		.field-hud[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 			bottom: auto !important;
 		}
@@ -2117,7 +2139,8 @@
 			box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.42);
 		}
 		.field-hud[data-readout='open'] .attribution,
-		.field-hud[data-transmission='open'] .attribution {
+		.field-hud[data-transmission='open'] .attribution,
+		.field-hud[data-passplan='open'] .attribution {
 			display: none;
 		}
 		.attribution {
@@ -2133,10 +2156,12 @@
 		/* Cramped short/landscape: switcher (top-left) + the right-half sheet leave
 		   no clean spot for the overview, so it yields until the tool closes — a
 		   deliberate space concession (the readout returns on close), not gating. */
-		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
+		.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
+		.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
-		.field-hud[data-transmission='open'] :global(.toolbar) {
+		.field-hud[data-transmission='open'] :global(.toolbar),
+		.field-hud[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
 		.field-hud[data-transmission='open'] :global(.sheet) {

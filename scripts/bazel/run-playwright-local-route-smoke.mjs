@@ -144,6 +144,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'link-budget':
 			await runLinkBudgetSmoke(page);
 			return;
+		case 'orbit':
+			await runOrbitSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -670,6 +673,61 @@ async function runLinkBudgetSmoke(page) {
 	);
 }
 
+async function runOrbitSmoke(page) {
+	await runMapCanvasSmoke(page);
+	// Orbit lens (key 4) promotes the "Plan a pass" CTA in the readout.
+	await page.keyboard.press('4');
+	await page.waitForFunction(
+		() => document.querySelector('.lens-switcher .chip[aria-pressed="true"]')?.getAttribute('aria-label') === 'Orbit',
+		null,
+		{ timeout: 10_000 },
+	);
+	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	await page
+		.locator(MAP_CANVAS_SELECTOR)
+		.first()
+		.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ timeout: 20_000 });
+	// Wait for the readout to populate (the CTA is gated on loaded data).
+	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
+
+	const cta = readout.getByRole('button', { name: /plan a satellite pass/i });
+	await cta.waitFor({ timeout: 20_000 });
+	await cta.click();
+
+	const panel = page.getByRole('dialog', { name: /plan a pass/i });
+	await panel.waitFor({ state: 'visible', timeout: 20_000 });
+	// Resolve out of the loading state (a pass list or an honest no-pass message).
+	await page.waitForFunction(
+		() => {
+			const p = document.querySelector('.pass-plan');
+			if (!p) return false;
+			if (p.querySelector('.pp-pass')) return true;
+			const msg = p.querySelector('.pp-msg')?.textContent ?? '';
+			return msg.length > 0 && !/propagating/i.test(msg);
+		},
+		null,
+		{ timeout: 25_000 },
+	);
+
+	const info = await page.evaluate(() => {
+		const p = document.querySelector('.pass-plan');
+		return {
+			honesty: (p?.querySelector('.pp-honesty')?.textContent ?? '').trim(),
+			passes: p?.querySelectorAll('.pp-pass').length ?? 0,
+			hasDome: !!p?.querySelector('.pp-dome'),
+			closeEnabled: !!p?.querySelector('.pp-close') && !p.querySelector('.pp-close').disabled,
+		};
+	});
+	if (!/sgp4/i.test(info.honesty)) throw new Error(`orbit: missing SGP4/predicted honesty footer: "${info.honesty}"`);
+	if (!info.closeEnabled) throw new Error('orbit: pass planner close button missing/disabled');
+
+	console.log(
+		`darkmap orbit smoke: Plan-a-pass resolved — ${info.passes} pass(es), dome=${info.hasDome}, honesty="${info.honesty}"`,
+	);
+}
+
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 	const results = await page.evaluate((inputPairs) => {
 		const boxFor = (selector) => {
@@ -904,6 +962,29 @@ async function installNetworkGuards(page, baseURL) {
 					status: 200,
 					contentType: 'image/png',
 					body: TRANSPARENT_PNG,
+				});
+				return;
+			}
+			if (url.pathname === '/api/orbit/tle') {
+				// Canned ISS elements so the pass planner never needs to reach
+				// Celestrak from the sandbox (no external network in the cell).
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						source: 'celestrak',
+						degraded: false,
+						fetchedAt: '2026-06-01T00:00:00.000Z',
+						sets: [
+							{
+								name: 'ISS (ZARYA)',
+								line1: '1 25544U 98067A   20060.85138889  .00000737  00000-0  21434-4 0  9996',
+								line2: '2 25544  51.6432  21.4250 0005140  30.2069  84.7649 15.49180547215146',
+								epochIso: '2020-02-29T20:26:00.000Z',
+								epochAgeDays: 1.2,
+							},
+						],
+					}),
 				});
 				return;
 			}

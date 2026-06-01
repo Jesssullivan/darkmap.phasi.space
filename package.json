@@ -41,7 +41,7 @@
 		"astronomy-engine": "^2.1.19",
 		"effect": "^3.21.2",
 		"maplibre-gl": "^5.5.0",
-		"satellite.js": "^7.0.1"
+		"satellite.js": "^5.0.0"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.60.0",

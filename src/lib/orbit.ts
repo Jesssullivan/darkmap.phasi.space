@@ -123,7 +123,8 @@ export interface LookSample {
 /** Geometric look angle (az/el/range) of the satellite from the observer at `date`, or null on SGP4 error / no fix. */
 export function lookAngleAt(satrec: SatRec, observer: Observer, date: Date): LookSample | null {
 	const pv = propagate(satrec, date);
-	if (!pv || !pv.position) return null;
+	// satellite.js returns position/velocity as `false` on an SGP4 error.
+	if (!pv || typeof pv.position === 'boolean') return null;
 	const gmst = gstime(date);
 	const ecf = eciToEcf(pv.position, gmst);
 	const observerGd = {
@@ -138,7 +139,7 @@ export function lookAngleAt(satrec: SatRec, observer: Observer, date: Date): Loo
 /** Doppler shift (Hz) at `date` for a carrier `carrierHz`; +ve when the satellite is approaching. Null on SGP4 error. */
 export function dopplerShiftHz(satrec: SatRec, observer: Observer, date: Date, carrierHz: number): number | null {
 	const pv = propagate(satrec, date);
-	if (!pv || !pv.position || !pv.velocity) return null;
+	if (!pv || typeof pv.position === 'boolean' || typeof pv.velocity === 'boolean') return null;
 	const gmst = gstime(date);
 	const posEcf = eciToEcf(pv.position, gmst);
 	const velEcf = eciToEcf(pv.velocity, gmst);
