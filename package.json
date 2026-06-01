@@ -40,7 +40,8 @@
 		"@tummycrypt/tinyvectors": "0.3.0",
 		"astronomy-engine": "^2.1.19",
 		"effect": "^3.21.2",
-		"maplibre-gl": "^5.5.0"
+		"maplibre-gl": "^5.5.0",
+		"satellite.js": "^7.0.1"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.60.0",
