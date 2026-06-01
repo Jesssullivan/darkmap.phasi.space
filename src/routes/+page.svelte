@@ -82,6 +82,7 @@
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
+	import LensSwitcher from '$lib/components/LensSwitcher.svelte';
 	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
@@ -1803,6 +1804,14 @@
 {/if}
 
 <MapErrorToast errors={toastErrors} onDismiss={dismissToast} />
+
+<LensSwitcher
+	active={lensStore.lens}
+	onselect={(lens) => {
+		lensStore.set(lens);
+		scheduleHashWrite();
+	}}
+/>
 
 <GeocoderSearch
 	bias={viewCenter}
