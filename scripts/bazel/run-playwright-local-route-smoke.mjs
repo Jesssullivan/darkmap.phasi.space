@@ -696,13 +696,13 @@ async function runOrbitSmoke(page) {
 	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
 
 	const cta = readout.getByRole('button', { name: /plan a satellite pass/i });
-	// The font-less proof cell renders text-only controls at zero size, so the CTA
-	// can resolve "attached" yet never satisfy click actionability (visible/stable)
-	// — wait for it attached, then dispatch the click straight to the button's
-	// handler instead of a coordinate click. (Font-independent per the cell's
-	// no-system-fonts constraint.)
+	// On the slow swiftshader proof cell the readout reflows while data settles, so
+	// the CTA stays "unstable" and a normal click waits out its 30 s actionability
+	// budget. force:true issues a real click (which DOES fire Svelte's delegated
+	// handler on the cell, unlike a synthetic dispatchEvent) while skipping only the
+	// visible/stable wait. The button itself is non-zero, so the click lands.
 	await cta.waitFor({ state: 'attached', timeout: 20_000 });
-	await cta.dispatchEvent('click');
+	await cta.click({ force: true });
 
 	const panel = page.getByRole('dialog', { name: /plan a pass/i });
 	await panel.waitFor({ state: 'attached', timeout: 20_000 });
