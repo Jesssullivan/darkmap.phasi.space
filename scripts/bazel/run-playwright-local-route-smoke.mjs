@@ -696,13 +696,16 @@ async function runOrbitSmoke(page) {
 	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
 
 	const cta = readout.getByRole('button', { name: /plan a satellite pass/i });
-	// On the slow swiftshader proof cell the readout reflows while data settles, so
-	// the CTA stays "unstable" and a normal click waits out its 30 s actionability
-	// budget. force:true issues a real click (which DOES fire Svelte's delegated
-	// handler on the cell, unlike a synthetic dispatchEvent) while skipping only the
-	// visible/stable wait. The button itself is non-zero, so the click lands.
 	await cta.waitFor({ state: 'attached', timeout: 20_000 });
-	await cta.click({ force: true });
+	// On the slow swiftshader cell the readout reflows as data streams in, so the
+	// CTA never settles for a Playwright click (force or not — it can't pin a
+	// moving target). Fire the handler in-page with a native click on the current
+	// node: synchronous, immune to reflow/stale-handle, and Svelte's delegated
+	// onclick still triggers (a coordinate dispatch did not on the cell).
+	await page.evaluate(() => {
+		const btn = document.querySelector('.pass-plan-link');
+		if (btn instanceof HTMLElement) btn.click();
+	});
 
 	const panel = page.getByRole('dialog', { name: /plan a pass/i });
 	await panel.waitFor({ state: 'attached', timeout: 20_000 });
