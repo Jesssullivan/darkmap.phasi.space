@@ -12,20 +12,13 @@
  * interpolation (with a type-only HorizonPolygon import) so this stays a
  * self-contained root_lib_test slice — no cross-package value dependency.
  */
-import {
-	dopplerFactor,
-	ecfToLookAngles,
-	eciToEcf,
-	geodeticToEcf,
-	gstime,
-	propagate,
-	twoline2satrec,
-} from 'satellite.js';
+import { ecfToLookAngles, eciToEcf, gstime, propagate, twoline2satrec } from 'satellite.js';
 import type { SatRec } from 'satellite.js';
 import type { HorizonPolygon } from '$lib/ephemeris/horizonAtAzimuth';
 
 const DEG = 180 / Math.PI;
 const RAD = Math.PI / 180;
+const C_KM_S = 299_792.458;
 const MS_PER_DAY = 86_400_000;
 
 /**
@@ -136,22 +129,18 @@ export function lookAngleAt(satrec: SatRec, observer: Observer, date: Date): Loo
 	return { azDeg: (((la.azimuth * DEG) % 360) + 360) % 360, elDeg: la.elevation * DEG, rangeKm: la.rangeSat };
 }
 
-/** Doppler shift (Hz) at `date` for a carrier `carrierHz`; +ve when the satellite is approaching. Null on SGP4 error. */
+/**
+ * Doppler shift (Hz) at `date` for a carrier `carrierHz`. Computed from the
+ * SIGNED slant-range rate by 1 s finite difference (robust + frame-independent):
+ * an approaching satellite (range shrinking) shifts the carrier UP (+Hz), a
+ * receding one DOWN (−Hz), and it crosses ~0 at culmination. Null on SGP4 error.
+ */
 export function dopplerShiftHz(satrec: SatRec, observer: Observer, date: Date, carrierHz: number): number | null {
-	const pv = propagate(satrec, date);
-	if (!pv || typeof pv.position === 'boolean' || typeof pv.velocity === 'boolean') return null;
-	const gmst = gstime(date);
-	const posEcf = eciToEcf(pv.position, gmst);
-	const velEcf = eciToEcf(pv.velocity, gmst);
-	const observerGd = {
-		longitude: observer.longitudeDeg * RAD,
-		latitude: observer.latitudeDeg * RAD,
-		height: observer.heightKm ?? 0,
-	};
-	const observerEcf = geodeticToEcf(observerGd);
-	const factor = dopplerFactor(observerEcf, posEcf, velEcf);
-	// factor = f_observed / f_source; +ve shift ⇒ approaching (factor > 1).
-	return (factor - 1) * carrierHz;
+	const r0 = lookAngleAt(satrec, observer, date);
+	const r1 = lookAngleAt(satrec, observer, new Date(date.getTime() + 1000));
+	if (!r0 || !r1) return null;
+	const rangeRateKmS = r1.rangeKm - r0.rangeKm; // +ve = receding
+	return (-rangeRateKmS / C_KM_S) * carrierHz;
 }
 
 export interface PassSample {
