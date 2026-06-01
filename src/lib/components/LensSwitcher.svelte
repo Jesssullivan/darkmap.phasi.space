@@ -112,7 +112,9 @@
 	}
 	@media (pointer: coarse) {
 		.chip {
+			/* ~44x44 minimum touch target (incl. the icon-only mobile chips). */
 			min-height: 2.75rem;
+			min-width: 2.75rem;
 		}
 	}
 	/* ≤820px: compact icon-only segmented row, centred under the geocoder pill. */
@@ -122,7 +124,7 @@
 			right: auto;
 			transform: translateX(-50%);
 			top: max(3.75rem, calc(env(safe-area-inset-top) + 2.75rem));
-			gap: 0.3rem;
+			gap: 0.4rem;
 		}
 		.chip {
 			padding: 0.4rem 0.55rem;

@@ -102,7 +102,7 @@
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 	import { lensStore } from '$lib/lens.svelte';
-	import { LENSES, type Lens } from '$lib/lens';
+	import { LENSES, LENS_ANNOUNCE, type Lens } from '$lib/lens';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
@@ -1830,6 +1830,8 @@
 		scheduleHashWrite();
 	}}
 />
+<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
+<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
 
 <GeocoderSearch
 	bias={viewCenter}
