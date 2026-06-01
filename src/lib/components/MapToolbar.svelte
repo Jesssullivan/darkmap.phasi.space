@@ -16,7 +16,15 @@
 
 	interface Item {
 		readonly id: string;
-		readonly label: string; // for screen readers
+		/** Full descriptive name — the accessible name (aria-label) + tooltip. */
+		readonly label: string;
+		/**
+		 * Short visible label rendered beside the icon (e.g. "Twilight").
+		 * Distinct from `label` so the tool glyphs are readable without a
+		 * hover tooltip (the icon-only a11y gap, §11.4) while keeping the
+		 * pills compact. `aria-label` stays the full `label`.
+		 */
+		readonly shortLabel: string;
 		readonly icon: Component;
 		readonly title: string;
 		readonly pressed: boolean;
@@ -42,6 +50,7 @@
 			onclick={it.onclick}
 		>
 			<Icon size={18} aria-hidden="true" />
+			<span class="tool-label">{it.shortLabel}</span>
 		</button>
 	{/each}
 </aside>
@@ -63,16 +72,24 @@
 		color: #e9ecf3;
 		border: 1px solid rgba(255, 255, 255, 0.18);
 		border-radius: 999px;
-		padding: 0.4rem 0.7rem;
+		padding: 0.4rem 0.85rem;
 		font: inherit;
 		font-size: 0.85rem;
+		line-height: 1;
 		cursor: pointer;
 		backdrop-filter: blur(6px);
 		min-width: 2.5rem;
 		min-height: 2.5rem;
+		/* Icon + label row; the column stretches every pill to the widest so
+		   the labels left-align into a tidy strip. */
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-start;
+		gap: 0.45rem;
+		white-space: nowrap;
+	}
+	.tool-label {
+		font-size: 0.8rem;
 	}
 	.tool:hover {
 		border-color: rgba(var(--accent-amber-rgb), 0.65);
@@ -90,7 +107,20 @@
 		.tool {
 			min-width: 3rem;
 			min-height: 3rem;
+		}
+	}
+	/* ≤820px: compact icon-only (today's footprint) so the bottom-right strip
+	   never widens into the gantt / readout (--map-toolbar-inset-rem stays 5rem
+	   here). aria-label + title keep every tool named without a hover tooltip
+	   on touch; the visible labels return on the wider desktop pointer. */
+	@media (max-width: 820px) {
+		.tool {
+			justify-content: center;
+			gap: 0;
 			padding: 0.45rem 0.75rem;
+		}
+		.tool-label {
+			display: none;
 		}
 	}
 </style>
