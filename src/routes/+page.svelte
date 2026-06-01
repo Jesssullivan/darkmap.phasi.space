@@ -102,7 +102,7 @@
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 	import { lensStore } from '$lib/lens.svelte';
-	import { LENSES } from '$lib/lens';
+	import { LENSES, type Lens } from '$lib/lens';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
@@ -130,6 +130,9 @@
 		return parsed.basemap && BASEMAPS.some((b) => b.id === parsed.basemap) ? parsed.basemap : DEFAULT_BASEMAP_ID;
 	};
 	let activeBasemap = $state(initialBasemap());
+	// An explicit basemap — a shared `&b=` link or a user chip click — always
+	// wins over the per-lens nudge below (PR5). A `&b=` on load counts as explicit.
+	let userChoseBasemap = $state(browser ? !!decodeHash(window.location.hash).basemap : false);
 
 	const initialTime = (): Date => {
 		if (browser) {
@@ -1563,6 +1566,8 @@
 
 	function onBasemapChange(id: string): void {
 		if (id === activeBasemap || !BASEMAPS.some((b) => b.id === id)) return;
+		// An explicit chip click pins the basemap — the lens nudge won't override it.
+		userChoseBasemap = true;
 		// Dispose health observability for the basemap we're leaving so the
 		// LayerRail pill drops back to idle for the inactive entry.
 		layerHealth.dispatch(activeBasemap, { type: 'unmount' });
@@ -1570,6 +1575,19 @@
 		if (mapInstance) applyBasemapLive(mapInstance, id);
 		scheduleHashWrite();
 	}
+
+	// Per-lens basemap nudge (PR5): a SUBTLE default only — Sky/Links/Orbit read
+	// best on Dark; Air leaves the basemap untouched (null). Never fires when the
+	// user pinned a basemap (chip or `&b=`), and never animates the viewport.
+	const lensBasemapDefault = (l: Lens): string | null => (l === 'air' ? null : DEFAULT_BASEMAP_ID);
+	$effect(() => {
+		const want = lensBasemapDefault(lensStore.lens);
+		if (want === null || userChoseBasemap || want === activeBasemap) return;
+		layerHealth.dispatch(activeBasemap, { type: 'unmount' });
+		activeBasemap = want;
+		if (mapInstance) applyBasemapLive(mapInstance, want);
+		scheduleHashWrite();
+	});
 
 	onMount(async () => {
 		// Resolve the active lens before the map mounts: hash (shareable) wins,

@@ -529,6 +529,16 @@ async function runLensReweightSmoke(page) {
 
 	// Air → night-lights dim (Tier-3); no Bortle headline.
 	await setLens('2', 'air');
+	// The dim cross-fades (PR5 diff animation) — wait for it to settle before
+	// reading the computed opacity, otherwise we sample mid-transition (~1).
+	await page.waitForFunction(
+		() => {
+			const v = document.querySelector('.readout[data-lens] > [data-section="viirs"]');
+			return v ? Number(getComputedStyle(v).opacity) < 0.9 : false;
+		},
+		null,
+		{ timeout: 5_000 },
+	);
 	s = await snap();
 	expect(!s.hasBortleLead, 'Air must NOT show the Bortle lead');
 	expect(tierOf(s, 'viirs') === '3', `Air viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
@@ -550,7 +560,37 @@ async function runLensReweightSmoke(page) {
 	expect(tierOf(s, 'ephemeris') === '1', `Orbit ephemeris should be Tier-1, got ${tierOf(s, 'ephemeris')}`);
 	assertNeverGated(s, 'orbit');
 
-	console.log('darkmap lens-reweight smoke: Bortle lead (Sky), section tiers + order per lens, never-gated');
+	// PR5: the tier change cross-fades (opacity transition wired) — layout/order
+	// is instant, the map is never animated. Font-independent (duration only).
+	const transitionDuration = await page.evaluate(() => {
+		const sec = document.querySelector('.readout[data-lens] > [data-section]');
+		return sec ? getComputedStyle(sec).transitionDuration : '0s';
+	});
+	expect(
+		transitionDuration !== '0s' && transitionDuration !== '',
+		`expected a lens-diff opacity transition, got "${transitionDuration}"`,
+	);
+
+	// PR5: an explicit &b= must survive the Dark-preferring per-lens nudge.
+	// lens=links is Dark-preferring (would nudge to Dark if the basemap were
+	// unpinned), so it exercises the nudge-skip; a hash-only goto won't reload
+	// (the module lens store would keep its value), so set the hash then reload.
+	await page.evaluate(() => {
+		window.location.hash = '#m=42.44,-76.5,9&b=satellite&lens=links';
+	});
+	await page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 });
+	await runMapCanvasSmoke(page);
+	await page.waitForFunction(
+		() => document.querySelector('.lens-switcher .chip[aria-pressed="true"]')?.getAttribute('aria-label') === 'Links',
+		null,
+		{ timeout: 20_000 },
+	);
+	const explicitHash = await page.evaluate(() => window.location.hash);
+	expect(explicitHash.includes('b=satellite'), `explicit &b= was stripped by the lens nudge: ${explicitHash}`);
+
+	console.log(
+		'darkmap lens-reweight smoke: Bortle lead (Sky), per-lens tiers + order, diff cross-fade, explicit &b= wins, never-gated',
+	);
 }
 
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {
