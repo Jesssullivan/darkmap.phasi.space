@@ -352,6 +352,28 @@ js_test(
     visibility = ["//visibility:public"],
 )
 
+js_test(
+    name = "playwright_lens_reweight_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-lens-reweight-smoke.mjs",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-lens-reweight-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "lens-reweight-smoke",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # playwright_browser_rbe_smoke_suite — one GF-dispatchable browser proof surface
 #
@@ -382,6 +404,7 @@ test_suite(
         ":playwright_mobile_hud_matrix_smoke",
         ":playwright_lens_smoke",
         ":playwright_toolbar_labels_smoke",
+        ":playwright_lens_reweight_smoke",
     ],
     visibility = ["//visibility:public"],
 )
@@ -409,6 +432,8 @@ vitest.vitest_test(
         "src/lib/layers.ts",
         "src/lib/lens.test.ts",
         "src/lib/lens.ts",
+        "src/lib/skyBrightness.test.ts",
+        "src/lib/skyBrightness.ts",
         "src/lib/url-hash.test.ts",
         "src/lib/url-hash.ts",
         "src/lib/viewportGrid.test.ts",
@@ -426,6 +451,7 @@ vitest.vitest_test(
         "src/lib/layers.invariants.test.ts",
         "src/lib/layers.test.ts",
         "src/lib/lens.test.ts",
+        "src/lib/skyBrightness.test.ts",
         "src/lib/url-hash.test.ts",
         "src/lib/viewportGrid.test.ts",
     ],

@@ -2,6 +2,8 @@
 	import { tick } from 'svelte';
 	import { X } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
+	import { DEFAULT_LENS, type Lens } from '$lib/lens';
+	import { bortleFromArtificialMcd } from '$lib/skyBrightness';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 	import {
 		formatNearestKm,
@@ -67,6 +69,8 @@
 		/** V6-2 — true while the history fetch is in flight (shows a quiet placeholder). */
 		historyLoading?: boolean;
 		onclose: () => void;
+		/** Active persona lens (S1 PR4) — re-weights which sections lead/dim + the primary CTA. */
+		lens?: Lens;
 		/**
 		 * Open the spectral-transmission sheet seeded from THIS point + time.
 		 * The transmission tool is point-anchored (V3): the boresight geometry,
@@ -96,6 +100,7 @@
 		history = null,
 		historyLoading = false,
 		onclose,
+		lens = DEFAULT_LENS,
 		onTransmissionForPoint,
 		onAqDashboardForPoint,
 	}: Props = $props();
@@ -236,6 +241,51 @@
 		return 'Inner city';
 	});
 
+	// Sky-lens lead: Bortle class + SQM from the Falchi artificial brightness
+	// (modeled; provenance disclosed in the headline's HelpTooltip).
+	const bortle = $derived.by(() => {
+		const g = data?.worldAtlas?.grayIndex;
+		return g === undefined ? undefined : bortleFromArtificialMcd(g);
+	});
+
+	// Lens re-weighting (S1 PR4): which sections lead (float up + Tier-1), which
+	// dim (Tier-3, still present + clickable — never gated). Everything else is
+	// Tier-2. Section ids match the `data-section` attrs in the template.
+	type SectionId =
+		| 'bortle'
+		| 'viirs'
+		| 'worldAtlas'
+		| 'atmosphere'
+		| 'aqi'
+		| 'pm25'
+		| 'pollutants'
+		| 'history'
+		| 'pollen'
+		| 'crossval'
+		| 'ephemeris';
+	const LENS_LEAD: Record<Lens, readonly SectionId[]> = {
+		sky: ['bortle', 'ephemeris'],
+		air: ['aqi', 'pm25'],
+		links: ['atmosphere'],
+		orbit: ['ephemeris'],
+	};
+	const LENS_DIM: Record<Lens, readonly SectionId[]> = {
+		sky: ['aqi', 'pm25', 'pollutants', 'history', 'crossval'],
+		air: ['bortle', 'viirs', 'worldAtlas', 'ephemeris'],
+		links: ['aqi', 'pm25', 'pollutants', 'history', 'crossval', 'bortle', 'viirs'],
+		orbit: ['aqi', 'pm25', 'pollutants', 'history', 'crossval'],
+	};
+	const tierOf = (id: SectionId): 1 | 2 | 3 => (LENS_LEAD[lens].includes(id) ? 1 : LENS_DIM[lens].includes(id) ? 3 : 2);
+	// Lead sections float to the top (negative order); dimmed sink below normal.
+	const orderOf = (id: SectionId): number => (LENS_LEAD[lens].includes(id) ? -1 : LENS_DIM[lens].includes(id) ? 1 : 0);
+
+	// The one prominent CTA per lens (Air → AQ dashboard, Links → transmission).
+	// Sky/Orbit lead with an in-readout section (Bortle / ephemeris), so neither
+	// CTA is promoted; both stay available, document order.
+	const primaryCta = $derived(lens === 'air' ? 'aq' : lens === 'links' ? 'transmission' : null);
+	const ctaTier = (id: 'transmission' | 'aq'): 1 | 2 | 3 => (primaryCta === null ? 2 : primaryCta === id ? 1 : 3);
+	const ctaOrder = (id: 'transmission' | 'aq'): number => (primaryCta === id ? 10 : id === 'transmission' ? 11 : 12);
+
 	// Lighthouse / horizon-aware ephemeris. Opens on click, fetches the
 	// 36-ray terrain polygon + refined twilight events for this pin. The
 	// helper memoises per (lat3, lon3, UTC-day) so re-opening the same
@@ -314,7 +364,7 @@
 	};
 </script>
 
-<div bind:this={readoutPanel} class="readout" role="dialog" aria-label="Point readout">
+<div bind:this={readoutPanel} class="readout" data-lens={lens} role="dialog" aria-label="Point readout">
 	<button class="close" type="button" aria-label="Close readout" onclick={onclose}>
 		<X size={16} aria-hidden="true" />
 	</button>
@@ -341,29 +391,47 @@
 			<span>{fmtCoord(lat)}°, {fmtCoord(lon)}°</span>
 		</p>
 	</header>
+	{#if lens === 'sky' && bortle}
+		<section class="bortle-lead" data-section="bortle" data-tier={tierOf('bortle')} style:order={orderOf('bortle')}>
+			<p class="bortle-class">
+				Bortle {bortle.cls}
+				<span class="bortle-label">{bortle.label}</span>
+			</p>
+			<p class="bortle-sqm">
+				SQM ≈ {bortle.sqm.toFixed(2)}<span class="unit"> mag/arcsec²</span>
+				<HelpTooltip
+					text={`Modeled, not measured: Falchi 2016 artificial zenith brightness (${data?.worldAtlas?.grayIndex.toFixed(2)} mcd/m², ${waClass} class) plus the natural dark-sky floor, mapped to SQM and the approximate Bortle scale. Cross-check it against the VIIRS measured pixel below.`}
+				>
+					{#snippet trigger()}
+						<span class="modeled-tag">modeled</span>
+					{/snippet}
+				</HelpTooltip>
+			</p>
+		</section>
+	{/if}
 	{#if loading}
 		<p class="loading">Querying upstream…</p>
 	{:else if error}
 		<p class="error">Error: {error}</p>
 	{:else if data}
 		{#if data.viirs}
-			<section>
+			<section data-section="viirs" data-tier={tierOf('viirs')} style:order={orderOf('viirs')}>
 				<h4>VIIRS pixel</h4>
 				<p class="value">{viirsAvg}<span class="unit">/255</span></p>
 				<p class="note">{data.viirs.layer} · RGB({data.viirs.red},{data.viirs.green},{data.viirs.blue})</p>
 			</section>
 		{/if}
 		{#if data.worldAtlas}
-			<section>
+			<section data-section="worldAtlas" data-tier={tierOf('worldAtlas')} style:order={orderOf('worldAtlas')}>
 				<h4>World Atlas radiance</h4>
 				<p class="value">{data.worldAtlas.grayIndex.toFixed(2)}<span class="unit"> mcd/m²</span></p>
-				{#if waClass}
+				{#if waClass && lens !== 'sky'}
 					<p class="note">Falchi 2016: <strong>{waClass}</strong></p>
 				{/if}
 			</section>
 		{/if}
 		{#if data.atmospheric}
-			<section>
+			<section data-section="atmosphere" data-tier={tierOf('atmosphere')} style:order={orderOf('atmosphere')}>
 				<h4>Atmosphere (Open-Meteo)</h4>
 				<dl class="atmos-grid">
 					<dt>PWV</dt>
@@ -394,7 +462,7 @@
 	{/if}
 
 	{#if aqi}
-		<section class="aqi">
+		<section class="aqi" data-section="aqi" data-tier={tierOf('aqi')} style:order={orderOf('aqi')}>
 			<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
 				<span class="aqi-value">{aqi.aqi}</span>
 				<span class="aqi-meta">
@@ -413,7 +481,7 @@
 	{/if}
 
 	{#if pm25 && pm25.valueUgm3 !== null}
-		<section>
+		<section data-section="pm25" data-tier={tierOf('pm25')} style:order={orderOf('pm25')}>
 			<h4>
 				PM2.5
 				<HelpTooltip
@@ -433,7 +501,7 @@
 	{/if}
 
 	{#if aqRows.some((r) => r.name !== 'pm25')}
-		<section>
+		<section data-section="pollutants" data-tier={tierOf('pollutants')} style:order={orderOf('pollutants')}>
 			<h4>
 				Other pollutants
 				<HelpTooltip
@@ -461,7 +529,7 @@
 	{/if}
 
 	{#if historyLoading || history}
-		<section class="history">
+		<section class="history" data-section="history" data-tier={tierOf('history')} style:order={orderOf('history')}>
 			<h4>
 				Station {history ? (HISTORY_LABELS[history.parameter] ?? history.parameter) : ''} history
 				<HelpTooltip
@@ -521,7 +589,7 @@
 	{/if}
 
 	{#if airQuality}
-		<section>
+		<section data-section="pollen" data-tier={tierOf('pollen')} style:order={orderOf('pollen')}>
 			<h4>
 				Pollen &amp; air quality
 				<HelpTooltip
@@ -571,7 +639,7 @@
 	{/if}
 
 	{#if crossValHasSignal}
-		<section class="crossval">
+		<section class="crossval" data-section="crossval" data-tier={tierOf('crossval')} style:order={orderOf('crossval')}>
 			<h4>
 				Source cross-check
 				<HelpTooltip
@@ -613,7 +681,12 @@
 		</section>
 	{/if}
 
-	<section class="ephemeris-section">
+	<section
+		class="ephemeris-section"
+		data-section="ephemeris"
+		data-tier={tierOf('ephemeris')}
+		style:order={orderOf('ephemeris')}
+	>
 		<button
 			class="ephemeris-header"
 			type="button"
@@ -673,6 +746,9 @@
 		<button
 			type="button"
 			class="transmission-link"
+			data-cta="transmission"
+			data-tier={ctaTier('transmission')}
+			style:order={ctaOrder('transmission')}
 			aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
 			onclick={onTransmissionForPoint}
 		>
@@ -688,6 +764,9 @@
 		<button
 			type="button"
 			class="transmission-link aq-dashboard-link"
+			data-cta="aq"
+			data-tier={ctaTier('aq')}
+			style:order={ctaOrder('aq')}
 			aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
 			onclick={onAqDashboardForPoint}
 		>
@@ -718,6 +797,47 @@
 		z-index: 11;
 		backdrop-filter: blur(8px);
 		animation: slide-up 0.18s ease-out;
+		/* Flex column so the active lens can float its lead section to the top
+		   and dim off-lens ones via `order` + `data-tier` (S1 PR4). */
+		display: flex;
+		flex-direction: column;
+	}
+	/* Header always leads; the lens only reorders the data sections below it. */
+	.readout > header {
+		order: -100;
+	}
+	/* Off-lens sections dim but stay fully interactive — re-weight, never gate.
+	   No aria-disabled / display:none / pointer-events:none anywhere. */
+	.readout > [data-tier='3'] {
+		opacity: var(--readout-tier3-opacity, 0.55);
+	}
+	.readout > [data-tier='1'] {
+		opacity: 1;
+	}
+	.bortle-lead {
+		margin-bottom: 0.5rem;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.bortle-class {
+		margin: 0;
+		font-size: 1.5rem;
+		font-weight: 700;
+		line-height: 1.05;
+		color: var(--accent-amber);
+	}
+	.bortle-label {
+		display: block;
+		margin-top: 0.1rem;
+		font-size: 0.78rem;
+		font-weight: 400;
+		opacity: 0.75;
+		color: #e9ecf3;
+	}
+	.bortle-sqm {
+		margin: 0.25rem 0 0;
+		font-size: 0.8rem;
+		opacity: 0.85;
 	}
 	@keyframes slide-up {
 		from {

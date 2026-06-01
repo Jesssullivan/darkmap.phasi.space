@@ -3,6 +3,7 @@
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
+	import { DEFAULT_LENS, type Lens } from '$lib/lens';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { healthLabel, healthTone } from '$lib/layers/health-state';
 	import { modelCardFor } from '$lib/atmospheric/model-cards';
@@ -26,12 +27,23 @@
 		 * point data, so scrubbing too far from now flags those rows.
 		 */
 		time?: Date;
+		/** Active persona lens (S1 PR4) — auto-expands + emphasizes its primary group. */
+		lens?: Lens;
 	}
 
-	let { layers, states, onchange, basemap, onbasemapchange, time }: Props = $props();
+	let { layers, states, onchange, basemap, onbasemapchange, time, lens = DEFAULT_LENS }: Props = $props();
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
+
+	// Lens re-weight: which category the lens leads with. Air/Links read the
+	// atmosphere (cloud/AOD/PWV/path-AOD); Sky/Orbit read night-lights/terrain
+	// (no DEM rail group yet, so Orbit defaults to Light Pollution). The primary
+	// group is full-opacity (Tier-2); the off-lens group dims (Tier-3) but its
+	// header + rows stay fully clickable — re-weight, never gate.
+	const railPrimary = $derived(lens === 'air' || lens === 'links' ? 'atmosphere' : 'light');
+	const lightTier = $derived(railPrimary === 'light' ? 2 : 3);
+	const atmosphereTier = $derived(railPrimary === 'atmosphere' ? 2 : 3);
 
 	// Category partition. VIIRS Annual is its own picker (below); the styled
 	// World Atlas sits in the Light Pollution section; atmospheric layers get
@@ -42,6 +54,14 @@
 
 	let lightOpen = $state(true);
 	let atmosphereOpen = $state(false);
+
+	// Auto-expand the lens's primary group on lens change. Only ever OPENS —
+	// never auto-collapses a section the user opened (or the always-on Light
+	// Pollution default), per the multi-expand rail contract.
+	$effect(() => {
+		if (railPrimary === 'atmosphere') atmosphereOpen = true;
+		else lightOpen = true;
+	});
 
 	// 36 h crossover for the atmospheric stale badge. GIBS NRT is past-only
 	// (T+3 h SLA); Open-Meteo forecasts ~16 days forward. A user scrubbing
@@ -158,7 +178,7 @@
 		</div>
 	</section>
 
-	<section class="category" aria-label="Light Pollution" data-tour="light-pollution">
+	<section class="category" data-tier={lightTier} aria-label="Light Pollution" data-tour="light-pollution">
 		<button type="button" class="category-header" aria-expanded={lightOpen} onclick={() => (lightOpen = !lightOpen)}>
 			{#if lightOpen}
 				<ChevronDown size={14} aria-hidden="true" />
@@ -270,7 +290,7 @@
 	</section>
 
 	{#if atmosphericLayers.length > 0}
-		<section class="category" aria-label="Atmosphere" data-tour="atmosphere">
+		<section class="category" data-tier={atmosphereTier} aria-label="Atmosphere" data-tour="atmosphere">
 			<button
 				type="button"
 				class="category-header"
@@ -476,6 +496,11 @@
 		margin-top: 1rem;
 		padding-top: 0.85rem;
 		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	/* Off-lens group dims (Tier-3) but its header + rows stay fully clickable —
+	   re-weight, never gate (no aria-disabled / display:none / pointer-events). */
+	.category[data-tier='3'] {
+		opacity: var(--rail-tier3-opacity, 0.6);
 	}
 	.category-header {
 		display: inline-flex;

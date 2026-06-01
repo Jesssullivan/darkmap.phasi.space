@@ -1821,6 +1821,7 @@
 	}}
 />
 <LayerRail
+	lens={lensStore.lens}
 	layers={LAYERS}
 	states={layerState}
 	onchange={onChange}
@@ -1951,6 +1952,7 @@
 
 	{#if readout && !transmissionOpen}
 		<PointReadout
+			lens={lensStore.lens}
 			lat={readout.lat}
 			lon={readout.lon}
 			time={ephemerisTime}
