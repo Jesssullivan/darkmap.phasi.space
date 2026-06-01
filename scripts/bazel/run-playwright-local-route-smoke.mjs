@@ -141,6 +141,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'lens-reweight':
 			await runLensReweightSmoke(page);
 			return;
+		case 'link-budget':
+			await runLinkBudgetSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -604,6 +607,66 @@ async function runLensReweightSmoke(page) {
 
 	console.log(
 		'darkmap lens-reweight smoke: Bortle lead (Sky), per-lens tiers + order, diff cross-fade, explicit &b= wins, never-gated',
+	);
+}
+
+async function runLinkBudgetSmoke(page) {
+	// Open the Links deep tool: readout → spectral transmission sheet (which now
+	// hosts the link-budget panel).
+	await runMapCanvasSmoke(page);
+	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	await page
+		.locator(MAP_CANVAS_SELECTOR)
+		.first()
+		.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ timeout: 20_000 });
+	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click();
+	const lb = page.locator('.link-budget');
+	await lb.waitFor({ state: 'visible', timeout: 20_000 });
+
+	const read = () =>
+		page.evaluate(() => {
+			const badge = document.querySelector('.lb-badge');
+			return {
+				present: !!document.querySelector('.link-budget'),
+				verdict: badge?.getAttribute('data-verdict') ?? null,
+				badgeText: (badge?.textContent ?? '').trim(),
+				margin: (document.querySelector('.lb-margin-val')?.textContent ?? '').trim(),
+				terms: Array.from(document.querySelectorAll('.lb-term dt')).map((d) => (d.textContent ?? '').trim()),
+			};
+		});
+	const expect = (cond, msg) => {
+		if (!cond) throw new Error(`link-budget: ${msg}`);
+	};
+
+	const s = await read();
+	expect(s.present, 'panel missing');
+	expect(['go', 'marginal', 'no-go'].includes(s.verdict), `bad verdict "${s.verdict}"`);
+	expect(/Margin\s*[+-]/.test(s.margin), `no signed margin readout: "${s.margin}"`);
+	// Itemized loss ledger — techs debug term-by-term, incl. the differentiator
+	// "Atmospheric (this beam)" + the labeled Scintillation estimate.
+	for (const term of ['Geometric spread', 'Atmospheric', 'Scintillation']) {
+		expect(
+			s.terms.some((t) => t.startsWith(term)),
+			`missing loss term "${term}" in ${JSON.stringify(s.terms)}`,
+		);
+	}
+	// Never-gate: the Tx-power control is present + enabled (not disabled-out).
+	const tx = page.getByRole('spinbutton', { name: /transmit power/i });
+	expect(await tx.isEnabled(), 'Tx power input is disabled');
+	// Reactive: starve the link → the verdict must fall to no-go.
+	await tx.fill('-60');
+	await page.waitForFunction(
+		() => document.querySelector('.lb-badge')?.getAttribute('data-verdict') === 'no-go',
+		null,
+		{
+			timeout: 10_000,
+		},
+	);
+
+	console.log(
+		`darkmap link-budget smoke: panel + "${s.verdict}" verdict + signed margin + itemized losses ${JSON.stringify(s.terms)} + reactive to Tx`,
 	);
 }
 

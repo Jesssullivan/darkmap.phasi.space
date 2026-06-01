@@ -6,6 +6,7 @@ import {
 	linkMargin,
 	pointingLossDb,
 	rytovVariance,
+	sampleTransmittance,
 	scintillationFadeDb,
 	erfcInv,
 	type LossTerm,
@@ -101,6 +102,25 @@ describe('erfcInv', () => {
 	it('erfcInv(1) ≈ 0 and erfcInv(0.01) ≈ 1.82', () => {
 		expect(erfcInv(1)).toBeCloseTo(0, 2);
 		expect(erfcInv(0.01)).toBeCloseTo(1.82, 1);
+	});
+});
+
+describe('sampleTransmittance', () => {
+	const wl = [0.5, 1.0, 1.5, 2.0]; // µm
+	const tr = [0.8, 0.6, 0.4, 0.2];
+	it('interpolates linearly at an interior wavelength', () => {
+		// 1550 nm = 1.55 µm → between 1.5 (0.4) and 2.0 (0.2): 0.4 + 0.1·(0.2−0.4) = 0.38
+		expect(sampleTransmittance(wl, tr, 1550)).toBeCloseTo(0.38, 4);
+	});
+	it('hits grid points exactly', () => {
+		expect(sampleTransmittance(wl, tr, 1000)).toBeCloseTo(0.6, 6);
+	});
+	it('clamps below/above the curve ends instead of returning null', () => {
+		expect(sampleTransmittance(wl, tr, 200)).toBeCloseTo(0.8, 6);
+		expect(sampleTransmittance(wl, tr, 5000)).toBeCloseTo(0.2, 6);
+	});
+	it('returns 1 (loss-free) for an empty curve', () => {
+		expect(sampleTransmittance([], [], 1550)).toBe(1);
 	});
 });
 
