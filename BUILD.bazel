@@ -308,6 +308,28 @@ js_test(
     visibility = ["//visibility:public"],
 )
 
+js_test(
+    name = "playwright_lens_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-lens-smoke.mjs",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-lens-smoke.mjs",
+    tags = [
+        "chromium",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "lens-smoke",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # playwright_browser_rbe_smoke_suite — one GF-dispatchable browser proof surface
 #
@@ -336,6 +358,7 @@ test_suite(
         ":playwright_point_readout_smoke",
         ":playwright_mobile_hud_smoke",
         ":playwright_mobile_hud_matrix_smoke",
+        ":playwright_lens_smoke",
     ],
     visibility = ["//visibility:public"],
 )
