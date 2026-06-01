@@ -138,6 +138,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'toolbar-labels':
 			await runToolbarLabelsSmoke(page);
 			return;
+		case 'lens-reweight':
+			await runLensReweightSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -464,6 +467,90 @@ async function runToolbarLabelsSmoke(page) {
 		}
 		console.log(`darkmap toolbar-labels smoke: compact icon-only + named at ${width}px`);
 	}
+}
+
+async function runLensReweightSmoke(page) {
+	// Open the readout over the mocked point (viirs + worldAtlas + atmospheric).
+	await runMapCanvasSmoke(page);
+	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
+	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	await canvas.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ timeout: 20_000 });
+	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
+
+	// Scope to `.readout[data-lens]` — SkyCompass also uses a `.readout` class,
+	// so a bare `.readout` selector can hit the wrong element.
+	const setLens = async (key, name) => {
+		await page.keyboard.press(key);
+		await page.waitForFunction(
+			(want) => document.querySelector('.readout[data-lens]')?.getAttribute('data-lens') === want,
+			name,
+			{ timeout: 10_000 },
+		);
+	};
+	// Snapshot every present section's id/tier/computed order+opacity+interactivity.
+	const snap = () =>
+		page.evaluate(() => {
+			const byId = {};
+			for (const s of document.querySelectorAll('.readout[data-lens] > [data-section]')) {
+				const cs = getComputedStyle(s);
+				byId[s.getAttribute('data-section')] = {
+					tier: s.getAttribute('data-tier'),
+					order: cs.order,
+					opacity: Number(cs.opacity),
+					display: cs.display,
+					pointerEvents: cs.pointerEvents,
+					ariaDisabled: s.getAttribute('aria-disabled'),
+				};
+			}
+			return { hasBortleLead: !!document.querySelector('.readout[data-lens] .bortle-lead'), byId };
+		});
+	const tierOf = (snapshot, id) => snapshot.byId[id]?.tier;
+	const expect = (cond, msg) => {
+		if (!cond) throw new Error(`lens-reweight: ${msg}`);
+	};
+	// Re-weight, never gate — assert on every snapshot.
+	const assertNeverGated = (snapshot, lens) => {
+		for (const [id, s] of Object.entries(snapshot.byId)) {
+			if (s.display === 'none' || s.pointerEvents === 'none' || s.ariaDisabled === 'true') {
+				throw new Error(`lens-reweight: ${lens} gated section "${id}": ${JSON.stringify(s)}`);
+			}
+		}
+	};
+
+	// Sky → Bortle headline leads; sky sections are full, AQ sinks (if present).
+	await setLens('1', 'sky');
+	let s = await snap();
+	expect(s.hasBortleLead, 'Sky must show the Bortle lead headline');
+	expect(tierOf(s, 'ephemeris') === '1', `Sky ephemeris should be Tier-1, got ${tierOf(s, 'ephemeris')}`);
+	expect(tierOf(s, 'viirs') === '2', `Sky viirs should be Tier-2, got ${tierOf(s, 'viirs')}`);
+	assertNeverGated(s, 'sky');
+
+	// Air → night-lights dim (Tier-3); no Bortle headline.
+	await setLens('2', 'air');
+	s = await snap();
+	expect(!s.hasBortleLead, 'Air must NOT show the Bortle lead');
+	expect(tierOf(s, 'viirs') === '3', `Air viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
+	expect(tierOf(s, 'worldAtlas') === '3', `Air worldAtlas should dim to Tier-3, got ${tierOf(s, 'worldAtlas')}`);
+	expect(s.byId.viirs.opacity < 1, `Air Tier-3 viirs should be visually dimmed, opacity=${s.byId.viirs?.opacity}`);
+	assertNeverGated(s, 'air');
+
+	// Links → atmosphere leads (Tier-1, floated up via negative order); viirs dims.
+	await setLens('3', 'links');
+	s = await snap();
+	expect(tierOf(s, 'atmosphere') === '1', `Links atmosphere should be Tier-1, got ${tierOf(s, 'atmosphere')}`);
+	expect(Number(s.byId.atmosphere.order) < 0, `Links atmosphere should float up, order=${s.byId.atmosphere?.order}`);
+	expect(tierOf(s, 'viirs') === '3', `Links viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
+	assertNeverGated(s, 'links');
+
+	// Orbit → ephemeris leads.
+	await setLens('4', 'orbit');
+	s = await snap();
+	expect(tierOf(s, 'ephemeris') === '1', `Orbit ephemeris should be Tier-1, got ${tierOf(s, 'ephemeris')}`);
+	assertNeverGated(s, 'orbit');
+
+	console.log('darkmap lens-reweight smoke: Bortle lead (Sky), section tiers + order per lens, never-gated');
 }
 
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {
