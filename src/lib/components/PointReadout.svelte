@@ -84,6 +84,8 @@
 		 * source cross-validation for the location (V6-4).
 		 */
 		onAqDashboardForPoint?: () => void;
+		/** Open the Orbit "Plan a pass" deep tool seeded from THIS point (S3). */
+		onPlanPassForPoint?: () => void;
 	}
 
 	let {
@@ -103,6 +105,7 @@
 		lens = DEFAULT_LENS,
 		onTransmissionForPoint,
 		onAqDashboardForPoint,
+		onPlanPassForPoint,
 	}: Props = $props();
 
 	const POLLEN_LABELS: Record<keyof PollenReading, string> = {
@@ -273,9 +276,10 @@
 	// lead with an in-readout section, so both CTAs read as secondary (Tier-3
 	// ghost). The promoted CTA is rendered FIRST in the DOM (see template) so the
 	// Tab order matches the visual order — no style:order desync (WCAG 2.4.3).
-	const primaryCta = $derived(lens === 'air' ? 'aq' : lens === 'links' ? 'transmission' : null);
-	const ctaTier = (id: 'transmission' | 'aq'): 1 | 3 => (primaryCta === id ? 1 : 3);
-	const aqCtaFirst = $derived(primaryCta === 'aq');
+	const primaryCta = $derived(
+		lens === 'air' ? 'aq' : lens === 'links' ? 'transmission' : lens === 'orbit' ? 'pass' : null,
+	);
+	const ctaTier = (id: 'transmission' | 'aq' | 'pass'): 1 | 3 => (primaryCta === id ? 1 : 3);
 
 	// Lighthouse / horizon-aware ephemeris. Opens on click, fetches the
 	// 36-ray terrain polygon + refined twilight events for this pin. The
@@ -771,13 +775,38 @@
 		{/if}
 	{/snippet}
 
+	{#snippet passCta()}
+		{#if onPlanPassForPoint && data}
+			<button
+				type="button"
+				class="transmission-link pass-plan-link"
+				data-cta="pass"
+				data-tier={ctaTier('pass')}
+				aria-label="Plan a satellite pass for this point — SGP4 passes gated by the local terrain horizon, with an az/el track and Doppler"
+				onclick={onPlanPassForPoint}
+			>
+				<span class="cta-text">
+					<span class="cta-label">Plan a pass</span>
+					<span class="cta-sub">DEM-gated AOS/LOS · az/el track · Doppler</span>
+				</span>
+				<span class="cta-caret" aria-hidden="true">→</span>
+			</button>
+		{/if}
+	{/snippet}
+
 	<!-- Promoted CTA first so Tab order matches visual order (WCAG 2.4.3). -->
-	{#if aqCtaFirst}
+	{#if primaryCta === 'pass'}
+		{@render passCta()}
+		{@render transmissionCta()}
+		{@render aqDashboardCta()}
+	{:else if primaryCta === 'aq'}
 		{@render aqDashboardCta()}
 		{@render transmissionCta()}
+		{@render passCta()}
 	{:else}
 		{@render transmissionCta()}
 		{@render aqDashboardCta()}
+		{@render passCta()}
 	{/if}
 </div>
 
