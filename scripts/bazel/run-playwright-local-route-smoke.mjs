@@ -147,6 +147,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'orbit':
 			await runOrbitSmoke(page);
 			return;
+		case 'smog':
+			await runSmogSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -899,6 +902,40 @@ async function waitForServer(url) {
 	throw new Error(`adapter-node server did not become ready at ${url}: ${lastError?.message ?? lastError}`);
 }
 
+async function runSmogSmoke(page) {
+	// TIN-1814: the Air lens's signature data is the ground stations. Switching to
+	// Air must turn the Smog (PM2.5) point layer on — even though it is
+	// defaultEnabled:false and the user never toggled it — and fetch OpenAQ for the
+	// viewport. The headless proof cell has no WebGL paint, so we assert the
+	// BEHAVIOUR, not pixels: the OpenAQ station fetch fires (with a viewport bbox)
+	// on the Air switch. Remove the lens nudge ⇒ no request ⇒ this times out.
+	await runMapCanvasSmoke(page);
+
+	// Click the map to focus it (opens the readout — harmless, its fetches are
+	// mocked) so the number-key lens accelerator is delivered to the window.
+	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
+	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
+	await canvas.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+
+	// Arm the watcher BEFORE the lens switch — the station fetch is the guard.
+	const openaqRequest = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/atmospheric/openaq', {
+		timeout: 20_000,
+	});
+
+	await page.keyboard.press('2'); // 2 → Air
+	await page.waitForFunction(
+		() => document.querySelector('.lens-switcher .chip[aria-pressed="true"]')?.getAttribute('aria-label') === 'Air',
+		null,
+		{ timeout: 20_000 },
+	);
+
+	const req = await openaqRequest; // throws on timeout if the Air nudge didn't fire
+	const bbox = new URL(req.url()).searchParams.get('bbox');
+	if (!bbox) throw new Error('smog: OpenAQ station request fired without a viewport bbox');
+
+	console.log(`darkmap smog smoke: Air lens nudged Smog (PM2.5) on; OpenAQ fetched (bbox=${bbox})`);
+}
+
 async function installNetworkGuards(page, baseURL) {
 	const localOrigin = new URL(baseURL).origin;
 	await page.route('**/*', async (route) => {
@@ -946,6 +983,61 @@ async function installNetworkGuards(page, baseURL) {
 						pm10: null,
 						pm25: null,
 					}),
+				});
+				return;
+			}
+			if (url.pathname === '/api/atmospheric/openaq') {
+				// Canned OpenAQ ground stations (GeoJSON) so the Smog (PM2.5) point
+				// layer paints without a key/network — mirrors the live proxy shape.
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						type: 'FeatureCollection',
+						degraded: false,
+						features: [
+							{
+								type: 'Feature',
+								properties: {
+									locationId: 384,
+									locationName: 'CCNY',
+									value: 3.6,
+									pollutants: { pm25: { value: 3.6, units: 'µg/m³' }, o3: { value: 0.044, units: 'ppm' } },
+								},
+								geometry: { type: 'Point', coordinates: [-73.9481, 40.8197] },
+							},
+							{
+								type: 'Feature',
+								properties: {
+									locationId: 625,
+									locationName: 'Manhattan/IS143',
+									value: 2.2,
+									pollutants: { pm25: { value: 2.2, units: 'µg/m³' } },
+								},
+								geometry: { type: 'Point', coordinates: [-73.9319, 40.8492] },
+							},
+							{
+								type: 'Feature',
+								properties: {
+									locationId: 631,
+									locationName: 'Queens',
+									value: 3.7,
+									pollutants: { pm25: { value: 3.7, units: 'µg/m³' }, o3: { value: 0.047, units: 'ppm' } },
+								},
+								geometry: { type: 'Point', coordinates: [-73.8244, 40.7375] },
+							},
+						],
+					}),
+				});
+				return;
+			}
+			if (url.pathname === '/api/atmospheric/openaq-history') {
+				// No specific station resolved in the proof cell — the degraded
+				// contract (series:null) is the readout sparkline's graceful path.
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ series: null, degraded: true }),
 				});
 				return;
 			}

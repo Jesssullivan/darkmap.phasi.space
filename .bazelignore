@@ -1,4 +1,5 @@
 .git
+.claude
 .direnv
 infra/tofu/.terraform
 node_modules
