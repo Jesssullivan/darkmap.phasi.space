@@ -63,6 +63,11 @@
 		bottom: max(0.75rem, env(safe-area-inset-bottom));
 		display: flex;
 		flex-direction: column;
+		/* Size to the widest labeled pill so align-items:stretch gives every
+		   button enough width for its icon + label (without this the fixed
+		   column can shrink-to-fit at ~icon width and the labels collapse). */
+		width: max-content;
+		align-items: stretch;
 		gap: 0.5rem;
 		z-index: 8;
 		font-family: var(--font-mono, ui-monospace, monospace);
@@ -90,6 +95,8 @@
 	}
 	.tool-label {
 		font-size: 0.8rem;
+		/* Never let the label shrink to 0 in the flex row. */
+		flex: 0 0 auto;
 	}
 	.tool:hover {
 		border-color: rgba(var(--accent-amber-rgb), 0.65);
