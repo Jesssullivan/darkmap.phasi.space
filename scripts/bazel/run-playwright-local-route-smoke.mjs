@@ -696,11 +696,16 @@ async function runOrbitSmoke(page) {
 	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
 
 	const cta = readout.getByRole('button', { name: /plan a satellite pass/i });
-	await cta.waitFor({ timeout: 20_000 });
-	await cta.click();
+	// The font-less proof cell renders text-only controls at zero size, so the CTA
+	// can resolve "attached" yet never satisfy click actionability (visible/stable)
+	// — wait for it attached, then dispatch the click straight to the button's
+	// handler instead of a coordinate click. (Font-independent per the cell's
+	// no-system-fonts constraint.)
+	await cta.waitFor({ state: 'attached', timeout: 20_000 });
+	await cta.dispatchEvent('click');
 
 	const panel = page.getByRole('dialog', { name: /plan a pass/i });
-	await panel.waitFor({ state: 'visible', timeout: 20_000 });
+	await panel.waitFor({ state: 'attached', timeout: 20_000 });
 	// Resolve out of the loading state (a pass list or an honest no-pass message).
 	await page.waitForFunction(
 		() => {
