@@ -718,13 +718,22 @@ async function runOrbitSmoke(page) {
 			passes: p?.querySelectorAll('.pp-pass').length ?? 0,
 			hasDome: !!p?.querySelector('.pp-dome'),
 			closeEnabled: !!p?.querySelector('.pp-close') && !p.querySelector('.pp-close').disabled,
+			// PR-B polish: satellite picker, airmass-gradient track, per-pass T.
+			hasPicker: !!p?.querySelector('.pp-picker'),
+			hasCatnr: !!p?.querySelector('.pp-catnr'),
+			trackSegs: p?.querySelectorAll('.pp-dome line.pp-seg').length ?? 0,
+			passTshown: (p?.querySelector('.pp-pass-t')?.textContent ?? '').includes('%'),
 		};
 	});
 	if (!/sgp4/i.test(info.honesty)) throw new Error(`orbit: missing SGP4/predicted honesty footer: "${info.honesty}"`);
 	if (!info.closeEnabled) throw new Error('orbit: pass planner close button missing/disabled');
+	if (!info.hasPicker || !info.hasCatnr) throw new Error('orbit: satellite picker controls missing');
+	if (info.trackSegs < 1) throw new Error('orbit: airmass-gradient track segments not rendered');
+	if (!info.passTshown) throw new Error('orbit: per-pass transmittance (T%) not shown');
 
 	console.log(
-		`darkmap orbit smoke: Plan-a-pass resolved — ${info.passes} pass(es), dome=${info.hasDome}, honesty="${info.honesty}"`,
+		`darkmap orbit smoke: Plan-a-pass resolved — ${info.passes} pass(es), dome=${info.hasDome}, ` +
+			`picker=${info.hasPicker}, trackSegs=${info.trackSegs}, perPassT=${info.passTshown}, honesty="${info.honesty}"`,
 	);
 }
 
