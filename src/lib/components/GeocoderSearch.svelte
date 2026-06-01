@@ -199,7 +199,9 @@
 		top: max(1rem, env(safe-area-inset-top));
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 11;
+		/* Above the lens switcher + rail toggle (z:12) so the results dropdown is
+		   never overlapped by the row beneath it on mobile. */
+		z-index: 13;
 		width: min(28rem, calc(100vw - 6rem));
 		font-family: var(--font-mono, ui-monospace, monospace);
 	}

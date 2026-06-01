@@ -545,6 +545,9 @@ async function runLensReweightSmoke(page) {
 	expect(tierOf(s, 'worldAtlas') === '3', `Air worldAtlas should dim to Tier-3, got ${tierOf(s, 'worldAtlas')}`);
 	expect(s.byId.viirs.opacity < 1, `Air Tier-3 viirs should be visually dimmed, opacity=${s.byId.viirs?.opacity}`);
 	assertNeverGated(s, 'air');
+	// The lens change is announced to assistive tech via a polite live region.
+	const announce = await page.evaluate(() => document.querySelector('[aria-live="polite"].sr-only')?.textContent ?? '');
+	expect(/air lens/i.test(announce), `expected an SR live-region announcement for Air, got "${announce}"`);
 
 	// Links → atmosphere leads (Tier-1, floated up via negative order); viirs dims.
 	await setLens('3', 'links');
@@ -552,12 +555,16 @@ async function runLensReweightSmoke(page) {
 	expect(tierOf(s, 'atmosphere') === '1', `Links atmosphere should be Tier-1, got ${tierOf(s, 'atmosphere')}`);
 	expect(Number(s.byId.atmosphere.order) < 0, `Links atmosphere should float up, order=${s.byId.atmosphere?.order}`);
 	expect(tierOf(s, 'viirs') === '3', `Links viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
+	// The night-lights family dims as one unit — World Atlas must not stay full.
+	expect(tierOf(s, 'worldAtlas') === '3', `Links worldAtlas should dim with viirs, got ${tierOf(s, 'worldAtlas')}`);
 	assertNeverGated(s, 'links');
 
-	// Orbit → ephemeris leads.
+	// Orbit → ephemeris leads; night-lights dim as one unit.
 	await setLens('4', 'orbit');
 	s = await snap();
 	expect(tierOf(s, 'ephemeris') === '1', `Orbit ephemeris should be Tier-1, got ${tierOf(s, 'ephemeris')}`);
+	expect(tierOf(s, 'viirs') === '3', `Orbit viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
+	expect(tierOf(s, 'worldAtlas') === '3', `Orbit worldAtlas should dim to Tier-3, got ${tierOf(s, 'worldAtlas')}`);
 	assertNeverGated(s, 'orbit');
 
 	// PR5: the tier change cross-fades (opacity transition wired) — layout/order

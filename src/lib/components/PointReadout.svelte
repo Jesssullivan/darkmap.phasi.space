@@ -230,17 +230,6 @@
 	const viirsAvg = $derived.by(() =>
 		data?.viirs ? Math.round((data.viirs.red + data.viirs.green + data.viirs.blue) / 3) : undefined,
 	);
-	const waClass = $derived.by(() => {
-		const g = data?.worldAtlas?.grayIndex;
-		if (g === undefined) return undefined;
-		if (g < 1) return 'Pristine';
-		if (g < 8) return 'Wilderness';
-		if (g < 32) return 'Rural';
-		if (g < 87) return 'Suburban';
-		if (g < 460) return 'Urban';
-		return 'Inner city';
-	});
-
 	// Sky-lens lead: Bortle class + SQM from the Falchi artificial brightness
 	// (modeled; provenance disclosed in the headline's HelpTooltip).
 	const bortle = $derived.by(() => {
@@ -270,21 +259,23 @@
 		orbit: ['ephemeris'],
 	};
 	const LENS_DIM: Record<Lens, readonly SectionId[]> = {
-		sky: ['aqi', 'pm25', 'pollutants', 'history', 'crossval'],
+		// Off-lens night-lights + AQ families dim as whole units (kept clickable).
+		sky: ['aqi', 'pm25', 'pollutants', 'pollen', 'history', 'crossval'],
 		air: ['bortle', 'viirs', 'worldAtlas', 'ephemeris'],
-		links: ['aqi', 'pm25', 'pollutants', 'history', 'crossval', 'bortle', 'viirs'],
-		orbit: ['aqi', 'pm25', 'pollutants', 'history', 'crossval'],
+		links: ['aqi', 'pm25', 'pollutants', 'pollen', 'history', 'crossval', 'bortle', 'viirs', 'worldAtlas'],
+		orbit: ['aqi', 'pm25', 'pollutants', 'pollen', 'history', 'crossval', 'viirs', 'worldAtlas'],
 	};
 	const tierOf = (id: SectionId): 1 | 2 | 3 => (LENS_LEAD[lens].includes(id) ? 1 : LENS_DIM[lens].includes(id) ? 3 : 2);
 	// Lead sections float to the top (negative order); dimmed sink below normal.
 	const orderOf = (id: SectionId): number => (LENS_LEAD[lens].includes(id) ? -1 : LENS_DIM[lens].includes(id) ? 1 : 0);
 
-	// The one prominent CTA per lens (Air → AQ dashboard, Links → transmission).
-	// Sky/Orbit lead with an in-readout section (Bortle / ephemeris), so neither
-	// CTA is promoted; both stay available, document order.
+	// CTA emphasis per lens (Air → AQ dashboard, Links → transmission). Sky/Orbit
+	// lead with an in-readout section, so both CTAs read as secondary (Tier-3
+	// ghost). The promoted CTA is rendered FIRST in the DOM (see template) so the
+	// Tab order matches the visual order — no style:order desync (WCAG 2.4.3).
 	const primaryCta = $derived(lens === 'air' ? 'aq' : lens === 'links' ? 'transmission' : null);
-	const ctaTier = (id: 'transmission' | 'aq'): 1 | 2 | 3 => (primaryCta === null ? 2 : primaryCta === id ? 1 : 3);
-	const ctaOrder = (id: 'transmission' | 'aq'): number => (primaryCta === id ? 10 : id === 'transmission' ? 11 : 12);
+	const ctaTier = (id: 'transmission' | 'aq'): 1 | 3 => (primaryCta === id ? 1 : 3);
+	const aqCtaFirst = $derived(primaryCta === 'aq');
 
 	// Lighthouse / horizon-aware ephemeris. Opens on click, fetches the
 	// 36-ray terrain polygon + refined twilight events for this pin. The
@@ -400,7 +391,7 @@
 			<p class="bortle-sqm">
 				SQM ≈ {bortle.sqm.toFixed(2)}<span class="unit"> mag/arcsec²</span>
 				<HelpTooltip
-					text={`Modeled, not measured: Falchi 2016 artificial zenith brightness (${data?.worldAtlas?.grayIndex.toFixed(2)} mcd/m², ${waClass} class) plus the natural dark-sky floor, mapped to SQM and the approximate Bortle scale. Cross-check it against the VIIRS measured pixel below.`}
+					text={`Modeled, not measured: Falchi 2016 artificial zenith brightness (${data?.worldAtlas?.grayIndex.toFixed(2)} mcd/m²) plus the natural dark-sky floor, mapped to SQM and the approximate Bortle scale. Cross-check it against the VIIRS measured pixel below.`}
 				>
 					{#snippet trigger()}
 						<span class="modeled-tag">modeled</span>
@@ -425,9 +416,7 @@
 			<section data-section="worldAtlas" data-tier={tierOf('worldAtlas')} style:order={orderOf('worldAtlas')}>
 				<h4>World Atlas radiance</h4>
 				<p class="value">{data.worldAtlas.grayIndex.toFixed(2)}<span class="unit"> mcd/m²</span></p>
-				{#if waClass && lens !== 'sky'}
-					<p class="note">Falchi 2016: <strong>{waClass}</strong></p>
-				{/if}
+				<p class="note">Falchi 2016 modeled artificial brightness</p>
 			</section>
 		{/if}
 		{#if data.atmospheric}
@@ -577,7 +566,9 @@
 							<span class="unit"> {history.units ?? 'µg/m³'}</span>
 							<span class="trend trend-{history.trend}" aria-hidden="true">{TREND_GLYPH[history.trend]}</span>
 						</span>
-						<span class="spark-sub">{fmtWindowHours(history)}-h mean · {history.sampleCount} samples</span>
+						<span class="spark-sub"
+							>{fmtWindowHours(history)}-h mean · {history.sampleCount} samples · {history.trend}</span
+						>
 					</div>
 				</div>
 				<p class="note">
@@ -742,40 +733,51 @@
 		{/if}
 	</section>
 
-	{#if onTransmissionForPoint && data?.atmospheric}
-		<button
-			type="button"
-			class="transmission-link"
-			data-cta="transmission"
-			data-tier={ctaTier('transmission')}
-			style:order={ctaOrder('transmission')}
-			aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
-			onclick={onTransmissionForPoint}
-		>
-			<span class="cta-text">
-				<span class="cta-label">Spectral transmission T(λ)</span>
-				<span class="cta-sub">directable boresight · AOD · band guidance</span>
-			</span>
-			<span class="cta-caret" aria-hidden="true">→</span>
-		</button>
-	{/if}
+	{#snippet transmissionCta()}
+		{#if onTransmissionForPoint && data?.atmospheric}
+			<button
+				type="button"
+				class="transmission-link"
+				data-cta="transmission"
+				data-tier={ctaTier('transmission')}
+				aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
+				onclick={onTransmissionForPoint}
+			>
+				<span class="cta-text">
+					<span class="cta-label">Spectral transmission T(λ)</span>
+					<span class="cta-sub">directable boresight · AOD · band guidance</span>
+				</span>
+				<span class="cta-caret" aria-hidden="true">→</span>
+			</button>
+		{/if}
+	{/snippet}
 
-	{#if onAqDashboardForPoint && data}
-		<button
-			type="button"
-			class="transmission-link aq-dashboard-link"
-			data-cta="aq"
-			data-tier={ctaTier('aq')}
-			style:order={ctaOrder('aq')}
-			aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
-			onclick={onAqDashboardForPoint}
-		>
-			<span class="cta-text">
-				<span class="cta-label">Air-quality dashboard</span>
-				<span class="cta-sub">history · multi-pollutant AQI · source cross-check</span>
-			</span>
-			<span class="cta-caret" aria-hidden="true">→</span>
-		</button>
+	{#snippet aqDashboardCta()}
+		{#if onAqDashboardForPoint && data}
+			<button
+				type="button"
+				class="transmission-link aq-dashboard-link"
+				data-cta="aq"
+				data-tier={ctaTier('aq')}
+				aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
+				onclick={onAqDashboardForPoint}
+			>
+				<span class="cta-text">
+					<span class="cta-label">Air-quality dashboard</span>
+					<span class="cta-sub">history · multi-pollutant AQI · source cross-check</span>
+				</span>
+				<span class="cta-caret" aria-hidden="true">→</span>
+			</button>
+		{/if}
+	{/snippet}
+
+	<!-- Promoted CTA first so Tab order matches visual order (WCAG 2.4.3). -->
+	{#if aqCtaFirst}
+		{@render aqDashboardCta()}
+		{@render transmissionCta()}
+	{:else}
+		{@render transmissionCta()}
+		{@render aqDashboardCta()}
 	{/if}
 </div>
 
@@ -813,6 +815,32 @@
 	}
 	.readout > [data-tier='1'] {
 		opacity: 1;
+	}
+	/* Two-channel tier signal (§11.3): off-lens value text drops the amber accent
+	   to neutral ink, and Tier-3 also lightens weight — emphasis survives even
+	   before the opacity dim, so no single channel carries the whole hierarchy.
+	   Tier-1 keeps amber; .aqi-value keeps its category colour; .bortle-class
+	   (the Sky lead) stays amber. */
+	.readout > [data-tier='2'] :where(.value, .spark-mean, .atmos-grid dd, .events dd, .crossval-grid dd),
+	.readout > [data-tier='3'] :where(.value, .spark-mean, .atmos-grid dd, .events dd, .crossval-grid dd) {
+		color: #e9ecf3;
+	}
+	.readout > [data-tier='3'] :where(.value, .spark-mean) {
+		font-weight: 500;
+	}
+	/* Stop descendant fades compounding under the Tier-3 0.55 opacity (keeps faint
+	   sub-text above the 4.5:1 contrast floor). */
+	.readout > [data-tier='3'] :where(.note, .coverage, .aq-cov, .cv-level, .aqi-dom, .cta-sub, .spark-sub, .cv-note) {
+		opacity: 0.9;
+	}
+	/* Non-promoted CTAs read as available-but-secondary (ghost), not a Tier-1 peer.
+	   The Tier-3 opacity layer above still applies to the off-lens CTA. */
+	.readout > [data-cta][data-tier='3'] {
+		background: transparent;
+		border-color: rgba(var(--accent-amber-rgb), 0.18);
+	}
+	.readout > [data-cta][data-tier='3'] .cta-label {
+		font-weight: 500;
 	}
 	/* Lens-diff cross-fade: only the dim/emphasis transitions (opacity), never
 	   the map or layout. Reordering is instant; the tier change eases. */
@@ -880,7 +908,11 @@
 	.transmission-link:hover,
 	.transmission-link:focus-visible {
 		background: rgba(var(--accent-amber-rgb), 0.16);
-		outline: none;
+	}
+	/* Keep a real keyboard focus ring (was suppressed by outline:none). */
+	.transmission-link:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 2px;
 	}
 	.transmission-link .cta-text {
 		display: flex;
@@ -914,6 +946,11 @@
 		padding: 0.25rem 0.5rem;
 	}
 	.close:hover {
+		color: var(--accent-amber);
+	}
+	.close:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 2px;
 		color: var(--accent-amber);
 	}
 	header h3 {
@@ -1149,6 +1186,11 @@
 		text-align: left;
 	}
 	.ephemeris-header:hover {
+		color: var(--accent-amber);
+	}
+	.ephemeris-header:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 2px;
 		color: var(--accent-amber);
 	}
 	.caret {
