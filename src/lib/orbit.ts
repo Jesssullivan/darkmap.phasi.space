@@ -83,6 +83,34 @@ export function epochAgeDays(epoch: Date, now: Date): number {
 	return (now.getTime() - epoch.getTime()) / MS_PER_DAY;
 }
 
+export interface TleSet {
+	readonly name?: string;
+	readonly line1: string;
+	readonly line2: string;
+}
+
+/**
+ * Split raw Celestrak/Space-Track TLE text into name/line1/line2 sets. Accepts
+ * 2-line (no name) and 3-line (named) records, blank lines, and CRLF. A set is
+ * any `1 …` line immediately followed by a `2 …` line; the preceding non-TLE
+ * line, if any, is the satellite name.
+ */
+export function parseTleSets(text: string): TleSet[] {
+	const lines = text.split(/\r?\n/).map((l) => l.replace(/\s+$/, ''));
+	const sets: TleSet[] = [];
+	for (let i = 0; i < lines.length - 1; i++) {
+		const l1 = lines[i];
+		const l2 = lines[i + 1];
+		if (l1.startsWith('1 ') && l2.startsWith('2 ')) {
+			const prev = i > 0 ? lines[i - 1].trim() : '';
+			const name = prev && !prev.startsWith('1 ') && !prev.startsWith('2 ') ? prev : undefined;
+			sets.push({ name, line1: l1, line2: l2 });
+			i++; // consume line 2
+		}
+	}
+	return sets;
+}
+
 export interface LookSample {
 	/** Azimuth, degrees clockwise from north [0, 360). */
 	readonly azDeg: number;

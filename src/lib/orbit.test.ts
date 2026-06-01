@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { dopplerShiftHz, epochAgeDays, findPasses, lookAngleAt, parseTle, tleEpoch, type Observer } from './orbit';
+import {
+	dopplerShiftHz,
+	epochAgeDays,
+	findPasses,
+	lookAngleAt,
+	parseTle,
+	parseTleSets,
+	tleEpoch,
+	type Observer,
+} from './orbit';
 import type { HorizonPolygon } from './ephemeris/horizonAtAzimuth';
 
 // A real published ISS (ZARYA) TLE, epoch 2020-060.85 (1 Mar 2020).
@@ -21,6 +30,25 @@ describe('tleEpoch / parseTle', () => {
 		const { satrec, epoch } = parseTle(L1, L2, 'ISS');
 		expect(satrec.error).toBe(0);
 		expect(epoch.getUTCFullYear()).toBe(2020);
+	});
+});
+
+describe('parseTleSets', () => {
+	it('parses a 3-line named record', () => {
+		const sets = parseTleSets(`ISS (ZARYA)\n${L1}\n${L2}\n`);
+		expect(sets).toHaveLength(1);
+		expect(sets[0].name).toBe('ISS (ZARYA)');
+		expect(sets[0].line1).toBe(L1);
+		expect(sets[0].line2).toBe(L2);
+	});
+	it('parses multiple sets + tolerates blank lines / CRLF / a 2-line record', () => {
+		const sets = parseTleSets(`SAT A\r\n${L1}\r\n${L2}\r\n\r\n${L1}\r\n${L2}\r\n`);
+		expect(sets).toHaveLength(2);
+		expect(sets[0].name).toBe('SAT A');
+		expect(sets[1].name).toBeUndefined(); // 2-line record (no name line)
+	});
+	it('returns nothing for junk', () => {
+		expect(parseTleSets('not a tle\njust text')).toEqual([]);
 	});
 });
 
