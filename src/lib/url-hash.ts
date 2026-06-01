@@ -19,6 +19,8 @@
  * are accepted; the caller falls back to its defaults.
  */
 
+import { DEFAULT_LENS, isLens, type Lens } from './lens';
+
 export interface MapView {
 	readonly lat: number;
 	readonly lon: number;
@@ -33,6 +35,8 @@ export interface HashState {
 	readonly basemap?: string;
 	/** Ephemeris-overlay cursor instant (UTC, minute precision). */
 	readonly time?: Date;
+	/** Persona lens (`sky` | `air` | `links` | `orbit`); absent ⇒ the `sky` default. */
+	readonly lens?: Lens;
 }
 
 const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
@@ -64,6 +68,10 @@ export function encodeHash(state: HashState): string {
 	if (state.time) {
 		parts.push(`et=${encodeIsoMinute(state.time)}`);
 	}
+	// Omit the `sky` default — only non-default lenses appear in the hash.
+	if (state.lens && state.lens !== DEFAULT_LENS) {
+		parts.push(`lens=${state.lens}`);
+	}
 	return parts.length === 0 ? '' : `#${parts.join('&')}`;
 }
 
@@ -75,6 +83,7 @@ export function decodeHash(hash: string): HashState {
 		layers?: Map<string, number>;
 		basemap?: string;
 		time?: Date;
+		lens?: Lens;
 	} = {};
 	for (const segment of trimmed.split('&')) {
 		const eq = segment.indexOf('=');
@@ -114,6 +123,9 @@ export function decodeHash(hash: string): HashState {
 			// with seconds/millis is fine.
 			const d = new Date(decodeURIComponent(value));
 			if (!Number.isNaN(d.getTime())) out.time = d;
+		} else if (key === 'lens') {
+			const v = decodeURIComponent(value);
+			if (isLens(v)) out.lens = v;
 		}
 	}
 	return out;

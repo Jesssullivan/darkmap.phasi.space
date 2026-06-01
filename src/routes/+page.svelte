@@ -100,6 +100,8 @@
 	import { PointMarkerController } from '$lib/map/point-marker';
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
+	import { lensStore } from '$lib/lens.svelte';
+	import { LENSES } from '$lib/lens';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
@@ -1080,9 +1082,26 @@
 				layers: layersMap,
 				basemap: activeBasemap === DEFAULT_BASEMAP_ID ? undefined : activeBasemap,
 				time: ephemerisOpen ? ephemerisTime : undefined,
+				lens: lensStore.lens, // encodeHash omits the `sky` default
 			});
 			history.replaceState(null, '', hash || window.location.pathname);
 		}, 250);
+	}
+
+	// Number-key lens accelerator: 1→Sky, 2→Air, 3→Links, 4→Orbit. Guarded so it
+	// never hijacks typing in the geocoder / any input. (The visible switcher
+	// chips land in S1/PR2; this is the keyboard path.)
+	function onLensKey(e: KeyboardEvent): void {
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		const t = e.target as HTMLElement | null;
+		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+			return;
+		}
+		const idx = Number.parseInt(e.key, 10) - 1;
+		if (Number.isInteger(idx) && idx >= 0 && idx < LENSES.length) {
+			lensStore.set(LENSES[idx]);
+			scheduleHashWrite();
+		}
 	}
 
 	function runController<A>(eff: Effect.Effect<A, MapLayerError, MapLayerController>): Promise<A> | undefined {
@@ -1552,6 +1571,9 @@
 	}
 
 	onMount(async () => {
+		// Resolve the active lens before the map mounts: hash (shareable) wins,
+		// else the remembered choice, else Sky. Map state stays orthogonal.
+		lensStore.init(decodeHash(window.location.hash).lens);
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
 		maplibreLib = maplibre;
@@ -1752,6 +1774,8 @@
 		maplibreLib = undefined;
 	});
 </script>
+
+<svelte:window onkeydown={onLensKey} />
 
 <svelte:head>
 	<title>darkmap</title>
