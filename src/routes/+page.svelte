@@ -1853,7 +1853,7 @@
 <div
 	class="field-hud"
 	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
-	data-readout={readout && !transmissionOpen ? 'open' : 'closed'}
+	data-readout={readout ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
 >
 	{#if transmissionOpen}
@@ -1970,7 +1970,7 @@
 		onchange={onRouteFileChange}
 	/>
 
-	{#if readout && !transmissionOpen}
+	{#if readout}
 		<PointReadout
 			lens={lensStore.lens}
 			lat={readout.lat}
@@ -2074,6 +2074,19 @@
 	.attribution a {
 		color: var(--accent-amber);
 	}
+	/* Deep tool open → keep the point readout as the OVERVIEW (top-right, above the
+	   bottom-docked detail sheet) instead of unmounting it (§11.5 overview+detail,
+	   never occlude). The ≤820px rules below override with a compact placement;
+	   this is the desktop default. */
+	.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
+		top: calc(1rem + env(safe-area-inset-top, 0px));
+		right: 1rem;
+		bottom: auto;
+		/* Reserve the bottom 34rem for the docked sheet (max 28rem + its offset +
+		   a gap) so the overview never dips into the detail panel. */
+		max-height: min(46vh, calc(100dvh - 34rem));
+		overflow-y: auto;
+	}
 	@media (max-width: 820px), (max-height: 500px) {
 		.field-hud :global(.readout[role='dialog']) {
 			bottom: calc(
@@ -2117,6 +2130,9 @@
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
 		}
+		/* Cramped short/landscape: switcher (top-left) + the right-half sheet leave
+		   no clean spot for the overview, so it yields until the tool closes — a
+		   deliberate space concession (the readout returns on close), not gating. */
 		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
