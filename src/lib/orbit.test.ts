@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+	airmass,
+	clearSkyTransmittance,
 	dopplerShiftHz,
 	epochAgeDays,
 	findPasses,
+	isKeyholePass,
 	lookAngleAt,
 	parseTle,
 	parseTleSets,
+	slantTransmittance,
 	tleEpoch,
 	type Observer,
 } from './orbit';
@@ -119,6 +123,50 @@ describe('findPasses — DEM-horizon gating (the differentiator)', () => {
 			expect(p.terrainGated).toBe(true);
 			for (const s of p.track) expect(s.elDeg).toBeGreaterThan(25);
 		}
+	});
+});
+
+describe('airmass (Kasten–Young)', () => {
+	it('is ≈1 at the zenith and ≈2 at 30°', () => {
+		expect(airmass(90)).toBeCloseTo(1, 1);
+		expect(airmass(30)).toBeCloseTo(2, 1);
+	});
+	it('increases monotonically as elevation drops and stays finite to/below the horizon', () => {
+		expect(airmass(90)).toBeLessThan(airmass(60));
+		expect(airmass(60)).toBeLessThan(airmass(30));
+		expect(airmass(30)).toBeLessThan(airmass(10));
+		expect(airmass(10)).toBeLessThan(airmass(0.1));
+		expect(Number.isFinite(airmass(0))).toBe(true);
+		expect(Number.isFinite(airmass(-5))).toBe(true);
+	});
+});
+
+describe('transmittance estimates', () => {
+	it('clear-sky T is higher at high elevation and within (0,1]', () => {
+		const hi = clearSkyTransmittance(90);
+		const lo = clearSkyTransmittance(10);
+		expect(hi).toBeGreaterThan(lo);
+		expect(hi).toBeLessThanOrEqual(1);
+		expect(lo).toBeGreaterThan(0);
+	});
+	it('slantTransmittance ≈ zenith T near zenith and drops toward the horizon', () => {
+		expect(slantTransmittance(0.9, 90)).toBeCloseTo(0.9, 1);
+		expect(slantTransmittance(0.9, 10)).toBeLessThan(0.9);
+		expect(slantTransmittance(0.9, 10)).toBeGreaterThan(0);
+		expect(slantTransmittance(1, 30)).toBe(1); // a transparent zenith stays transparent at any airmass
+	});
+});
+
+describe('isKeyholePass + Pass.keyhole', () => {
+	it('flags near-zenith culmination at/above the 85° threshold', () => {
+		expect(isKeyholePass(88)).toBe(true);
+		expect(isKeyholePass(85)).toBe(true);
+		expect(isKeyholePass(70)).toBe(false);
+	});
+	it('findPasses stamps pass.keyhole consistent with the culmination elevation', () => {
+		const { satrec } = parseTle(L1, L2);
+		const passes = findPasses({ satrec, observer: ITHACA, start: START, windowHours: WINDOW_H, stepSec: 30 });
+		for (const p of passes) expect(p.keyhole).toBe(isKeyholePass(p.maxElevationDeg));
 	});
 });
 

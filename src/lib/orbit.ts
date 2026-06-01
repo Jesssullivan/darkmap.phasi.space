@@ -20,6 +20,8 @@ const DEG = 180 / Math.PI;
 const RAD = Math.PI / 180;
 const C_KM_S = 299_792.458;
 const MS_PER_DAY = 86_400_000;
+/** Culmination elevation (deg) at/above which a pass is a rotator "keyhole" (rapid az slew through zenith). */
+export const KEYHOLE_ELEVATION_DEG = 85;
 
 /**
  * Terrain horizon altitude (deg) at an azimuth — inlined mirror of
@@ -143,6 +145,54 @@ export function dopplerShiftHz(satrec: SatRec, observer: Observer, date: Date, c
 	return (-rangeRateKmS / C_KM_S) * carrierHz;
 }
 
+// ─────────────────────── atmosphere / pass quality ──────────────────────
+
+/**
+ * Relative optical airmass at `elevationDeg` (Kasten–Young 1989):
+ *   X = 1 / (sin h + 0.50572·(h + 6.07995)^−1.6364),  h in degrees.
+ * ≈1.0 at the zenith, ≈2.0 at 30°, ≈38 at the horizon. Below the horizon the
+ * slant path is unphysical, so we clamp h to a small positive floor and return
+ * the (large) near-horizon airmass — callers degrade smoothly instead of NaN.
+ */
+export function airmass(elevationDeg: number): number {
+	const h = Math.max(elevationDeg, 0.05);
+	const sinH = Math.sin(h * RAD);
+	return 1 / (sinH + 0.50572 * (h + 6.07995) ** -1.6364);
+}
+
+/**
+ * Clear-sky slant transmittance estimate at `elevationDeg` via Beer–Lambert
+ * from the relative airmass and a zenith optical depth: T = exp(−τ₀·X). τ₀
+ * defaults to 0.20 (a clear visible/near-IR zenith optical depth). A LABELED
+ * ESTIMATE for the pass-quality gradient — not a measurement, not wavelength-
+ * resolved; pair `slantTransmittance` with a measured T(λ) curve for that.
+ * Returns a value in (0, 1].
+ */
+export function clearSkyTransmittance(elevationDeg: number, zenithOpticalDepth = 0.2): number {
+	return Math.exp(-Math.max(0, zenithOpticalDepth) * airmass(elevationDeg));
+}
+
+/**
+ * Scale a measured/modeled ZENITH transmittance to the slant path at
+ * `elevationDeg` via Beer–Lambert: since T_zenith = exp(−τ), the airmass-X path
+ * is T = exp(−τ·X) = T_zenith^X. Pair with a sampled zenith T(λ) (e.g. the
+ * Links TransmissionEstimator curve) to get the along-the-pass transmittance.
+ * Returns a value in (0, 1].
+ */
+export function slantTransmittance(zenithTransmittance: number, elevationDeg: number): number {
+	const t = Math.min(1, Math.max(1e-6, zenithTransmittance));
+	return t ** airmass(elevationDeg);
+}
+
+/**
+ * Whether a pass culminating at `maxElevationDeg` is a rotator "keyhole": the
+ * track passes near the zenith, where an az/el mount must slew azimuth through
+ * (almost) 180° in seconds to keep the antenna pointed. Default threshold 85°.
+ */
+export function isKeyholePass(maxElevationDeg: number, thresholdDeg = KEYHOLE_ELEVATION_DEG): boolean {
+	return maxElevationDeg >= thresholdDeg;
+}
+
 export interface PassSample {
 	readonly t: Date;
 	readonly azDeg: number;
@@ -166,6 +216,8 @@ export interface Pass {
 	readonly track: readonly PassSample[];
 	/** True when the terrain horizon raised the AOS/LOS bar above the flat 0° math horizon. */
 	readonly terrainGated: boolean;
+	/** True when culmination nears the zenith (≥ KEYHOLE_ELEVATION_DEG) — an az/el rotator must slew azimuth fast through zenith. */
+	readonly keyhole: boolean;
 }
 
 export interface FindPassesInput {
@@ -237,6 +289,7 @@ export function findPasses(input: FindPassesInput): Pass[] {
 			track,
 			// Terrain raised the bar if the horizon at AOS or LOS azimuth exceeds the flat 0°.
 			terrainGated: aos.horizonDeg > 0.01 || los.horizonDeg > 0.01,
+			keyhole: isKeyholePass(peak.elDeg),
 		});
 		current = null;
 	};
