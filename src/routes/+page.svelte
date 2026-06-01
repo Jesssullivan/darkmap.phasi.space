@@ -134,6 +134,10 @@
 	// An explicit basemap — a shared `&b=` link or a user chip click — always
 	// wins over the per-lens nudge below (PR5). A `&b=` on load counts as explicit.
 	let userChoseBasemap = $state(browser ? !!decodeHash(window.location.hash).basemap : false);
+	// The Air lens nudges the Smog (PM2.5) station layer on (its signature data).
+	// Any explicit layer choice — a manual toggle or a shared `&l=` link — pins
+	// the user's layers and stops the nudge, exactly like `userChoseBasemap`.
+	let userToggledSmog = $state(browser ? !!decodeHash(window.location.hash).layers : false);
 
 	const initialTime = (): Date => {
 		if (browser) {
@@ -1540,6 +1544,13 @@
 		scheduleHashWrite();
 	}
 
+	// A user-initiated rail toggle of the Smog layer pins the choice so the Air
+	// lens nudge stops managing it (mirrors onBasemapChange ⇒ userChoseBasemap).
+	function onLayerChange(id: string, partial: Partial<LayerState>): void {
+		if (id === SMOG_LAYER_ID && partial.on !== undefined) userToggledSmog = true;
+		onChange(id, partial);
+	}
+
 	function getInitialView(): Promise<{ center: [number, number]; zoom: number }> {
 		const fallback = { center: [...FALLBACK_CENTER] as [number, number], zoom: FALLBACK_ZOOM };
 		if (!browser) return Promise.resolve(fallback);
@@ -1599,6 +1610,35 @@
 		activeBasemap = want;
 		if (mapInstance) applyBasemapLive(mapInstance, want);
 		scheduleHashWrite();
+	});
+
+	// Apply the Air-lens Smog nudge to the live map WITHOUT persisting to the
+	// shareable hash: the layer derives from the lens, so a shared `&lens=air`
+	// reproduces the stations on the recipient's map without duplicating the
+	// layer in `&l=`. (A user toggle, by contrast, persists via onChange.) If the
+	// map hasn't mounted yet, layerState is set and the init loop mounts it.
+	function setSmogNudge(on: boolean): void {
+		const layer = LAYERS.find((l) => l.id === SMOG_LAYER_ID);
+		if (!layer) return;
+		const prev = layerState[SMOG_LAYER_ID] ?? { on: false, opacity: layer.opacity };
+		if (prev.on === on) return;
+		layerState[SMOG_LAYER_ID] = { ...prev, on };
+		if (!mapInstance) return;
+		if (on) mountLayer(layer);
+		else unmountLayer(layer);
+	}
+
+	// Per-lens layer nudge: the Air lens's signature data IS the ground stations,
+	// so Air turns the Smog (PM2.5) layer on and the other lenses turn the
+	// system's own nudge back off — a SUBTLE default that never animates the
+	// viewport. Never fires once the user has pinned the layer (manual toggle or
+	// `&l=`); the user always wins. Surfaces a buried tool, never gates it.
+	const lensWantsSmog = (l: Lens): boolean => l === 'air';
+	$effect(() => {
+		if (userToggledSmog) return;
+		const want = lensWantsSmog(lensStore.lens);
+		if ((layerState[SMOG_LAYER_ID]?.on ?? false) === want) return;
+		setSmogNudge(want);
 	});
 
 	onMount(async () => {
@@ -1856,7 +1896,7 @@
 	lens={lensStore.lens}
 	layers={LAYERS}
 	states={layerState}
-	onchange={onChange}
+	onchange={onLayerChange}
 	basemap={activeBasemap}
 	onbasemapchange={onBasemapChange}
 	time={ephemerisTime}
