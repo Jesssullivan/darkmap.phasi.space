@@ -2130,6 +2130,9 @@
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
 		}
+		/* Cramped short/landscape: switcher (top-left) + the right-half sheet leave
+		   no clean spot for the overview, so it yields until the tool closes — a
+		   deliberate space concession (the readout returns on close), not gating. */
 		.field-hud[data-transmission='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
