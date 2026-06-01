@@ -943,18 +943,22 @@ async function runAqDashboardSmoke(page) {
 	// TIN-1815: the /aq dashboard populates from the mocked OpenAQ stations +
 	// history. Navigate straight to the dashboard with a point in the hash (NYC,
 	// where the canned stations sit) — `m=lat,lon,zoom` → applyHash → loadPoint.
-	// The proof cell has no WebGL, so we assert the DASHBOARD behaviour + DOM:
-	// the OpenAQ fetch fires, the AQI badge computes a number, the Area overview
-	// reports stations (not the empty state). Remove the data path ⇒ this fails.
+	// The proof cell has no WebGL AND no system fonts, so we assert the DASHBOARD
+	// behaviour + DOM presence/text — never visibility/bbox (text-only nodes
+	// collapse to zero size without fonts and read as "hidden"). The OpenAQ fetch
+	// fires, the AQI badge computes a number, the Area overview reports stations
+	// (not the empty state). Remove the data path ⇒ this fails.
 	const openaqRequest = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/atmospheric/openaq', {
 		timeout: 20_000,
 	});
 	await page.goto(`${baseURL}/aq#m=40.75,-73.95,9`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 	await openaqRequest; // the dashboard pulled stations for the seeded point
 
-	// AQI badge computes from the mocked stations (estimate → US-EPA AQI).
+	// AQI badge computes from the mocked stations (estimate → US-EPA AQI). Wait
+	// for it ATTACHED (not visible) — the font-less cell renders text nodes at
+	// zero size; the value is in textContent regardless.
 	const aqiNum = page.locator('.aqi-badge .aqi-num');
-	await aqiNum.waitFor({ state: 'visible', timeout: 20_000 });
+	await aqiNum.waitFor({ state: 'attached', timeout: 20_000 });
 	const aqiText = ((await aqiNum.textContent()) ?? '').trim();
 	if (!/\d/.test(aqiText)) throw new Error(`aq-dashboard: AQI badge empty/non-numeric: "${aqiText}"`);
 
