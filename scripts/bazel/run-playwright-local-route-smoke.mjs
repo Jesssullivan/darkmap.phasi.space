@@ -334,13 +334,13 @@ async function runMobileHudSmoke(page) {
 	await sheet.waitFor({ state: 'visible', timeout: 20_000 });
 	console.log(`darkmap mobile-hud transmission-open precheck ${JSON.stringify(await collectHudMetrics(page))}`);
 	await sheet.getByText(/for -?\d+\.\d+°,\s*-?\d+\.\d+°/).waitFor({ state: 'visible', timeout: 20_000 });
-	const readoutCount = await page.locator('.readout[role="dialog"]').count();
-	if (readoutCount !== 0) {
-		throw new Error(`point readout remained mounted while transmission sheet was open: count=${readoutCount}`);
-	}
+	// Overview+detail (§11.5): the point readout STAYS as the overview alongside
+	// the deep-tool sheet — it must not unmount, and the two must not overlap.
+	await readout.waitFor({ state: 'visible', timeout: 20_000 });
 	await assertHudBoxesDoNotOverlap(page, 'transmission-open', [
 		['.sheet', '.toolbar'],
 		['.sheet', '.gantt'],
+		['.sheet', '.readout[role="dialog"]'],
 	]);
 
 	await page.getByRole('button', { name: /Close transmission sheet/i }).click();
