@@ -223,6 +223,11 @@
 	}
 	.search-input {
 		width: 100%;
+		/* min-width:0 kills the flex/grid default `min-width:auto` min-content floor.
+		   Without it, a fontless render (zero/degenerate text metrics, e.g. the CI
+		   RBE cell) can leave the input's intrinsic min-width unresolvable and stall
+		   inline-axis sizing of the .deck-header flex row it lives in (W1 peg). */
+		min-width: 0;
 		background: rgba(8, 10, 16, 0.85);
 		color: #e9ecf3;
 		border: 1px solid rgba(255, 255, 255, 0.18);

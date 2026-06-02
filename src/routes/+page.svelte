@@ -87,8 +87,8 @@
 	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
-	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
+	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
 		FALLBACK_CENTER,
 		FALLBACK_ZOOM,
@@ -1858,74 +1858,149 @@
 	<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
 </svelte:head>
 
+<!-- W1 — the Command Deck (docs/ux/command-deck.md §2). ONE CSS-grid app shell of
+     named, non-overlapping regions replaces the .field-hud{pointer-events:none}
+     float-soup + the z4→z13 ladder + the PR5 --portal-inset faux-grid. At WIDE
+     (≥1024px) the regions are real grid tracks
+     ('header header header' / 'rail stage inspector' / 'dock dock dock',
+     [20rem][1fr][22rem]) so overlap is impossible by construction — the map can
+     only be SHRUNK, never covered. ≤1023px the deck is `display:contents` (inert),
+     so every child reverts to its current single-column float positioning — a
+     TEMPORARY fallback until W4's full responsive reflow. -->
 <div
-	bind:this={mapEl}
-	class="map"
-	class:drag-over={dragOver}
-	data-tour="map"
-	role="application"
-	aria-label="Light pollution map"
-	ondragover={onMapDragOver}
-	ondragleave={onMapDragLeave}
-	ondrop={onMapDrop}
-></div>
-
-<!-- Portal-IA (PR5): decorative frame around the inset map — hairline edge +
-     corner targeting brackets. A separate pointer-events:none sibling so it can
-     never intercept map drags or chrome clicks; mirrors the same --portal-inset
-     tokens as .map. Inert until the desktop @media engages (display:none else). -->
-<div class="portal-frame" aria-hidden="true"></div>
-
-{#if dragOver}
-	<div class="drop-hint" aria-hidden="true">Drop a KML, GPX, or GeoJSON file to import</div>
-{/if}
-
-<MapErrorToast errors={toastErrors} onDismiss={dismissToast} />
-
-<LensSwitcher
-	active={lensStore.lens}
-	onselect={(lens) => {
-		lensStore.set(lens);
-		scheduleHashWrite();
-	}}
-/>
-<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
-<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
-
-<GeocoderSearch
-	bias={viewCenter}
-	onSelect={(sel) => {
-		if (!mapInstance) return;
-		mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
-	}}
-/>
-<!-- Portal-IA (PR6+7): the LEFT DOCK. On desktop (portal engaged) this is a fixed
-     card in the left --portal-inset gutter holding the per-lens instrument row on
-     top + the re-homed LayerRail (scrolling) below. Off-portal it is display:contents
-     (inert), so LayerRail keeps its own mobile-drawer positioning unchanged. It is a
-     .field-hud SIBLING — outside pointer-events:none, so it gets native clicks. -->
-<aside class="left-dock" aria-label="Lens dock">
-	<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
-	<div class="left-dock-scroll">
-		<LayerRail
-			lens={lensStore.lens}
-			layers={LAYERS}
-			states={layerState}
-			onchange={onLayerChange}
-			basemap={activeBasemap}
-			onbasemapchange={onBasemapChange}
-			time={ephemerisTime}
-		/>
-	</div>
-</aside>
-<Tour bind:open={tourOpen} steps={tourSteps} />
-<div
-	class="field-hud"
+	class="command-deck"
 	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
 	data-readout={readout ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
 	data-passplan={passPlanOpen ? 'open' : 'closed'}
 >
+	<!-- HEADER region: lens chips (left) + geocoder (right), out of the float-soup
+	     into a reserved top row. ≤1023px display:contents → both keep their own
+	     fixed placement. -->
+	<header class="deck-header" aria-label="Lens + search">
+		<LensSwitcher
+			active={lensStore.lens}
+			onselect={(lens) => {
+				lensStore.set(lens);
+				scheduleHashWrite();
+			}}
+		/>
+		<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
+		<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
+
+		<GeocoderSearch
+			bias={viewCenter}
+			onSelect={(sel) => {
+				if (!mapInstance) return;
+				mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
+			}}
+		/>
+	</header>
+
+	<!-- RAIL region: the per-lens instrument row on top + the LayerRail below. At
+	     WIDE this is the left grid track (20rem) — it PUSHES the stage, never
+	     overlays it. ≤1023px display:contents → LayerRail keeps its mobile-drawer
+	     positioning (the rail-toggle + backdrop live inside LayerRail, fixed). -->
+	<aside class="left-dock" aria-label="Lens dock">
+		<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
+		<div class="left-dock-scroll">
+			<LayerRail
+				lens={lensStore.lens}
+				layers={LAYERS}
+				states={layerState}
+				onchange={onLayerChange}
+				basemap={activeBasemap}
+				onbasemapchange={onBasemapChange}
+				time={ephemerisTime}
+			/>
+		</div>
+	</aside>
+
+	<!-- STAGE region: the MapLibre canvas as grid-area:stage — NO position:fixed,
+	     NO inset. The grid sizes the map; regions shrink it, never cover it.
+	     `.stage` is position:relative so the remaining float overlays (toolbar,
+	     sky compass, deep-tool sheets, toasts, attribution) clip to the stage box
+	     at WIDE — out of the header/rail/inspector/dock cells by construction.
+	     MapLibre's trackResize (on by default) re-fires map.resize() on the grid
+	     resize. ≤1023px display:contents → .map keeps inset:0 full-bleed. -->
+	<div class="stage">
+		<div
+			bind:this={mapEl}
+			class="map"
+			class:drag-over={dragOver}
+			data-tour="map"
+			role="application"
+			aria-label="Light pollution map"
+			ondragover={onMapDragOver}
+			ondragleave={onMapDragLeave}
+			ondrop={onMapDrop}
+		></div>
+
+		<!-- Decorative frame — now the STAGE cell's border (was a z4 fixed overlay
+		     reading the --portal-inset tokens). A pointer-events:none sibling so it
+		     never intercepts map drags. Inert until the WIDE grid engages. -->
+		<div class="portal-frame" aria-hidden="true"></div>
+
+		{#if dragOver}
+			<div class="drop-hint" aria-hidden="true">Drop a KML, GPX, or GeoJSON file to import</div>
+		{/if}
+
+		<MapErrorToast errors={toastErrors} onDismiss={dismissToast} />
+
+		<!-- Float overlays not yet docked into a region (deep-tool sheets → W3,
+		     toolbar/sky → W2). They stay position:fixed ≤1023px; at WIDE they are
+		     absolutely positioned within the stage so they overlay only the map. -->
+		{@render fieldFloats()}
+	</div>
+
+	<!-- INSPECTOR region: the persistent PointReadout as a docked right column at
+	     WIDE (22rem track). ≤1023px display:contents → it keeps its bottom-right
+	     float + click-to-open behaviour. -->
+	<aside class="deck-inspector" aria-label="Point inspector">
+		<PointReadout
+			scope={readout ? 'point' : 'mean'}
+			lens={lensStore.lens}
+			lat={readout?.lat}
+			lon={readout?.lon}
+			time={ephemerisTime}
+			data={readout?.data}
+			loading={readout?.loading ?? false}
+			error={readout?.error}
+			pm25={pm25Estimate}
+			{aqEstimates}
+			{pollutantUnits}
+			airQuality={airQualityReading}
+			history={stationHistory}
+			historyLoading={stationHistoryLoading}
+			onclose={closeReadout}
+			onTransmissionForPoint={openTransmissionForPoint}
+			onAqDashboardForPoint={openAqDashboardForPoint}
+			onPlanPassForPoint={openPassPlanForPoint}
+		/>
+	</aside>
+
+	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
+	     "X floats over the twilight strip" is structurally impossible. ≤1023px
+	     display:contents → the gantt keeps its current fixed bottom-strip layout. -->
+	<div class="deck-dock">
+		{#if ephemerisOpen}
+			<EphemerisGantt
+				location={viewCenter}
+				time={ephemerisTime}
+				bounds={viewBounds}
+				zoom={viewZoom}
+				onTimeChange={(t) => {
+					setEphemerisTime(t);
+					scheduleHashWrite();
+				}}
+			/>
+		{/if}
+	</div>
+</div>
+
+<Tour bind:open={tourOpen} steps={tourSteps} />
+
+{#snippet fieldFloats()}
 	{#if transmissionOpen}
 		<TransmissionSheet
 			pointLat={readout?.lat}
@@ -1975,18 +2050,12 @@
 		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
 	{/if}
 
+	<!-- The sky dome. At WIDE the RAIL instrument column shows the embedded dome, so
+	     this standalone float is hidden there (.stage .sky → display:none) to avoid
+	     the double-dome. Below 1024px the rail is hidden, so this float IS the dome —
+	     keep it rendered (breakpoint-exclusive, never removed). De-dup, not deletion. -->
 	{#if ephemerisOpen}
 		<SkyCompass location={viewCenter} time={ephemerisTime} />
-		<EphemerisGantt
-			location={viewCenter}
-			time={ephemerisTime}
-			bounds={viewBounds}
-			zoom={viewZoom}
-			onTimeChange={(t) => {
-				setEphemerisTime(t);
-				scheduleHashWrite();
-			}}
-		/>
 	{/if}
 
 	<MapToolbar
@@ -2044,35 +2113,10 @@
 		onchange={onRouteFileChange}
 	/>
 
-	<!-- Persistent dossier (portal PR4): mounted always. `point` scope inspects a
-	     clicked location; `mean` scope (no selection) shows the lens's question +
-	     "click the map" prompt. The mean panel is desktop-only (hidden ≤820px in
-	     the component) so mobile keeps its click-to-open behaviour. -->
-	<PointReadout
-		scope={readout ? 'point' : 'mean'}
-		lens={lensStore.lens}
-		lat={readout?.lat}
-		lon={readout?.lon}
-		time={ephemerisTime}
-		data={readout?.data}
-		loading={readout?.loading ?? false}
-		error={readout?.error}
-		pm25={pm25Estimate}
-		{aqEstimates}
-		{pollutantUnits}
-		airQuality={airQualityReading}
-		history={stationHistory}
-		historyLoading={stationHistoryLoading}
-		onclose={closeReadout}
-		onTransmissionForPoint={openTransmissionForPoint}
-		onAqDashboardForPoint={openAqDashboardForPoint}
-		onPlanPassForPoint={openPassPlanForPoint}
-	/>
-
 	<footer class="attribution">
 		<a href="/docs">credits + sources</a>
 	</footer>
-</div>
+{/snippet}
 
 <style>
 	:global(html),
@@ -2084,29 +2128,200 @@
 		color: #e9ecf3;
 		font-family: var(--font-sans, system-ui, sans-serif);
 	}
+	/* COMPACT/MEDIUM (≤1023px) base: the map is full-bleed fixed (display:contents
+	   on the deck + stage means the map keeps this). The WIDE @media block below —
+	   later in source order — promotes it to position:absolute inside the STAGE
+	   cell, so the grid sizes it. */
 	.map {
 		position: fixed;
-		/* Portal-IA (PR5): inset from the --portal-inset-* tokens. All default 0
-		   (mobile/short) → byte-identical to `inset:0`; the desktop @media in
-		   app.css shrinks the map into the framed portal. MapLibre's trackResize
-		   (on by default) auto-fires map.resize() when the container resizes. */
-		inset: var(--portal-inset-top, 0) var(--portal-inset-right, 0) var(--portal-inset-bottom, 0)
-			var(--portal-inset-left, 0);
+		inset: 0;
 	}
-	/* Decorative portal frame — a separate pointer-events:none sibling so it can
-	   NEVER intercept map drags or chrome clicks. Mirrors the same inset tokens
-	   as .map so the brackets/edge always frame the same box. z-index:4 sits
-	   above the unindexed map canvas but below attribution/toolbar/rail/readout.
-	   Off (display:none) until the desktop query engages, so mobile is unchanged. */
+	/* ===== W1 — the Command Deck grid shell (docs/ux/command-deck.md §2/§3) =====
+	   ≤1023px: the deck is `display:contents` (inert) — every region wrapper is
+	   also display:contents, so each child reverts to its own current fixed
+	   positioning. This is the TEMPORARY single-column fallback (full responsive =
+	   W4); it keeps the COMPACT layout byte-identical, which the 390px browser-RBE
+	   smoke contracts depend on. */
+	.command-deck,
+	.deck-header,
+	.stage,
+	.deck-inspector,
+	.deck-dock {
+		display: contents;
+	}
+	/* WIDE (≥1024px): ONE real grid. Two areas can never occupy the same pixels,
+	   so the map + twilight strip can only be SHRUNK, never occluded. Tracks:
+	   [20rem rail][1fr stage][22rem inspector]; rows: header / body / dock. This
+	   replaces the PR5 --portal-inset faux-grid + the z4→z13 ladder + the
+	   .field-hud{pointer-events:none} scrim. */
+	@media (min-width: 1024px) {
+		.command-deck {
+			display: grid;
+			position: fixed;
+			inset: 0;
+			grid-template-columns: 20rem 1fr 22rem;
+			/* minmax(0, …) on every row drops the implicit `min-content` floor.
+			   That floor makes a track size to its content's intrinsic min, which —
+			   with the fontless CI cell's zero-metric text — can enter a grid
+			   track-sizing CYCLE that pegs the main thread before DCL (the page
+			   never loads; no console). Capping the min at 0 breaks the cycle. */
+			grid-template-rows: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+			grid-template-areas:
+				'header header header'
+				'rail stage inspector'
+				'dock dock dock';
+			gap: 0.75rem;
+			padding: 0.75rem;
+			box-sizing: border-box;
+		}
+		/* contain:layout isolates each region's internal layout so a child's
+		   intrinsic sizing can't propagate back into the grid track computation
+		   (belt-and-suspenders with minmax(0,…) against the fontless layout cycle). */
+		.deck-header {
+			grid-area: header;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1rem;
+			min-width: 0;
+			min-height: 0;
+			contain: layout;
+		}
+		.stage {
+			grid-area: stage;
+			display: block;
+			position: relative;
+			min-width: 0;
+			min-height: 0;
+			border-radius: 8px;
+			overflow: hidden;
+			contain: layout;
+		}
+		.deck-inspector {
+			grid-area: inspector;
+			display: block;
+			min-width: 0;
+			min-height: 0;
+			overflow: hidden;
+			contain: layout;
+		}
+		.deck-dock {
+			grid-area: dock;
+			display: block;
+			min-width: 0;
+			min-height: 0;
+			overflow: hidden;
+			contain: layout;
+		}
+		/* STAGE: the MapLibre canvas fills the stage cell — grid-area:stage, no
+		   position:fixed, no inset. MapLibre trackResize (default-on) re-fires
+		   map.resize() when the grid resizes this box. */
+		.map {
+			position: absolute;
+			inset: 0;
+		}
+
+		/* De-fix the region children at WIDE: the lens chips + geocoder (HEADER),
+		   the PointReadout (INSPECTOR), and the twilight gantt (DOCK) drop their
+		   own position:fixed/inset/z-index and flow into their grid cells. Their
+		   own ≤1023px float positioning is untouched (the COMPACT fallback). The
+		   stage overlays (toolbar, sky, sheets) stay fixed — W2/W3 dock them. */
+		/* min-width:0 on BOTH flex children drops the default `min-width:auto`
+		   min-content floor. In the fontless CI RBE cell, degenerate text metrics
+		   leave the chips'/input's min-content inline-size unresolvable, which can
+		   stall the .deck-header flex row's inline-axis sizing and peg layout before
+		   DCL. The prior W1 fix only capped the block axis (minmax(0,…) rows); this
+		   is the inline-axis counterpart. */
+		.deck-header :global(.lens-switcher) {
+			position: static;
+			inset: auto;
+			z-index: auto;
+			min-width: 0;
+		}
+		.deck-header :global(.geocoder) {
+			position: relative;
+			top: auto;
+			left: auto;
+			transform: none;
+			z-index: auto;
+			width: min(28rem, 100%);
+			min-width: 0;
+		}
+		/* The geocoder's results dropdown overlays following content (anchored to
+		   the input), not the viewport. */
+		.deck-header :global(.geocoder .dropdown) {
+			position: absolute;
+			left: 0;
+			right: 0;
+			z-index: 20;
+		}
+		/* INSPECTOR: the readout is the persistent right column — fills the 22rem
+		   cell, no fixed anchor, scrolls within the cell. Covers the base readout
+		   AND the deep-tool overview states (deep tools still float as sheets in
+		   W1; W3 docks them into this column). */
+		.deck-inspector :global(.readout) {
+			position: static;
+			inset: auto;
+			z-index: auto;
+			width: 100%;
+			min-width: 0;
+			max-width: none;
+			max-height: 100%;
+			overflow-y: auto;
+			animation: none;
+		}
+		/* DOCK: the gantt is the full-width bottom row — drop its fixed bottom-strip
+		   anchor + the toolbar inset (it owns the whole row now). */
+		.deck-dock :global(.gantt) {
+			position: static;
+			inset: auto;
+			left: auto;
+			right: auto;
+			bottom: auto;
+			z-index: auto;
+			width: 100%;
+			box-sizing: border-box;
+		}
+		/* Stage overlays (toolbar bottom-right, sky compass top-right) become
+		   position:absolute so they clip to the STAGE cell (which is
+		   position:relative) instead of the viewport — keeping them off the
+		   HEADER / INSPECTOR / DOCK regions by construction. The deep-tool sheets
+		   (.sheet / .pass-plan) also clip to the stage; W3 docks them into the
+		   inspector. MapErrorToast + drop-hint already live in the stage. */
+		.stage :global(.toolbar) {
+			position: absolute;
+			right: 0.75rem;
+			bottom: 0.75rem;
+			z-index: 8;
+		}
+		/* W1 de-dup: the RAIL instrument column owns the sky dome at WIDE, so the
+		   standalone float is hidden here (it stays rendered + visible ≤1023px, where
+		   the rail is hidden — one dome at every breakpoint, never removed). */
+		.stage :global(.sky) {
+			display: none;
+		}
+		.stage :global(.sheet),
+		.stage :global(.pass-plan) {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			z-index: 12;
+		}
+		.stage :global(.maplibregl-ctrl-bottom-right) {
+			z-index: 2;
+		}
+	}
+	/* Decorative frame — at WIDE it is the STAGE cell's inset border (was a z4
+	   fixed overlay reading the --portal-inset tokens). A pointer-events:none
+	   sibling so it can never intercept map drags. Off (display:none) ≤1023px. */
 	.portal-frame {
 		display: none;
-		position: fixed;
-		inset: var(--portal-inset-top, 0) var(--portal-inset-right, 0) var(--portal-inset-bottom, 0)
-			var(--portal-inset-left, 0);
+		position: absolute;
+		inset: 0;
 		pointer-events: none;
-		z-index: 4;
 	}
-	@media (min-width: 821px) and (min-height: 501px) {
+	@media (min-width: 1024px) {
 		.portal-frame {
 			display: block;
 		}
@@ -2169,32 +2384,31 @@
 		z-index: 100;
 		pointer-events: none;
 	}
-	/* Portal-IA left dock (PR6+7). Off-portal: display:contents = inert wrapper, so
-	   LayerRail + InstrumentColumn fall back to their OWN positioning (the mobile
-	   drawer stays unchanged). On-portal: a fixed card in the left --portal-inset
-	   gutter — instrument row pinned on top (flex:0 0 auto), rail scrolling below
-	   (.left-dock-scroll owns the scroll; the re-homed .layer-rail goes
-	   overflow:visible). The dock draws the card chrome the rail used to. */
+	/* RAIL region. ≤1023px: display:contents = inert wrapper, so LayerRail +
+	   InstrumentColumn fall back to their OWN positioning (the mobile drawer stays
+	   unchanged). At WIDE: the left grid cell (20rem track) — a real region that
+	   PUSHES the stage, never overlays it. Instrument row pinned on top
+	   (flex:0 0 auto); the rail scrolls below (.left-dock-scroll owns the scroll;
+	   the re-homed .layer-rail goes position:static + overflow:visible at WIDE).
+	   The card chrome moves here from the rail. */
 	.left-dock {
 		display: contents;
 	}
-	@media (min-width: 821px) and (min-height: 501px) {
+	@media (min-width: 1024px) {
 		.left-dock {
+			grid-area: rail;
 			display: flex;
 			flex-direction: column;
 			gap: 0.6rem;
-			position: fixed;
-			top: var(--portal-inset-top, 0.75rem);
-			left: max(0.75rem, env(safe-area-inset-left));
-			width: calc(var(--portal-inset-left, 20rem) - 1rem);
-			max-height: calc(100dvh - 2 * var(--portal-inset-top, 0.75rem));
-			z-index: 10;
+			min-width: 0;
+			min-height: 0;
 			background: rgba(8, 10, 16, 0.85);
 			border: 1px solid rgba(255, 255, 255, 0.08);
 			border-radius: 8px;
-			backdrop-filter: blur(6px);
 			padding: 0.85rem 0.9rem;
+			box-sizing: border-box;
 			overflow: hidden;
+			contain: layout;
 		}
 		.left-dock :global(.instrument-column) {
 			flex: 0 0 auto;
@@ -2210,22 +2424,19 @@
 			display: none;
 		}
 	}
-	.field-hud {
+	/* The .field-hud{pointer-events:none} scrim is DELETED (W1, command-deck.md §2):
+	   the grid regions own layout now; the remaining floats get native clicks
+	   directly. The --field-* panel-geometry vars stay on .command-deck so the
+	   COMPACT (≤1023px) float fallback below — the readout / sheet / toolbar /
+	   attribution placement the 390px browser-RBE smoke depends on — keeps reading
+	   them unchanged. The data-* state attributes moved from .field-hud onto
+	   .command-deck. */
+	.command-deck {
 		--field-gap: 0.75rem;
 		--field-panel-bottom: 0px;
 		--field-panel-max-height: min(60vh, 28rem);
-		pointer-events: none;
 	}
-	.field-hud :global(.gantt),
-	.field-hud :global(.readout[role='dialog']),
-	.field-hud :global(.sheet),
-	.field-hud :global(.pass-plan),
-	.field-hud :global(.sky),
-	.field-hud :global(.toolbar),
-	.field-hud .attribution {
-		pointer-events: auto;
-	}
-	.field-hud[data-ephemeris='open'] {
+	.command-deck[data-ephemeris='open'] {
 		--field-panel-bottom: calc(
 			var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
 		);
@@ -2238,7 +2449,7 @@
 			calc(100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 4.75rem)
 		);
 	}
-	.field-hud[data-transmission='open'][data-readout='open'] {
+	.command-deck[data-transmission='open'][data-readout='open'] {
 		--field-panel-max-height: min(40vh, calc(100vh - var(--field-panel-bottom) - 15.25rem));
 		--field-panel-max-height: min(40vh, calc(100dvh - var(--field-panel-bottom) - 15.25rem));
 	}
@@ -2256,36 +2467,34 @@
 	.attribution a {
 		color: var(--accent-amber);
 	}
+	/* WIDE: the attribution sits at the bottom-left of the STAGE cell (which is
+	   position:relative), clear of the dock row. */
+	@media (min-width: 1024px) {
+		.attribution {
+			bottom: 0.75rem;
+			left: 0.75rem;
+		}
+	}
 	/* Deep tool open → keep the point readout as the OVERVIEW (top-right, above the
 	   bottom-docked detail sheet) instead of unmounting it (§11.5 overview+detail,
 	   never occlude). The ≤820px rules below override with a compact placement;
-	   this is the desktop default. */
-	.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
-	.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
-		top: calc(1rem + env(safe-area-inset-top, 0px));
-		right: 1rem;
-		bottom: auto;
-		/* Reserve the bottom 34rem for the docked sheet (max 28rem + its offset +
-		   a gap) so the overview never dips into the detail panel. */
-		max-height: min(46vh, calc(100dvh - 34rem));
-		overflow-y: auto;
-	}
-	/* Portal-IA (PR5): when the framed portal is engaged (same breakpoint as the
-	   inset tokens), seat the dossier INSIDE the 23rem right gutter — right:0.75rem
-	   + max-width:21.5rem (344px < 368px gutter) so the 22rem card no longer spills
-	   onto the canvas. Covers the base readout AND the deep-tool overview states;
-	   placed after the deep-tool override so it wins on equal specificity. Gated to
-	   the portal viewport, so non-portal (short/narrow) placement is unchanged. */
-	@media (min-width: 821px) and (min-height: 501px) {
-		.field-hud :global(.readout[role='dialog']),
-		.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
-		.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
-			right: 0.75rem;
-			max-width: 21.5rem;
+	   this is the desktop default. Scoped to the COMPACT float fallback (≤1023px);
+	   at WIDE the readout lives in the INSPECTOR grid cell so this never applies.
+	   (Deep-tool-into-inspector docking is W3.) */
+	@media (max-width: 1023px) {
+		.command-deck[data-transmission='open'] :global(.readout[role='dialog']),
+		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
+			top: calc(1rem + env(safe-area-inset-top, 0px));
+			right: 1rem;
+			bottom: auto;
+			/* Reserve the bottom 34rem for the docked sheet (max 28rem + its offset +
+			   a gap) so the overview never dips into the detail panel. */
+			max-height: min(46vh, calc(100dvh - 34rem));
+			overflow-y: auto;
 		}
 	}
 	@media (max-width: 820px), (max-height: 500px) {
-		.field-hud :global(.readout[role='dialog']) {
+		.command-deck :global(.readout[role='dialog']) {
 			bottom: calc(
 				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
 			) !important;
@@ -2296,28 +2505,28 @@
 				100dvh - var(--field-bottom-reserve, 8.75rem) - env(safe-area-inset-bottom, 0px) - 5rem
 			) !important;
 		}
-		.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
-		.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
+		.command-deck[data-transmission='open'] :global(.readout[role='dialog']),
+		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			top: calc(4.75rem + env(safe-area-inset-top, 0px)) !important;
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 			bottom: auto !important;
 			max-height: min(24dvh, 10rem) !important;
 		}
-		.field-hud[data-transmission='open'] :global(.toolbar),
-		.field-hud[data-passplan='open'] :global(.toolbar) {
+		.command-deck[data-transmission='open'] :global(.toolbar),
+		.command-deck[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 			bottom: auto !important;
 		}
-		.field-hud[data-transmission='open'] :global(.sheet) {
+		.command-deck[data-transmission='open'] :global(.sheet) {
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 			bottom: var(--field-panel-bottom) !important;
 			max-height: var(--field-panel-max-height) !important;
 			border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 			box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.42);
 		}
-		.field-hud[data-readout='open'] .attribution,
-		.field-hud[data-transmission='open'] .attribution,
-		.field-hud[data-passplan='open'] .attribution {
+		.command-deck[data-readout='open'] .attribution,
+		.command-deck[data-transmission='open'] .attribution,
+		.command-deck[data-passplan='open'] .attribution {
 			display: none;
 		}
 		.attribution {
@@ -2331,7 +2540,7 @@
 	   to portrait + readout-only so the short/landscape concession and the
 	   transmission/passplan top-strip placements are untouched. */
 	@media (max-width: 820px) and (orientation: portrait) {
-		.field-hud[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
+		.command-deck[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
 			:global(.readout[role='dialog']) {
 			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
 			max-height: calc(100vh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 5rem) !important;
@@ -2339,22 +2548,22 @@
 		}
 	}
 	@media (max-width: 820px) and (orientation: landscape), (max-height: 500px) {
-		.field-hud[data-transmission='open'][data-readout='open'] {
+		.command-deck[data-transmission='open'][data-readout='open'] {
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
 		}
 		/* Cramped short/landscape: switcher (top-left) + the right-half sheet leave
 		   no clean spot for the overview, so it yields until the tool closes — a
 		   deliberate space concession (the readout returns on close), not gating. */
-		.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
-		.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
+		.command-deck[data-transmission='open'] :global(.readout[role='dialog']),
+		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
-		.field-hud[data-transmission='open'] :global(.toolbar),
-		.field-hud[data-passplan='open'] :global(.toolbar) {
+		.command-deck[data-transmission='open'] :global(.toolbar),
+		.command-deck[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
-		.field-hud[data-transmission='open'] :global(.sheet) {
+		.command-deck[data-transmission='open'] :global(.sheet) {
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
 		}
 	}

@@ -87,11 +87,44 @@ try {
 				console.log(`darkmap console error observed at ${viewportLabel}: ${msg.text()}`);
 			}
 		});
+		let rendererCrashed = false;
+		page.on('crash', () => {
+			rendererCrashed = true;
+			console.log(`darkmap RENDERER CRASH observed at ${viewportLabel}`);
+		});
 		await installNetworkGuards(page, baseURL);
 		await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
 
 		try {
-			await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+			try {
+				await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+			} catch (gotoErr) {
+				// DIAGNOSTIC (W1 fontless-cell goto-hang): the desktop grid hangs the
+				// page before DCL in the fontless cell. Capture the page state so the
+				// proof log shows whether it's a renderer crash vs a pegged main thread
+				// vs an empty/partial render. raced with a short timeout so a pegged
+				// main thread can't hang this probe too.
+				const probe = await Promise.race([
+					page
+						.evaluate(() => ({
+							readyState: document.readyState,
+							bodyLen: document.body?.innerHTML.length ?? -1,
+							deckPresent: !!document.querySelector('.command-deck'),
+							childCount: document.querySelector('.command-deck')?.childElementCount ?? -1,
+							w: window.innerWidth,
+							h: window.innerHeight,
+						}))
+						.catch((e) => ({ evalError: String(e).slice(0, 120) })),
+					new Promise((r) =>
+						setTimeout(() => r({ evalTimedOut: 'main thread pegged (probe could not run in 3s)' }), 3000),
+					),
+				]);
+				console.log(
+					`darkmap GOTO-DIAG at ${viewportLabel}: crashed=${rendererCrashed} url=${page.url()} ` +
+						`probe=${JSON.stringify(probe)} pageErrors=${JSON.stringify(pageErrors)} consoleErrors=${JSON.stringify(consoleErrors)}`,
+				);
+				throw gotoErr;
+			}
 			await runSmokeScenario(page, SMOKE_SCENARIO);
 
 			if (pageErrors.length > 0) {

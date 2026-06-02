@@ -409,14 +409,13 @@
 		backdrop-filter: blur(6px);
 		animation: fade-in 0.2s ease-out;
 	}
-	/* Portal dock (PR6+7): when the framed portal engages, the rail is RE-HOMED as
-	   a flex child of +page's .left-dock in the left gutter — drop the float
-	   anchors + own chrome (the dock draws the card) + own scroll (it moves to
-	   .left-dock-scroll). Keyed to the SAME query as the portal tokens so the
-	   re-home and the left inset engage together. The base rule above + the mobile
-	   drawer (≤640px) + the 641px toggle-hide all stay byte-identical, so every
-	   off-portal band renders exactly as before. */
-	@media (min-width: 821px) and (min-height: 501px) {
+	/* Command Deck RAIL (W1): at WIDE the rail is RE-HOMED as a flex child of
+	   +page's .left-dock grid cell — drop the float anchors + own chrome (the dock
+	   draws the card) + own scroll (it moves to .left-dock-scroll). Keyed to the
+	   WIDE grid breakpoint (≥1024px) so the re-home engages exactly with the grid.
+	   The base rule above + the mobile drawer (≤640px) + the 641px toggle-hide all
+	   stay byte-identical, so the COMPACT + MEDIUM fallback bands render as before. */
+	@media (min-width: 1024px) {
 		.layer-rail {
 			position: static;
 			top: auto;
