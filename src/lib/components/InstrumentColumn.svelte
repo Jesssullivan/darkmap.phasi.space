@@ -41,7 +41,7 @@
 
 <aside class="instrument-column" aria-label="Lens overview instruments">
 	<section class="tile" data-tier={airTier} aria-label="Air — viewport air quality">
-		<p class="tile-label">
+		<div class="tile-label">
 			Air · viewport
 			<HelpTooltip
 				text="Max PM2.5 AQI sub-index across the reporting stations currently in view (nowcast-style, not the official daily AQI). The bar + number show the worst category; null when no station reports PM2.5 — never a fabricated 0."
@@ -49,7 +49,7 @@
 			>
 				{#snippet trigger()}<span class="tile-info" aria-hidden="true">ⓘ</span>{/snippet}
 			</HelpTooltip>
-		</p>
+		</div>
 		{#if air.aqi}
 			<div class="aqi-rule" style:background={air.aqi.maxCategory.color}></div>
 			<p class="aqi-value" style:color={air.aqi.maxCategory.color}>{air.aqi.median}</p>
