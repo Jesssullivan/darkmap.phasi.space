@@ -849,6 +849,21 @@
 		display: flex;
 		flex-direction: column;
 	}
+	/* Desktop clip fix (TIN-1840): the base .readout is bottom-anchored (bottom:4rem)
+	   with NO max-height / overflow on desktop, so a tall lens readout (e.g. Air:
+	   AQI + PM2.5 + pollutants + history + pollen + cross-check + ephemeris + CTAs)
+	   grows UPWARD off the top of the screen with no way to scroll to it. A cap +
+	   scroll exists only ≤820px and in the deep-tool-open override; the common
+	   readout-only desktop case was uncapped. Mirror that override here: cap from the
+	   4rem bottom offset to 1rem top breathing room and scroll. The existing
+	   scrollTop-reset effect (resets on point/data change) was already written for
+	   this and silently no-op'd on desktop until now. */
+	@media (min-width: 821px) and (min-height: 501px) {
+		.readout {
+			max-height: calc(100dvh - 4rem - 1rem);
+			overflow-y: auto;
+		}
+	}
 	/* Header always leads; the lens only reorders the data sections below it. */
 	.readout > header {
 		order: -100;
