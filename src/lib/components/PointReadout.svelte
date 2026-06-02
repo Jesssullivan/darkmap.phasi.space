@@ -1063,18 +1063,19 @@
 		border: none;
 		border-top: 1px solid rgba(255, 255, 255, 0.12);
 		background: none;
-		color: #e9ecf3;
+		/* Subdue via COLOR, not opacity — the divider stays opacity:1 so the no-dim
+		   invariant never trips on this control (it is an affordance, not content). */
+		color: rgba(233, 236, 243, 0.72);
 		font: inherit;
 		font-size: 0.72rem;
 		letter-spacing: 0.03em;
 		text-transform: uppercase;
-		opacity: 0.72;
 		cursor: pointer;
-		transition: opacity 140ms ease;
+		transition: color 140ms ease;
 	}
 	.more-divider:hover,
 	.more-divider:focus-visible {
-		opacity: 1;
+		color: #e9ecf3;
 		outline: none;
 	}
 	.more-divider:focus-visible {

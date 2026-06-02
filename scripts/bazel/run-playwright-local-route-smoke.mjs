@@ -583,6 +583,9 @@ async function runLensReweightSmoke(page) {
 	// pointer-events:none / aria-disabled. The lens re-weights by ORDER only.
 	const assertNeverGated = (snapshot, lens) => {
 		for (const [id, s] of Object.entries(snapshot.byId)) {
+			// The "More — N ▾" disclosure is a CONTROL (intentionally subdued at rest,
+			// full on hover/focus), not gated content — exclude it from the no-dim check.
+			if (id === 'more-divider') continue;
 			if (s.display === 'none' || s.pointerEvents === 'none' || s.ariaDisabled === 'true' || s.opacity < 1) {
 				throw new Error(`lens-reweight: ${lens} dimmed/gated section "${id}": ${JSON.stringify(s)}`);
 			}
