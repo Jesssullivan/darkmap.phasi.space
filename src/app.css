@@ -67,15 +67,10 @@ html {
 	   sheet inset further to clear it (see MapToolbar.svelte). ≤820px the
 	   toolbar collapses to icon-only and this drops back to 5rem. */
 	--map-toolbar-inset-rem: 8rem;
-	/* Portal-IA inset tokens (PR5). Default 0 = current full-bleed; only the
-	   desktop query below sets them, so mobile/short/landscape are unchanged.
-	   The right gutter hosts the dossier; the left gutter is reserved for the
-	   PR6 instrument column. Both `.map`'s inset and the decorative
-	   `.portal-frame` read these, so they always frame the same box. */
-	--portal-inset-top: 0;
-	--portal-inset-right: 0;
-	--portal-inset-bottom: 0;
-	--portal-inset-left: 0;
+	/* The PR5 --portal-inset-* faux-grid tokens are DELETED (W1, command-deck.md
+	   §2). They insetting the map at one breakpoint was a half-right grid; the
+	   real .command-deck grid in +page.svelte now sizes the map as grid-area:stage
+	   (no inset tokens to read). */
 	/* Persona-lens re-weight (UI redesign, 2026-06-02): the lens PROMOTES by order
 	   only — it NEVER dims/disables. The old --*-tier3-opacity dim tokens are
 	   deleted (off-lens content read as disabled). The lead-section reorder still
@@ -97,23 +92,11 @@ html {
 	}
 }
 
-/* Portal-IA framed map (PR5) — desktop only. Engages at the SAME breakpoint as
-   PointReadout's desktop rule (min-width:821px AND min-height:501px) so the
-   frame appears exactly where the desktop dossier placement begins — no
-   501–600px dead-band. The map insets from these tokens (creating the dossier
-   gutter on the right + the reserved PR6 instrument gutter on the left); short
-   (≤500px) + narrow (≤820px) viewports keep the 0 defaults = full-bleed. */
-@media (min-width: 821px) and (min-height: 501px) {
-	html {
-		--portal-inset-top: 0.75rem;
-		--portal-inset-right: 23rem;
-		--portal-inset-bottom: 0.75rem;
-		/* 20rem (PR6+7): the left gutter is the DOCK — the re-homed LayerRail +
-		   the per-lens instrument row. LEFT(20rem=320px) + RIGHT(23rem=368px) keeps
-		   the map ≥ 300px (592px at the 1280×800 CI viewport; ceiling 38rem). */
-		--portal-inset-left: 20rem;
-	}
-}
+/* The PR5 @media block that set the --portal-inset-* gutter tokens is DELETED
+   (W1). The Command Deck grid (+page.svelte, ≥1024px) replaces the faux-grid:
+   real tracks [20rem rail][1fr stage][22rem inspector] keep the map ≥ 300px
+   (≈560px wide at the 1280×800 CI viewport). The 821-1023px MEDIUM band is a
+   TEMPORARY single-column float fallback until W4. */
 
 /* Visually-hidden but available to assistive tech (aria-live regions, SR-only
    labels). Standard clip-rect pattern. */
@@ -399,10 +382,20 @@ pre.shiki span {
 	background: var(--color-surface-500);
 }
 
-/* ===== On-map surface stacking contract =====
-   Fixed overlays share the map canvas; this is the authoritative map of
-   their z-index + anchor so new panels compose instead of colliding.
-   Keep this comment in sync when adding/moving an overlay.
+/* ===== Surface layout contract =====
+   WIDE (≥1024px): the `.command-deck` CSS grid in `src/routes/+page.svelte`
+   owns layout. Five named, non-overlapping regions —
+   'header header header' / 'rail stage inspector' / 'dock dock dock',
+   tracks [20rem][1fr][22rem] — so overlap is impossible by construction: the
+   map (grid-area:stage) + the twilight gantt (its own DOCK row) can only be
+   SHRUNK, never occluded. The old z4→z13 ladder + the `.field-hud` scrim are
+   deleted; the surfaces flow into grid cells. The only remaining fixed/absolute
+   overlays clip to the STAGE cell (toolbar, sky compass, deep-tool sheets,
+   toasts, attribution) — W2/W3 dock them into regions.
+
+   ≤1023px (TEMPORARY single-column float fallback until W4): the deck is
+   `display:contents`, so each surface keeps its own historical placement. That
+   per-surface z-index + anchor (still authoritative at COMPACT/MEDIUM):
 
      z-index  surface              anchor
      ───────  ───────────────────  ─────────────────────────────
@@ -418,11 +411,12 @@ pre.shiki span {
       12      TransmissionSheet    bottom-right (full-width bottom sheet ≤640px)
       12      LayerRail toggle     top-left
 
-   Bottom-stack rule: the page-level `.field-hud` layout owner in
-   `src/routes/+page.svelte` sets the active mobile slot state. Mobile
-   bottom panels reserve the twilight strip's height (#267), the toolbar's
-   width, and every edge-anchored panel uses safe-area aware gaps so
-   notched-landscape never clips it. */
+   Bottom-stack rule (COMPACT/MEDIUM): the page-level `.command-deck` element in
+   `src/routes/+page.svelte` carries the active slot state (data-ephemeris /
+   data-readout / data-transmission / data-passplan) + the --field-* panel-
+   geometry vars. Mobile bottom panels reserve the twilight strip's height
+   (#267), the toolbar's width, and every edge-anchored panel uses safe-area
+   aware gaps so notched-landscape never clips it. */
 
 /* ===== Queried-point locator marker =====
    Imperative MapLibre marker (lives outside the Svelte tree), so styled
