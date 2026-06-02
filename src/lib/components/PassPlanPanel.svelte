@@ -412,7 +412,9 @@
 				{/if}
 				{#if selected.keyhole}
 					<dt>Keyhole</dt>
-					<dd class="pp-keyhole-note">⟲ near-zenith — fast azimuth slew through zenith</dd>
+					<dd class="pp-keyhole-note">
+						⟲ near-zenith — az slews ~{selected.azSlewPeakDegPerSec.toFixed(0)}°/s through zenith
+					</dd>
 				{/if}
 			</dl>
 		{/if}

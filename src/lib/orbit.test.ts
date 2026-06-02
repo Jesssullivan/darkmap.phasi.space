@@ -7,6 +7,7 @@ import {
 	findPasses,
 	isKeyholePass,
 	lookAngleAt,
+	maxAzSlewRateDegPerSec,
 	parseTle,
 	parseTleSets,
 	slantTransmittance,
@@ -167,6 +168,41 @@ describe('isKeyholePass + Pass.keyhole', () => {
 		const { satrec } = parseTle(L1, L2);
 		const passes = findPasses({ satrec, observer: ITHACA, start: START, windowHours: WINDOW_H, stepSec: 30 });
 		for (const p of passes) expect(p.keyhole).toBe(isKeyholePass(p.maxElevationDeg));
+	});
+});
+
+describe('maxAzSlewRateDegPerSec', () => {
+	// Build a synthetic track: az[] sampled every `stepSec` from t=0.
+	const mk = (azDeg: number[], stepSec = 30) =>
+		azDeg.map((az, i) => ({ t: new Date(i * stepSec * 1000), azDeg: az, elDeg: 45, rangeKm: 600, horizonDeg: 0 }));
+
+	it('returns 0 for <2 samples', () => {
+		expect(maxAzSlewRateDegPerSec([])).toBe(0);
+		expect(maxAzSlewRateDegPerSec(mk([90]))).toBe(0);
+	});
+	it('is the worst |Δaz|/Δt across adjacent samples', () => {
+		// Δaz 20 then 30 over 30 s steps → peak 30/30 = 1.0 deg/s.
+		expect(maxAzSlewRateDegPerSec(mk([10, 30, 60]))).toBeCloseTo(1.0, 6);
+	});
+	it('takes the short way around the 0/360 wrap (359→1 is 2°, not 358°)', () => {
+		expect(maxAzSlewRateDegPerSec(mk([359, 1], 1))).toBeCloseTo(2.0, 6);
+	});
+	it('spikes for a near-zenith azimuth flip vs a low slow pass', () => {
+		const overhead = maxAzSlewRateDegPerSec(mk([80, 260], 30)); // ~180° flip / 30 s = 6 deg/s
+		const lowSlow = maxAzSlewRateDegPerSec(mk([80, 100], 30)); // 20° / 30 s ≈ 0.67 deg/s
+		expect(overhead).toBeGreaterThan(lowSlow);
+		expect(overhead).toBeCloseTo(6.0, 6);
+	});
+});
+
+describe('Pass.azSlewPeakDegPerSec', () => {
+	it('findPasses stamps each pass with its track peak az slew rate (≥ 0, matches the helper)', () => {
+		const { satrec } = parseTle(L1, L2);
+		const passes = findPasses({ satrec, observer: ITHACA, start: START, windowHours: WINDOW_H, stepSec: 30 });
+		for (const p of passes) {
+			expect(p.azSlewPeakDegPerSec).toBeGreaterThanOrEqual(0);
+			expect(p.azSlewPeakDegPerSec).toBeCloseTo(maxAzSlewRateDegPerSec(p.track), 6);
+		}
 	});
 });
 

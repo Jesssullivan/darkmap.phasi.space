@@ -193,6 +193,27 @@ export function isKeyholePass(maxElevationDeg: number, thresholdDeg = KEYHOLE_EL
 	return maxElevationDeg >= thresholdDeg;
 }
 
+/**
+ * Peak azimuth slew rate an az/el rotator must track across the pass (deg/s).
+ * For each adjacent sample, the WRAPPED |Δaz| (the short way around 0/360) over
+ * Δt; the maximum is returned. The rate spikes near the zenith, where a small
+ * change in sub-point swings azimuth fast — the rate-based view of the keyhole
+ * (a tall, thin overhead pass is unfollowable even below the 90° math zenith).
+ * Returns 0 for a track shorter than 2 samples or with non-advancing time.
+ */
+export function maxAzSlewRateDegPerSec(track: readonly PassSample[]): number {
+	let peak = 0;
+	for (let i = 1; i < track.length; i++) {
+		const dtSec = (track[i].t.getTime() - track[i - 1].t.getTime()) / 1000;
+		if (dtSec <= 0) continue;
+		let dAz = Math.abs(track[i].azDeg - track[i - 1].azDeg) % 360;
+		if (dAz > 180) dAz = 360 - dAz; // take the short way around the 0/360 wrap
+		const rate = dAz / dtSec;
+		if (rate > peak) peak = rate;
+	}
+	return peak;
+}
+
 export interface PassSample {
 	readonly t: Date;
 	readonly azDeg: number;
@@ -218,6 +239,8 @@ export interface Pass {
 	readonly terrainGated: boolean;
 	/** True when culmination nears the zenith (≥ KEYHOLE_ELEVATION_DEG) — an az/el rotator must slew azimuth fast through zenith. */
 	readonly keyhole: boolean;
+	/** Peak azimuth slew rate across the track, deg/s (rate-based keyhole signal; spikes near zenith). */
+	readonly azSlewPeakDegPerSec: number;
 }
 
 export interface FindPassesInput {
@@ -290,6 +313,7 @@ export function findPasses(input: FindPassesInput): Pass[] {
 			// Terrain raised the bar if the horizon at AOS or LOS azimuth exceeds the flat 0°.
 			terrainGated: aos.horizonDeg > 0.01 || los.horizonDeg > 0.01,
 			keyhole: isKeyholePass(peak.elDeg),
+			azSlewPeakDegPerSec: maxAzSlewRateDegPerSec(track),
 		});
 		current = null;
 	};
