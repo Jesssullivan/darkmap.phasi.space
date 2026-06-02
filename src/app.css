@@ -109,7 +109,10 @@ html {
 		--portal-inset-top: 0.75rem;
 		--portal-inset-right: 23rem;
 		--portal-inset-bottom: 0.75rem;
-		--portal-inset-left: 4.5rem;
+		/* 20rem (PR6+7): the left gutter is the DOCK — the re-homed LayerRail +
+		   the per-lens instrument row. LEFT(20rem=320px) + RIGHT(23rem=368px) keeps
+		   the map ≥ 300px (592px at the 1280×800 CI viewport; ceiling 38rem). */
+		--portal-inset-left: 20rem;
 	}
 }
 

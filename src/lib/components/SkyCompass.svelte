@@ -16,9 +16,17 @@
 	interface Props {
 		location: LatLon;
 		time: Date;
+		/**
+		 * Embedded mode (PR6): render inline inside the left instrument column
+		 * instead of as a fixed top-right overlay — static position, full column
+		 * width, no own chrome (the column owns the card), and never self-hides on
+		 * narrow widths (the column's desktop @media owns that). Default false →
+		 * the standalone ephemeris-tool mount is byte-identical.
+		 */
+		embedded?: boolean;
 	}
 
-	let { location, time }: Props = $props();
+	let { location, time, embedded = false }: Props = $props();
 
 	// Device-orientation compass overlay (#102). Status machine:
 	//   unknown      — pre-mount / SSR
@@ -328,7 +336,7 @@
 	const fmtAz = (a: number | undefined): string => (a === undefined ? '—' : `${a.toFixed(0)}°`);
 </script>
 
-<div class="sky" aria-label="Sky compass at viewport center">
+<div class="sky" class:embedded aria-label="Sky compass at viewport center">
 	<svg viewBox="0 0 200 200" role="img" aria-label="Sun and moon positions on local sky dome">
 		<defs>
 			<radialGradient id="sky-bg" cx="50%" cy="50%" r="50%">
@@ -482,10 +490,28 @@
 		font-family: var(--font-mono, ui-monospace, monospace);
 		color: #e9ecf3;
 	}
+	/* Embedded (PR6): render inline in the instrument column — no fixed
+	   positioning or own chrome, full column width. The column owns the card +
+	   the desktop-only @media gate, so the standalone narrow-width hide below
+	   must not apply here. */
+	.sky.embedded {
+		position: static;
+		top: auto;
+		right: auto;
+		width: 100%;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		padding: 0;
+		box-shadow: none;
+		backdrop-filter: none;
+		z-index: auto;
+	}
 	/* Hide the dome on phone widths; the gantt + readout still cover
-	   the use case. Future ticket: collapse into a tappable badge. */
+	   the use case. Future ticket: collapse into a tappable badge. The
+	   embedded instance opts out — its column already hides ≤820px. */
 	@media (max-width: 560px) {
-		.sky {
+		.sky:not(.embedded) {
 			display: none;
 		}
 	}
