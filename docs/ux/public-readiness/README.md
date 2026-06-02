@@ -147,6 +147,24 @@ engine (`docs/ux/personas-and-lenses.md` §11.6).
 
 ---
 
+## Shipped UI — live captures
+
+First shipped-UI captures from the live deployment (`darkmap.phasi.space`), taken
+with the `/browse` skill (real fonts). The map canvas is blank in these — gstack's
+headless Chromium has no WebGL, the same gap as the CI proof cell — so
+map-rendered shots wait on the swiftshader capture path (Packet v2 proper).
+
+- [`assets/shipped/docs-launchpad-cards.png`](assets/shipped/docs-launchpad-cards.png)
+  — the `/docs` per-lens launchpad: four cards (Sky / Air / Links / Orbit), each
+  with the persona, the operator's question, the promoted tools, and a `/#lens=…`
+  deep-link into the map.
+- [`assets/shipped/dossier-mean-links.png`](assets/shipped/dossier-mean-links.png)
+  — the persistent dossier in **mean scope** (no point selected): "Viewport / no
+  point selected" + the active lens's question + a click-the-map hint. The
+  "floating data when nothing is selected" surface from the portal-IA vision.
+
+---
+
 ## Provenance
 
 - **Frames** exported from Figma file `DYMVqVYzHl8uehosEmWXdt` (page "Phase 0")
