@@ -88,6 +88,7 @@
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
+	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
 		FALLBACK_CENTER,
 		FALLBACK_ZOOM,
@@ -2049,10 +2050,13 @@
 		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
 	{/if}
 
-	<!-- W1 de-dup: the sky dome now lives in the RAIL instrument column
-	     (InstrumentColumn embeds <SkyCompass embedded/>). The old standalone float
-	     here duplicated it top-right over the map — removed. The feature is NOT
-	     gone, just no longer shown twice. -->
+	<!-- The sky dome. At WIDE the RAIL instrument column shows the embedded dome, so
+	     this standalone float is hidden there (.stage .sky → display:none) to avoid
+	     the double-dome. Below 1024px the rail is hidden, so this float IS the dome —
+	     keep it rendered (breakpoint-exclusive, never removed). De-dup, not deletion. -->
+	{#if ephemerisOpen}
+		<SkyCompass location={viewCenter} time={ephemerisTime} />
+	{/if}
 
 	<MapToolbar
 		items={[
@@ -2290,11 +2294,11 @@
 			bottom: 0.75rem;
 			z-index: 8;
 		}
+		/* W1 de-dup: the RAIL instrument column owns the sky dome at WIDE, so the
+		   standalone float is hidden here (it stays rendered + visible ≤1023px, where
+		   the rail is hidden — one dome at every breakpoint, never removed). */
 		.stage :global(.sky) {
-			position: absolute;
-			top: 0.75rem;
-			right: 0.75rem;
-			z-index: 6;
+			display: none;
 		}
 		.stage :global(.sheet),
 		.stage :global(.pass-plan) {
