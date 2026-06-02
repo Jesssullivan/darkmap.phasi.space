@@ -88,6 +88,7 @@
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
+	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
 	import {
 		FALLBACK_CENTER,
 		FALLBACK_ZOOM,
@@ -1898,15 +1899,25 @@
 		mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
 	}}
 />
-<LayerRail
-	lens={lensStore.lens}
-	layers={LAYERS}
-	states={layerState}
-	onchange={onLayerChange}
-	basemap={activeBasemap}
-	onbasemapchange={onBasemapChange}
-	time={ephemerisTime}
-/>
+<!-- Portal-IA (PR6+7): the LEFT DOCK. On desktop (portal engaged) this is a fixed
+     card in the left --portal-inset gutter holding the per-lens instrument row on
+     top + the re-homed LayerRail (scrolling) below. Off-portal it is display:contents
+     (inert), so LayerRail keeps its own mobile-drawer positioning unchanged. It is a
+     .field-hud SIBLING — outside pointer-events:none, so it gets native clicks. -->
+<aside class="left-dock" aria-label="Lens dock">
+	<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
+	<div class="left-dock-scroll">
+		<LayerRail
+			lens={lensStore.lens}
+			layers={LAYERS}
+			states={layerState}
+			onchange={onLayerChange}
+			basemap={activeBasemap}
+			onbasemapchange={onBasemapChange}
+			time={ephemerisTime}
+		/>
+	</div>
+</aside>
 <Tour bind:open={tourOpen} steps={tourSteps} />
 <div
 	class="field-hud"
@@ -2157,6 +2168,47 @@
 		font-size: 0.95rem;
 		z-index: 100;
 		pointer-events: none;
+	}
+	/* Portal-IA left dock (PR6+7). Off-portal: display:contents = inert wrapper, so
+	   LayerRail + InstrumentColumn fall back to their OWN positioning (the mobile
+	   drawer stays unchanged). On-portal: a fixed card in the left --portal-inset
+	   gutter — instrument row pinned on top (flex:0 0 auto), rail scrolling below
+	   (.left-dock-scroll owns the scroll; the re-homed .layer-rail goes
+	   overflow:visible). The dock draws the card chrome the rail used to. */
+	.left-dock {
+		display: contents;
+	}
+	@media (min-width: 821px) and (min-height: 501px) {
+		.left-dock {
+			display: flex;
+			flex-direction: column;
+			gap: 0.6rem;
+			position: fixed;
+			top: var(--portal-inset-top, 0.75rem);
+			left: max(0.75rem, env(safe-area-inset-left));
+			width: calc(var(--portal-inset-left, 20rem) - 1rem);
+			max-height: calc(100dvh - 2 * var(--portal-inset-top, 0.75rem));
+			z-index: 10;
+			background: rgba(8, 10, 16, 0.85);
+			border: 1px solid rgba(255, 255, 255, 0.08);
+			border-radius: 8px;
+			backdrop-filter: blur(6px);
+			padding: 0.85rem 0.9rem;
+			overflow: hidden;
+		}
+		.left-dock :global(.instrument-column) {
+			flex: 0 0 auto;
+		}
+		.left-dock-scroll {
+			flex: 1 1 auto;
+			min-height: 0;
+			overflow-y: auto;
+			scrollbar-width: none;
+			-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent);
+		}
+		.left-dock-scroll::-webkit-scrollbar {
+			display: none;
+		}
 	}
 	.field-hud {
 		--field-gap: 0.75rem;

@@ -409,6 +409,31 @@
 		backdrop-filter: blur(6px);
 		animation: fade-in 0.2s ease-out;
 	}
+	/* Portal dock (PR6+7): when the framed portal engages, the rail is RE-HOMED as
+	   a flex child of +page's .left-dock in the left gutter — drop the float
+	   anchors + own chrome (the dock draws the card) + own scroll (it moves to
+	   .left-dock-scroll). Keyed to the SAME query as the portal tokens so the
+	   re-home and the left inset engage together. The base rule above + the mobile
+	   drawer (≤640px) + the 641px toggle-hide all stay byte-identical, so every
+	   off-portal band renders exactly as before. */
+	@media (min-width: 821px) and (min-height: 501px) {
+		.layer-rail {
+			position: static;
+			top: auto;
+			left: auto;
+			max-width: none;
+			width: 100%;
+			max-height: none;
+			overflow: visible;
+			z-index: auto;
+			background: transparent;
+			border: 0;
+			border-radius: 0;
+			backdrop-filter: none;
+			padding: 0;
+			animation: none;
+		}
+	}
 
 	@keyframes fade-in {
 		from {
