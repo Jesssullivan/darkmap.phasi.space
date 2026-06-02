@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	aerosolClarityFromAod,
 	atmosphericLossDb,
 	geometricSpreadLossDb,
 	hufnagelValleyCn2,
@@ -27,6 +28,26 @@ describe('atmosphericLossDb', () => {
 	});
 	it('monotonically increases as transmittance falls', () => {
 		expect(atmosphericLossDb(0.9)).toBeLessThan(atmosphericLossDb(0.4));
+	});
+});
+
+describe('aerosolClarityFromAod', () => {
+	it('zero AOD → T=1, 0 dB', () => {
+		const c = aerosolClarityFromAod(0);
+		expect(c.transmittance).toBe(1);
+		expect(c.lossDb).toBeCloseTo(0, 6);
+	});
+	it('T = exp(−AOD) and a clear column beats a hazy one (higher T, lower loss)', () => {
+		const clear = aerosolClarityFromAod(0.05);
+		const hazy = aerosolClarityFromAod(0.6);
+		expect(clear.transmittance).toBeCloseTo(Math.exp(-0.05), 6);
+		expect(clear.transmittance).toBeGreaterThan(hazy.transmittance);
+		expect(clear.lossDb).toBeLessThan(hazy.lossDb);
+		expect(clear.lossDb).toBeGreaterThanOrEqual(0);
+	});
+	it('loss matches atmosphericLossDb of the same transmittance', () => {
+		const c = aerosolClarityFromAod(0.2);
+		expect(c.lossDb).toBeCloseTo(atmosphericLossDb(c.transmittance), 6);
 	});
 });
 

@@ -61,6 +61,19 @@ export function sampleTransmittance(
 	return clamp(t[t.length - 1], 0, 1);
 }
 
+/**
+ * Compact aerosol-clarity estimate for the Links-lens readout LEAD, from the
+ * CAMS path-AOD at 550 nm. Zenith Beer–Lambert on the aerosol column only:
+ * T = exp(−AOD), loss = −10·log₁₀(T) (= atmosphericLossDb(T)). A LABELED
+ * ESTIMATE for the one-line lead — the full multi-constituent T(λ) + the link
+ * margin live in the Design-a-link deep tool; this is the aerosol component the
+ * readout already has (CAMS), so it never contradicts the path-AOD the sheet uses.
+ */
+export function aerosolClarityFromAod(aod550: number): { readonly transmittance: number; readonly lossDb: number } {
+	const transmittance = Math.exp(-Math.max(0, aod550));
+	return { transmittance, lossDb: atmosphericLossDb(transmittance) };
+}
+
 // ───────────────────────────── geometric ────────────────────────────────
 
 export interface GeometricLossInput {

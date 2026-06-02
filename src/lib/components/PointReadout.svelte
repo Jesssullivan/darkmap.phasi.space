@@ -4,6 +4,7 @@
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import { DEFAULT_LENS, type Lens } from '$lib/lens';
 	import { bortleFromArtificialMcd } from '$lib/skyBrightness';
+	import { aerosolClarityFromAod } from '$lib/linkBudget';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 	import {
 		formatNearestKm,
@@ -400,6 +401,21 @@
 					{#snippet trigger()}
 						<span class="modeled-tag">modeled</span>
 					{/snippet}
+				</HelpTooltip>
+			</p>
+		</section>
+	{/if}
+	{#if lens === 'links' && airQuality?.aod550 != null}
+		{@const clarity = aerosolClarityFromAod(airQuality.aod550)}
+		<section class="links-lead" data-section="links-lead" data-tier="1" style:order="-2">
+			<p class="links-lead-line">
+				Path AOD₅₅₀ {airQuality.aod550.toFixed(2)} · T {(clarity.transmittance * 100).toFixed(0)}% · ~{clarity.lossDb.toFixed(
+					1,
+				)} dB
+				<HelpTooltip
+					text="Aerosol clarity estimate from the CAMS path-AOD at 550 nm (zenith T = exp(−AOD), loss = −10·log₁₀T). A labeled estimate — the full multi-constituent T(λ) and the Tx/Rx link margin (go/no-go) are in “Design a link”."
+				>
+					{#snippet trigger()}<span class="modeled-tag">aerosol est.</span>{/snippet}
 				</HelpTooltip>
 			</p>
 		</section>
@@ -883,10 +899,23 @@
 			transition: none;
 		}
 	}
-	.bortle-lead {
+	.bortle-lead,
+	.links-lead {
 		margin-bottom: 0.5rem;
 		padding-bottom: 0.5rem;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.links-lead-line {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		line-height: 1.2;
+		color: var(--accent-amber);
+		font-variant-numeric: tabular-nums;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.4rem;
 	}
 	.bortle-class {
 		margin: 0;
