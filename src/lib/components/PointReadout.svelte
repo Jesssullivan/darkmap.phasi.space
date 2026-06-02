@@ -3,6 +3,7 @@
 	import { X } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import { DEFAULT_LENS, type Lens } from '$lib/lens';
+	import { orderFor, tierFor, type SectionId } from '$lib/readoutRelevance';
 	import { bortleFromArtificialMcd } from '$lib/skyBrightness';
 	import { aerosolClarityFromAod } from '$lib/linkBudget';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
@@ -242,36 +243,14 @@
 	});
 
 	// Lens re-weighting (S1 PR4): which sections lead (float up + Tier-1), which
-	// dim (Tier-3, still present + clickable — never gated). Everything else is
-	// Tier-2. Section ids match the `data-section` attrs in the template.
-	type SectionId =
-		| 'bortle'
-		| 'viirs'
-		| 'worldAtlas'
-		| 'atmosphere'
-		| 'aqi'
-		| 'pm25'
-		| 'pollutants'
-		| 'history'
-		| 'pollen'
-		| 'crossval'
-		| 'ephemeris';
-	const LENS_LEAD: Record<Lens, readonly SectionId[]> = {
-		sky: ['bortle', 'ephemeris'],
-		air: ['aqi', 'pm25'],
-		links: ['atmosphere'],
-		orbit: ['ephemeris'],
-	};
-	const LENS_DIM: Record<Lens, readonly SectionId[]> = {
-		// Off-lens night-lights + AQ families dim as whole units (kept clickable).
-		sky: ['aqi', 'pm25', 'pollutants', 'pollen', 'history', 'crossval'],
-		air: ['bortle', 'viirs', 'worldAtlas', 'ephemeris'],
-		links: ['aqi', 'pm25', 'pollutants', 'pollen', 'history', 'crossval', 'bortle', 'viirs', 'worldAtlas'],
-		orbit: ['aqi', 'pm25', 'pollutants', 'pollen', 'history', 'crossval', 'viirs', 'worldAtlas'],
-	};
-	const tierOf = (id: SectionId): 1 | 2 | 3 => (LENS_LEAD[lens].includes(id) ? 1 : LENS_DIM[lens].includes(id) ? 3 : 2);
+	// dim (Tier-3, still present + clickable — never gated), which sit at Tier-2.
+	// The per-lens stance lives in the exhaustive `readoutRelevance` table (one
+	// explicit cell per lens × section — no silent Tier-2 fall-through); these
+	// thin wrappers just bind the current `lens`. Section ids match the
+	// `data-section` attrs in the template.
+	const tierOf = (id: SectionId): 1 | 2 | 3 => tierFor(lens, id);
 	// Lead sections float to the top (negative order); dimmed sink below normal.
-	const orderOf = (id: SectionId): number => (LENS_LEAD[lens].includes(id) ? -1 : LENS_DIM[lens].includes(id) ? 1 : 0);
+	const orderOf = (id: SectionId): number => orderFor(lens, id);
 
 	// CTA emphasis per lens (Air → AQ dashboard, Links → transmission). Sky/Orbit
 	// lead with an in-readout section, so both CTAs read as secondary (Tier-3
