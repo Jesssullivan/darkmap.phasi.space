@@ -149,19 +149,38 @@ engine (`docs/ux/personas-and-lenses.md` §11.6).
 
 ## Shipped UI — live captures
 
-First shipped-UI captures from the live deployment (`darkmap.phasi.space`), taken
-with the `/browse` skill (real fonts). The map canvas is blank in these — gstack's
-headless Chromium has no WebGL, the same gap as the CI proof cell — so
-map-rendered shots wait on the swiftshader capture path (Packet v2 proper).
+Captures of the shipped product, to pair against the Phase-0 design frames above.
+
+### Per-lens, full render (`just capture-shipped-ui`)
+
+The CI proof cell and gstack `/browse` both lack WebGL *and* system fonts, so the
+MapLibre canvas is blank in every automated capture. `scripts/capture-shipped-ui.mjs`
+closes that gap: it serves the local adapter-node build and drives the system
+Chrome with **SwiftShader** (software WebGL) + real fonts, so the map actually
+paints. It switches lenses through the reactive switcher and captures the full
+shipped chrome (map + Layers rail + dossier + toolbar) per lens. Regenerate with
+`just capture-shipped-ui` (builds first; override Chrome via `CHROME_BIN`).
+
+- [`assets/shipped/lens-sky.png`](assets/shipped/lens-sky.png) — Sky: rail leads
+  **Light Pollution** (VIIRS night-lights painted on the map), Bortle/SQM dossier.
+- [`assets/shipped/lens-air.png`](assets/shipped/lens-air.png) — Air: rail promotes
+  **Atmosphere**, dossier asks the air-quality question.
+- [`assets/shipped/lens-links.png`](assets/shipped/lens-links.png) — Links.
+- [`assets/shipped/lens-orbit.png`](assets/shipped/lens-orbit.png) — Orbit.
+- [`assets/shipped/docs-launchpad-full.png`](assets/shipped/docs-launchpad-full.png)
+  — the `/docs` launchpad page.
+
+### DOM detail (`/browse`, real fonts, no WebGL)
+
+Crisp DOM-only captures where the map isn't needed:
 
 - [`assets/shipped/docs-launchpad-cards.png`](assets/shipped/docs-launchpad-cards.png)
-  — the `/docs` per-lens launchpad: four cards (Sky / Air / Links / Orbit), each
-  with the persona, the operator's question, the promoted tools, and a `/#lens=…`
-  deep-link into the map.
+  — the four launchpad cards: persona, the operator's question, promoted tools,
+  and a `/#lens=…` deep-link into the map.
 - [`assets/shipped/dossier-mean-links.png`](assets/shipped/dossier-mean-links.png)
-  — the persistent dossier in **mean scope** (no point selected): "Viewport / no
-  point selected" + the active lens's question + a click-the-map hint. The
-  "floating data when nothing is selected" surface from the portal-IA vision.
+  — the persistent dossier in **mean scope**: "Viewport / no point selected" + the
+  active lens's question + a click-the-map hint (the "floating data when nothing
+  is selected" surface from the portal-IA vision).
 
 ---
 
