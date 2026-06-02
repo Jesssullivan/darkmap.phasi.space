@@ -2027,27 +2027,30 @@
 		onchange={onRouteFileChange}
 	/>
 
-	{#if readout}
-		<PointReadout
-			lens={lensStore.lens}
-			lat={readout.lat}
-			lon={readout.lon}
-			time={ephemerisTime}
-			data={readout.data}
-			loading={readout.loading}
-			error={readout.error}
-			pm25={pm25Estimate}
-			{aqEstimates}
-			{pollutantUnits}
-			airQuality={airQualityReading}
-			history={stationHistory}
-			historyLoading={stationHistoryLoading}
-			onclose={closeReadout}
-			onTransmissionForPoint={openTransmissionForPoint}
-			onAqDashboardForPoint={openAqDashboardForPoint}
-			onPlanPassForPoint={openPassPlanForPoint}
-		/>
-	{/if}
+	<!-- Persistent dossier (portal PR4): mounted always. `point` scope inspects a
+	     clicked location; `mean` scope (no selection) shows the lens's question +
+	     "click the map" prompt. The mean panel is desktop-only (hidden ≤820px in
+	     the component) so mobile keeps its click-to-open behaviour. -->
+	<PointReadout
+		scope={readout ? 'point' : 'mean'}
+		lens={lensStore.lens}
+		lat={readout?.lat}
+		lon={readout?.lon}
+		time={ephemerisTime}
+		data={readout?.data}
+		loading={readout?.loading ?? false}
+		error={readout?.error}
+		pm25={pm25Estimate}
+		{aqEstimates}
+		{pollutantUnits}
+		airQuality={airQualityReading}
+		history={stationHistory}
+		historyLoading={stationHistoryLoading}
+		onclose={closeReadout}
+		onTransmissionForPoint={openTransmissionForPoint}
+		onAqDashboardForPoint={openAqDashboardForPoint}
+		onPlanPassForPoint={openPassPlanForPoint}
+	/>
 
 	<footer class="attribution">
 		<a href="/docs">credits + sources</a>
