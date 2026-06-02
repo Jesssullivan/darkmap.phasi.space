@@ -67,6 +67,15 @@ html {
 	   sheet inset further to clear it (see MapToolbar.svelte). ≤820px the
 	   toolbar collapses to icon-only and this drops back to 5rem. */
 	--map-toolbar-inset-rem: 8rem;
+	/* Portal-IA inset tokens (PR5). Default 0 = current full-bleed; only the
+	   desktop query below sets them, so mobile/short/landscape are unchanged.
+	   The right gutter hosts the dossier; the left gutter is reserved for the
+	   PR6 instrument column. Both `.map`'s inset and the decorative
+	   `.portal-frame` read these, so they always frame the same box. */
+	--portal-inset-top: 0;
+	--portal-inset-right: 0;
+	--portal-inset-bottom: 0;
+	--portal-inset-left: 0;
 	/* Persona-lens re-weight tokens (S1). Off-lens surfaces dim to Tier-3 (still
 	   focusable + clickable — re-weight, never gate); the lead-section reorder +
 	   CTA swap cross-fade over --lens-diff-ms (suppressed under reduced-motion). */
@@ -86,6 +95,21 @@ html {
 		   --field-bottom-reserve. Tuned against real-font render (the GF cell is
 		   fontless so the overlap never shows in CI). */
 		--gantt-reserve-rem: 13rem;
+	}
+}
+
+/* Portal-IA framed map (PR5) — desktop only. Engages at the SAME breakpoint as
+   PointReadout's desktop rule (min-width:821px AND min-height:501px) so the
+   frame appears exactly where the desktop dossier placement begins — no
+   501–600px dead-band. The map insets from these tokens (creating the dossier
+   gutter on the right + the reserved PR6 instrument gutter on the left); short
+   (≤500px) + narrow (≤820px) viewports keep the 0 defaults = full-bleed. */
+@media (min-width: 821px) and (min-height: 501px) {
+	html {
+		--portal-inset-top: 0.75rem;
+		--portal-inset-right: 23rem;
+		--portal-inset-bottom: 0.75rem;
+		--portal-inset-left: 4.5rem;
 	}
 }
 

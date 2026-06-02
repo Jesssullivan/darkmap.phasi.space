@@ -1869,6 +1869,12 @@
 	ondrop={onMapDrop}
 ></div>
 
+<!-- Portal-IA (PR5): decorative frame around the inset map — hairline edge +
+     corner targeting brackets. A separate pointer-events:none sibling so it can
+     never intercept map drags or chrome clicks; mirrors the same --portal-inset
+     tokens as .map. Inert until the desktop @media engages (display:none else). -->
+<div class="portal-frame" aria-hidden="true"></div>
+
 {#if dragOver}
 	<div class="drop-hint" aria-hidden="true">Drop a KML, GPX, or GeoJSON file to import</div>
 {/if}
@@ -2069,7 +2075,69 @@
 	}
 	.map {
 		position: fixed;
-		inset: 0;
+		/* Portal-IA (PR5): inset from the --portal-inset-* tokens. All default 0
+		   (mobile/short) → byte-identical to `inset:0`; the desktop @media in
+		   app.css shrinks the map into the framed portal. MapLibre's trackResize
+		   (on by default) auto-fires map.resize() when the container resizes. */
+		inset: var(--portal-inset-top, 0) var(--portal-inset-right, 0) var(--portal-inset-bottom, 0)
+			var(--portal-inset-left, 0);
+	}
+	/* Decorative portal frame — a separate pointer-events:none sibling so it can
+	   NEVER intercept map drags or chrome clicks. Mirrors the same inset tokens
+	   as .map so the brackets/edge always frame the same box. z-index:4 sits
+	   above the unindexed map canvas but below attribution/toolbar/rail/readout.
+	   Off (display:none) until the desktop query engages, so mobile is unchanged. */
+	.portal-frame {
+		display: none;
+		position: fixed;
+		inset: var(--portal-inset-top, 0) var(--portal-inset-right, 0) var(--portal-inset-bottom, 0)
+			var(--portal-inset-left, 0);
+		pointer-events: none;
+		z-index: 4;
+	}
+	@media (min-width: 821px) and (min-height: 501px) {
+		.portal-frame {
+			display: block;
+		}
+		/* Hairline inset edge — barely-there amber rule, no fill, map bleeds
+		   through. Vignette is faint (≤0.5 alpha, no center darkening) per the
+		   honesty bar — must not attenuate the VIIRS/World-Atlas raster. */
+		.portal-frame::before {
+			content: '';
+			position: absolute;
+			inset: 0;
+			border: 1px solid rgba(var(--accent-amber-rgb), 0.16);
+			box-shadow:
+				inset 0 0 0 1px rgba(6, 8, 13, 0.5),
+				inset 0 0 22px rgba(6, 8, 13, 0.3);
+		}
+		/* Four corner targeting brackets via 8 linear-gradient slices (GPU-cheap).
+		   2px (even) arms stay crisp at fractional DPR; 22px long; faint glow. */
+		.portal-frame::after {
+			content: '';
+			position: absolute;
+			inset: 0;
+			--b: 2px;
+			--l: 22px;
+			--c: rgba(var(--accent-amber-rgb), 0.85);
+			background:
+				linear-gradient(var(--c), var(--c)) top left / var(--l) var(--b) no-repeat,
+				linear-gradient(var(--c), var(--c)) top left / var(--b) var(--l) no-repeat,
+				linear-gradient(var(--c), var(--c)) top right / var(--l) var(--b) no-repeat,
+				linear-gradient(var(--c), var(--c)) top right / var(--b) var(--l) no-repeat,
+				linear-gradient(var(--c), var(--c)) bottom left / var(--l) var(--b) no-repeat,
+				linear-gradient(var(--c), var(--c)) bottom left / var(--b) var(--l) no-repeat,
+				linear-gradient(var(--c), var(--c)) bottom right / var(--l) var(--b) no-repeat,
+				linear-gradient(var(--c), var(--c)) bottom right / var(--b) var(--l) no-repeat;
+			filter: drop-shadow(0 0 3px rgba(var(--accent-amber-rgb), 0.4));
+		}
+	}
+	/* a11y: kill all frame chrome under forced-colors / high-contrast. */
+	@media (forced-colors: active) {
+		.portal-frame::before,
+		.portal-frame::after {
+			content: none;
+		}
 	}
 	.map.drag-over {
 		outline: 3px dashed rgba(94, 226, 208, 0.7);
@@ -2149,6 +2217,20 @@
 		   a gap) so the overview never dips into the detail panel. */
 		max-height: min(46vh, calc(100dvh - 34rem));
 		overflow-y: auto;
+	}
+	/* Portal-IA (PR5): when the framed portal is engaged (same breakpoint as the
+	   inset tokens), seat the dossier INSIDE the 23rem right gutter — right:0.75rem
+	   + max-width:21.5rem (344px < 368px gutter) so the 22rem card no longer spills
+	   onto the canvas. Covers the base readout AND the deep-tool overview states;
+	   placed after the deep-tool override so it wins on equal specificity. Gated to
+	   the portal viewport, so non-portal (short/narrow) placement is unchanged. */
+	@media (min-width: 821px) and (min-height: 501px) {
+		.field-hud :global(.readout[role='dialog']),
+		.field-hud[data-transmission='open'] :global(.readout[role='dialog']),
+		.field-hud[data-passplan='open'] :global(.readout[role='dialog']) {
+			right: 0.75rem;
+			max-width: 21.5rem;
+		}
 	}
 	@media (max-width: 820px), (max-height: 500px) {
 		.field-hud :global(.readout[role='dialog']) {
