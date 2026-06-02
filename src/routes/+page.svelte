@@ -106,12 +106,6 @@
 	import { lensStore } from '$lib/lens.svelte';
 	import { LENSES, LENS_ANNOUNCE, type Lens } from '$lib/lens';
 
-	// TEMP W1 BISECT: when true, the rail/inspector/dock CONTENT is omitted so the
-	// fontless RBE cell renders only the grid skeleton + header + stage/map. Splits
-	// "grid structure pegs the main thread" from "a content component pegs it" in a
-	// single CI cycle. MUST be false before merge.
-	const W1_BISECT_EMPTY = true;
-
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
 	let controllerLayer: Layer.Layer<MapLayerController> | undefined;
@@ -1908,21 +1902,18 @@
 	     overlays it. ≤1023px display:contents → LayerRail keeps its mobile-drawer
 	     positioning (the rail-toggle + backdrop live inside LayerRail, fixed). -->
 	<aside class="left-dock" aria-label="Lens dock">
-		<!-- TEMP W1 BISECT: rail content disabled to localize the fontless-cell layout peg. REVERT. -->
-		{#if !W1_BISECT_EMPTY}
-			<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
-			<div class="left-dock-scroll">
-				<LayerRail
-					lens={lensStore.lens}
-					layers={LAYERS}
-					states={layerState}
-					onchange={onLayerChange}
-					basemap={activeBasemap}
-					onbasemapchange={onBasemapChange}
-					time={ephemerisTime}
-				/>
-			</div>
-		{/if}
+		<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
+		<div class="left-dock-scroll">
+			<LayerRail
+				lens={lensStore.lens}
+				layers={LAYERS}
+				states={layerState}
+				onchange={onLayerChange}
+				basemap={activeBasemap}
+				onbasemapchange={onBasemapChange}
+				time={ephemerisTime}
+			/>
+		</div>
 	</aside>
 
 	<!-- STAGE region: the MapLibre canvas as grid-area:stage — NO position:fixed,
@@ -1966,35 +1957,33 @@
 	     WIDE (22rem track). ≤1023px display:contents → it keeps its bottom-right
 	     float + click-to-open behaviour. -->
 	<aside class="deck-inspector" aria-label="Point inspector">
-		{#if !W1_BISECT_EMPTY}
-			<PointReadout
-				scope={readout ? 'point' : 'mean'}
-				lens={lensStore.lens}
-				lat={readout?.lat}
-				lon={readout?.lon}
-				time={ephemerisTime}
-				data={readout?.data}
-				loading={readout?.loading ?? false}
-				error={readout?.error}
-				pm25={pm25Estimate}
-				{aqEstimates}
-				{pollutantUnits}
-				airQuality={airQualityReading}
-				history={stationHistory}
-				historyLoading={stationHistoryLoading}
-				onclose={closeReadout}
-				onTransmissionForPoint={openTransmissionForPoint}
-				onAqDashboardForPoint={openAqDashboardForPoint}
-				onPlanPassForPoint={openPassPlanForPoint}
-			/>
-		{/if}
+		<PointReadout
+			scope={readout ? 'point' : 'mean'}
+			lens={lensStore.lens}
+			lat={readout?.lat}
+			lon={readout?.lon}
+			time={ephemerisTime}
+			data={readout?.data}
+			loading={readout?.loading ?? false}
+			error={readout?.error}
+			pm25={pm25Estimate}
+			{aqEstimates}
+			{pollutantUnits}
+			airQuality={airQualityReading}
+			history={stationHistory}
+			historyLoading={stationHistoryLoading}
+			onclose={closeReadout}
+			onTransmissionForPoint={openTransmissionForPoint}
+			onAqDashboardForPoint={openAqDashboardForPoint}
+			onPlanPassForPoint={openPassPlanForPoint}
+		/>
 	</aside>
 
 	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
 	     "X floats over the twilight strip" is structurally impossible. ≤1023px
 	     display:contents → the gantt keeps its current fixed bottom-strip layout. -->
 	<div class="deck-dock">
-		{#if ephemerisOpen && !W1_BISECT_EMPTY}
+		{#if ephemerisOpen}
 			<EphemerisGantt
 				location={viewCenter}
 				time={ephemerisTime}
@@ -2233,10 +2222,17 @@
 		   own position:fixed/inset/z-index and flow into their grid cells. Their
 		   own ≤1023px float positioning is untouched (the COMPACT fallback). The
 		   stage overlays (toolbar, sky, sheets) stay fixed — W2/W3 dock them. */
+		/* min-width:0 on BOTH flex children drops the default `min-width:auto`
+		   min-content floor. In the fontless CI RBE cell, degenerate text metrics
+		   leave the chips'/input's min-content inline-size unresolvable, which can
+		   stall the .deck-header flex row's inline-axis sizing and peg layout before
+		   DCL. The prior W1 fix only capped the block axis (minmax(0,…) rows); this
+		   is the inline-axis counterpart. */
 		.deck-header :global(.lens-switcher) {
 			position: static;
 			inset: auto;
 			z-index: auto;
+			min-width: 0;
 		}
 		.deck-header :global(.geocoder) {
 			position: relative;
@@ -2245,6 +2241,7 @@
 			transform: none;
 			z-index: auto;
 			width: min(28rem, 100%);
+			min-width: 0;
 		}
 		/* The geocoder's results dropdown overlays following content (anchored to
 		   the input), not the viewport. */
