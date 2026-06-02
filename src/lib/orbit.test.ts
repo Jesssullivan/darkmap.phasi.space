@@ -3,14 +3,18 @@ import {
 	airmass,
 	clearSkyTransmittance,
 	dopplerShiftHz,
+	EARTH_RADIUS_KM,
 	epochAgeDays,
 	findPasses,
+	footprintRadiusKm,
+	geodesicRing,
 	isKeyholePass,
 	lookAngleAt,
 	maxAzSlewRateDegPerSec,
 	parseTle,
 	parseTleSets,
 	slantTransmittance,
+	subSatellitePoint,
 	tleEpoch,
 	type Observer,
 } from './orbit';
@@ -203,6 +207,55 @@ describe('Pass.azSlewPeakDegPerSec', () => {
 			expect(p.azSlewPeakDegPerSec).toBeGreaterThanOrEqual(0);
 			expect(p.azSlewPeakDegPerSec).toBeCloseTo(maxAzSlewRateDegPerSec(p.track), 6);
 		}
+	});
+});
+
+describe('footprintRadiusKm', () => {
+	it('is 0 at the surface and grows with altitude', () => {
+		expect(footprintRadiusKm(0)).toBeCloseTo(0, 6);
+		expect(footprintRadiusKm(800)).toBeGreaterThan(footprintRadiusKm(400));
+	});
+	it('≈2250 km for the ISS at ~420 km', () => {
+		expect(footprintRadiusKm(420)).toBeGreaterThan(2000);
+		expect(footprintRadiusKm(420)).toBeLessThan(2500);
+	});
+});
+
+describe('geodesicRing', () => {
+	// Haversine surface distance (km) for the radius check.
+	const haversineKm = (aLat: number, aLon: number, bLat: number, bLon: number) => {
+		const r = Math.PI / 180;
+		const dLat = (bLat - aLat) * r;
+		const dLon = (bLon - aLon) * r;
+		const s = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * r) * Math.cos(bLat * r) * Math.sin(dLon / 2) ** 2;
+		return EARTH_RADIUS_KM * 2 * Math.asin(Math.sqrt(s));
+	};
+	it('returns points+1 vertices and is closed (first === last)', () => {
+		const ring = geodesicRing(42, -76, 1000, 32);
+		expect(ring).toHaveLength(33);
+		expect(ring[0][0]).toBeCloseTo(ring[32][0], 6);
+		expect(ring[0][1]).toBeCloseTo(ring[32][1], 6);
+	});
+	it('every vertex sits ~radiusKm from the center (geodesic)', () => {
+		const ring = geodesicRing(42, -76, 1500, 24);
+		for (const [lon, lat] of ring) {
+			expect(haversineKm(42, -76, lat, lon)).toBeCloseTo(1500, 0); // within ~1 km
+			expect(lon).toBeGreaterThanOrEqual(-180);
+			expect(lon).toBeLessThan(180);
+		}
+	});
+});
+
+describe('subSatellitePoint', () => {
+	it('returns a plausible geodetic point + LEO altitude for the ISS', () => {
+		const { satrec } = parseTle(L1, L2);
+		const sub = subSatellitePoint(satrec, START);
+		expect(sub).not.toBeNull();
+		expect(Math.abs(sub!.latDeg)).toBeLessThanOrEqual(52); // ISS inclination 51.6°
+		expect(sub!.lonDeg).toBeGreaterThanOrEqual(-180);
+		expect(sub!.lonDeg).toBeLessThan(180);
+		expect(sub!.altitudeKm).toBeGreaterThan(300);
+		expect(sub!.altitudeKm).toBeLessThan(500);
 	});
 });
 

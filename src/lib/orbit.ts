@@ -12,7 +12,16 @@
  * interpolation (with a type-only HorizonPolygon import) so this stays a
  * self-contained root_lib_test slice — no cross-package value dependency.
  */
-import { ecfToLookAngles, eciToEcf, gstime, propagate, twoline2satrec } from 'satellite.js';
+import {
+	degreesLat,
+	degreesLong,
+	ecfToLookAngles,
+	eciToEcf,
+	eciToGeodetic,
+	gstime,
+	propagate,
+	twoline2satrec,
+} from 'satellite.js';
 import type { SatRec } from 'satellite.js';
 import type { HorizonPolygon } from '$lib/ephemeris/horizonAtAzimuth';
 
@@ -20,6 +29,8 @@ const DEG = 180 / Math.PI;
 const RAD = Math.PI / 180;
 const C_KM_S = 299_792.458;
 const MS_PER_DAY = 86_400_000;
+/** Mean Earth radius, km (sub-satellite footprint geometry). */
+export const EARTH_RADIUS_KM = 6371;
 /** Culmination elevation (deg) at/above which a pass is a rotator "keyhole" (rapid az slew through zenith). */
 export const KEYHOLE_ELEVATION_DEG = 85;
 
@@ -212,6 +223,65 @@ export function maxAzSlewRateDegPerSec(track: readonly PassSample[]): number {
 		if (rate > peak) peak = rate;
 	}
 	return peak;
+}
+
+// ─────────────────────── sub-satellite footprint ────────────────────────
+
+export interface SubSatellitePoint {
+	readonly latDeg: number;
+	readonly lonDeg: number;
+	/** Geodetic altitude above the WGS84 ellipsoid, km. */
+	readonly altitudeKm: number;
+}
+
+/** Sub-satellite geodetic point (lat/lon/alt) at `date`, or null on SGP4 error. */
+export function subSatellitePoint(satrec: SatRec, date: Date): SubSatellitePoint | null {
+	const pv = propagate(satrec, date);
+	if (!pv || typeof pv.position === 'boolean') return null;
+	const gd = eciToGeodetic(pv.position, gstime(date));
+	return { latDeg: degreesLat(gd.latitude), lonDeg: degreesLong(gd.longitude), altitudeKm: gd.height };
+}
+
+/**
+ * Radius (km, along the surface) of the satellite's instantaneous ground
+ * footprint — the circle within which the satellite clears the 0° horizon. The
+ * Earth-central half-angle is acos(R_e / (R_e + h)); the surface arc is R_e·that.
+ * Grows with altitude (≈2300 km for the ISS at ~420 km).
+ */
+export function footprintRadiusKm(altitudeKm: number): number {
+	const h = Math.max(0, altitudeKm);
+	return EARTH_RADIUS_KM * Math.acos(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + h));
+}
+
+/**
+ * A closed great-circle ring of [lon, lat] points (deg) at surface distance
+ * `radiusKm` from (centerLat, centerLon) — the geodesic destination-point
+ * formula sampled at `points` bearings (geodesic, NOT equirectangular, so the
+ * ~2300 km footprint isn't distorted at high latitude). The first point is
+ * repeated to close the polygon; longitudes normalized to [-180, 180).
+ */
+export function geodesicRing(
+	centerLatDeg: number,
+	centerLonDeg: number,
+	radiusKm: number,
+	points = 64,
+): [number, number][] {
+	const lat1 = centerLatDeg * RAD;
+	const lon1 = centerLonDeg * RAD;
+	const angular = Math.max(0, radiusKm) / EARTH_RADIUS_KM; // angular distance, rad
+	const ring: [number, number][] = [];
+	for (let i = 0; i <= points; i++) {
+		const brng = (i / points) * 2 * Math.PI;
+		const lat2 = Math.asin(Math.sin(lat1) * Math.cos(angular) + Math.cos(lat1) * Math.sin(angular) * Math.cos(brng));
+		const lon2 =
+			lon1 +
+			Math.atan2(
+				Math.sin(brng) * Math.sin(angular) * Math.cos(lat1),
+				Math.cos(angular) - Math.sin(lat1) * Math.sin(lat2),
+			);
+		ring.push([((lon2 * DEG + 540) % 360) - 180, lat2 * DEG]);
+	}
+	return ring;
 }
 
 export interface PassSample {
