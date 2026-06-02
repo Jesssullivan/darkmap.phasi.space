@@ -18,26 +18,18 @@ describe('READOUT_RELEVANCE — exhaustiveness', () => {
 		expect(Object.keys(READOUT_RELEVANCE).sort()).toEqual([...LENSES].sort());
 	});
 
-	it('only emits the four known relevance values', () => {
-		const allowed: Relevance[] = ['lead', 'support', 'dim', 'mask'];
+	it('only emits the three promote-never-dim relevance values', () => {
+		const allowed: Relevance[] = ['lead', 'support', 'more'];
 		for (const lens of LENSES) {
 			for (const id of SECTIONS) {
 				expect(allowed).toContain(relevanceFor(lens, id));
 			}
 		}
 	});
-
-	it('marks nothing as "mask" yet — the table extraction is behavior-preserving (PR8 flips mask on)', () => {
-		for (const lens of LENSES) {
-			for (const id of SECTIONS) {
-				expect(relevanceFor(lens, id)).not.toBe('mask');
-			}
-		}
-	});
 });
 
-describe('tierFor / orderFor — reproduce the prior LENS_LEAD/LENS_DIM behavior', () => {
-	it('lead → tier 1 + order -1', () => {
+describe('tierFor / orderFor — promote by order, NEVER dim', () => {
+	it('lead → tier 1 + order -1 (floats to top, headline accent)', () => {
 		expect(tierFor('sky', 'bortle')).toBe(1);
 		expect(orderFor('sky', 'bortle')).toBe(-1);
 		expect(tierFor('air', 'aqi')).toBe(1);
@@ -45,29 +37,36 @@ describe('tierFor / orderFor — reproduce the prior LENS_LEAD/LENS_DIM behavior
 		expect(tierFor('orbit', 'ephemeris')).toBe(1);
 	});
 
-	it('dim → tier 3 + order 1', () => {
-		expect(tierFor('sky', 'aqi')).toBe(3);
+	it('off-lens "more" → tier 2 (NOT 3) + order 1 (sorts below, full strength)', () => {
+		expect(tierFor('sky', 'aqi')).toBe(2);
 		expect(orderFor('sky', 'aqi')).toBe(1);
-		expect(tierFor('air', 'bortle')).toBe(3);
-		expect(tierFor('links', 'viirs')).toBe(3);
+		expect(tierFor('air', 'bortle')).toBe(2);
+		expect(tierFor('links', 'viirs')).toBe(2);
 	});
 
-	it('support → tier 2 + order 0 (the old implicit Tier-2 default, now explicit)', () => {
+	it('support → tier 2 + order 0 (relevant, normal position)', () => {
 		expect(tierFor('links', 'ephemeris')).toBe(2);
 		expect(orderFor('links', 'ephemeris')).toBe(0);
 		expect(tierFor('orbit', 'bortle')).toBe(2);
 		expect(tierFor('sky', 'atmosphere')).toBe(2);
-		expect(tierFor('air', 'pollutants')).toBe(2);
 	});
 
-	it('tier and order agree on direction for every cell', () => {
+	it('NEVER returns tier 3 — there is no dim state (the de-dim invariant)', () => {
+		for (const lens of LENSES) {
+			for (const id of SECTIONS) {
+				const t = tierFor(lens, id);
+				expect(t === 1 || t === 2).toBe(true);
+			}
+		}
+	});
+
+	it('tier and order stay consistent for every cell', () => {
 		for (const lens of LENSES) {
 			for (const id of SECTIONS) {
 				const t = tierFor(lens, id);
 				const o = orderFor(lens, id);
 				if (t === 1) expect(o).toBe(-1);
-				else if (t === 3) expect(o).toBe(1);
-				else expect(o).toBe(0);
+				else expect(o === 0 || o === 1).toBe(true);
 			}
 		}
 	});

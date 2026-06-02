@@ -76,11 +76,10 @@ html {
 	--portal-inset-right: 0;
 	--portal-inset-bottom: 0;
 	--portal-inset-left: 0;
-	/* Persona-lens re-weight tokens (S1). Off-lens surfaces dim to Tier-3 (still
-	   focusable + clickable — re-weight, never gate); the lead-section reorder +
-	   CTA swap cross-fade over --lens-diff-ms (suppressed under reduced-motion). */
-	--readout-tier3-opacity: 0.55;
-	--rail-tier3-opacity: 0.6;
+	/* Persona-lens re-weight (UI redesign, 2026-06-02): the lens PROMOTES by order
+	   only — it NEVER dims/disables. The old --*-tier3-opacity dim tokens are
+	   deleted (off-lens content read as disabled). The lead-section reorder still
+	   cross-fades over --lens-diff-ms (suppressed under reduced-motion). */
 	--lens-diff-ms: 200ms;
 }
 

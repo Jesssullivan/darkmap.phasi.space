@@ -278,7 +278,7 @@
 	const primaryCta = $derived(
 		lens === 'air' ? 'aq' : lens === 'links' ? 'transmission' : lens === 'orbit' ? 'pass' : null,
 	);
-	const ctaTier = (id: 'transmission' | 'aq' | 'pass'): 1 | 3 => (primaryCta === id ? 1 : 3);
+	const ctaTier = (id: 'transmission' | 'aq' | 'pass'): 1 | 2 => (primaryCta === id ? 1 : 2);
 
 	// Lighthouse / horizon-aware ephemeris. Opens on click, fetches the
 	// 36-ray terrain polygon + refined twilight events for this pin. The
@@ -940,39 +940,13 @@
 	.readout > header {
 		order: -100;
 	}
-	/* Off-lens sections dim but stay fully interactive — re-weight, never gate.
-	   No aria-disabled / display:none / pointer-events:none anywhere. */
-	.readout > [data-tier='3'] {
-		opacity: var(--readout-tier3-opacity, 0.55);
-	}
-	.readout > [data-tier='1'] {
-		opacity: 1;
-	}
-	/* Two-channel tier signal (§11.3): off-lens value text drops the amber accent
-	   to neutral ink, and Tier-3 also lightens weight — emphasis survives even
-	   before the opacity dim, so no single channel carries the whole hierarchy.
-	   Tier-1 keeps amber; .aqi-value keeps its category colour; .bortle-class
-	   (the Sky lead) stays amber. */
-	.readout > [data-tier='2'] :where(.value, .spark-mean, .atmos-grid dd, .events dd, .crossval-grid dd),
-	.readout > [data-tier='3'] :where(.value, .spark-mean, .atmos-grid dd, .events dd, .crossval-grid dd) {
+	/* PROMOTE, NEVER DIM (UI redesign): off-lens sections sort below the lead via
+	   `order` (readoutRelevance) but render at FULL opacity + full weight — no
+	   dimming, no greying, no disabled look. Only the LEAD gets a positive accent
+	   (the amber headline); everything else uses neutral ink at full strength, so
+	   emphasis is carried by position + accent, never by suppression. */
+	.readout > [data-tier='2'] :where(.value, .spark-mean, .atmos-grid dd, .events dd, .crossval-grid dd) {
 		color: #e9ecf3;
-	}
-	.readout > [data-tier='3'] :where(.value, .spark-mean) {
-		font-weight: 500;
-	}
-	/* Stop descendant fades compounding under the Tier-3 0.55 opacity (keeps faint
-	   sub-text above the 4.5:1 contrast floor). */
-	.readout > [data-tier='3'] :where(.note, .coverage, .aq-cov, .cv-level, .aqi-dom, .cta-sub, .spark-sub, .cv-note) {
-		opacity: 0.9;
-	}
-	/* Non-promoted CTAs read as available-but-secondary (ghost), not a Tier-1 peer.
-	   The Tier-3 opacity layer above still applies to the off-lens CTA. */
-	.readout > [data-cta][data-tier='3'] {
-		background: transparent;
-		border-color: rgba(var(--accent-amber-rgb), 0.18);
-	}
-	.readout > [data-cta][data-tier='3'] .cta-label {
-		font-weight: 500;
 	}
 	/* Lens-diff cross-fade: only the dim/emphasis transitions (opacity), never
 	   the map or layout. Reordering is instant; the tier change eases. */

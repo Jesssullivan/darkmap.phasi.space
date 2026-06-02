@@ -106,9 +106,8 @@
 		transition: opacity var(--lens-diff-ms, 200ms) ease;
 	}
 	/* Off-lens tiles dim to Tier-3 (still present + interactive — never gated). */
-	.tile[data-tier='3'] {
-		opacity: var(--rail-tier3-opacity, 0.6);
-	}
+	/* PROMOTE, NEVER DIM (UI redesign): the off-lens instrument tile is no longer
+	   dimmed — both tiles render at full strength; the active lens leads by order. */
 	@media (prefers-reduced-motion: reduce) {
 		.tile {
 			transition: none;

@@ -526,11 +526,13 @@ async function runLensReweightSmoke(page) {
 	const expect = (cond, msg) => {
 		if (!cond) throw new Error(`lens-reweight: ${msg}`);
 	};
-	// Re-weight, never gate — assert on every snapshot.
+	// Promote, NEVER dim/gate (UI redesign 2026-06-02): EVERY section must render
+	// at full opacity (no Tier-3 dim — it read as disabled), never display:none /
+	// pointer-events:none / aria-disabled. The lens re-weights by ORDER only.
 	const assertNeverGated = (snapshot, lens) => {
 		for (const [id, s] of Object.entries(snapshot.byId)) {
-			if (s.display === 'none' || s.pointerEvents === 'none' || s.ariaDisabled === 'true') {
-				throw new Error(`lens-reweight: ${lens} gated section "${id}": ${JSON.stringify(s)}`);
+			if (s.display === 'none' || s.pointerEvents === 'none' || s.ariaDisabled === 'true' || s.opacity < 1) {
+				throw new Error(`lens-reweight: ${lens} dimmed/gated section "${id}": ${JSON.stringify(s)}`);
 			}
 		}
 	};
@@ -543,23 +545,18 @@ async function runLensReweightSmoke(page) {
 	expect(tierOf(s, 'viirs') === '2', `Sky viirs should be Tier-2, got ${tierOf(s, 'viirs')}`);
 	assertNeverGated(s, 'sky');
 
-	// Air → night-lights dim (Tier-3); no Bortle headline.
+	// Air → AQI/PM2.5 lead; night-lights sort to the "more" tail (Tier-2) at FULL
+	// opacity — promote by order, NEVER dim. No Bortle headline.
 	await setLens('2', 'air');
-	// The dim cross-fades (PR5 diff animation) — wait for it to settle before
-	// reading the computed opacity, otherwise we sample mid-transition (~1).
-	await page.waitForFunction(
-		() => {
-			const v = document.querySelector('.readout[data-lens] > [data-section="viirs"]');
-			return v ? Number(getComputedStyle(v).opacity) < 0.9 : false;
-		},
-		null,
-		{ timeout: 5_000 },
-	);
 	s = await snap();
 	expect(!s.hasBortleLead, 'Air must NOT show the Bortle lead');
-	expect(tierOf(s, 'viirs') === '3', `Air viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
-	expect(tierOf(s, 'worldAtlas') === '3', `Air worldAtlas should dim to Tier-3, got ${tierOf(s, 'worldAtlas')}`);
-	expect(s.byId.viirs.opacity < 1, `Air Tier-3 viirs should be visually dimmed, opacity=${s.byId.viirs?.opacity}`);
+	expect(tierOf(s, 'viirs') === '2', `Air viirs should be Tier-2 (not dimmed), got ${tierOf(s, 'viirs')}`);
+	expect(tierOf(s, 'worldAtlas') === '2', `Air worldAtlas should be Tier-2, got ${tierOf(s, 'worldAtlas')}`);
+	expect(
+		s.byId.viirs.opacity === 1,
+		`Air off-lens viirs must render full opacity (no dim), got ${s.byId.viirs?.opacity}`,
+	);
+	expect(Number(s.byId.viirs.order) > 0, `Air viirs should sort below via order, got ${s.byId.viirs?.order}`);
 	assertNeverGated(s, 'air');
 	// The lens change is announced to assistive tech via a polite live region.
 	const announce = await page.evaluate(() => document.querySelector('[aria-live="polite"].sr-only')?.textContent ?? '');
@@ -578,29 +575,17 @@ async function runLensReweightSmoke(page) {
 	);
 	expect(tierOf(s, 'atmosphere') === '1', `Links atmosphere should be Tier-1, got ${tierOf(s, 'atmosphere')}`);
 	expect(Number(s.byId.atmosphere.order) < 0, `Links atmosphere should float up, order=${s.byId.atmosphere?.order}`);
-	expect(tierOf(s, 'viirs') === '3', `Links viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
-	// The night-lights family dims as one unit — World Atlas must not stay full.
-	expect(tierOf(s, 'worldAtlas') === '3', `Links worldAtlas should dim with viirs, got ${tierOf(s, 'worldAtlas')}`);
+	expect(tierOf(s, 'viirs') === '2', `Links viirs should be Tier-2 (not dimmed), got ${tierOf(s, 'viirs')}`);
+	expect(tierOf(s, 'worldAtlas') === '2', `Links worldAtlas should be Tier-2, got ${tierOf(s, 'worldAtlas')}`);
 	assertNeverGated(s, 'links');
 
 	// Orbit → ephemeris leads; night-lights dim as one unit.
 	await setLens('4', 'orbit');
 	s = await snap();
 	expect(tierOf(s, 'ephemeris') === '1', `Orbit ephemeris should be Tier-1, got ${tierOf(s, 'ephemeris')}`);
-	expect(tierOf(s, 'viirs') === '3', `Orbit viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
-	expect(tierOf(s, 'worldAtlas') === '3', `Orbit worldAtlas should dim to Tier-3, got ${tierOf(s, 'worldAtlas')}`);
+	expect(tierOf(s, 'viirs') === '2', `Orbit viirs should be Tier-2 (not dimmed), got ${tierOf(s, 'viirs')}`);
+	expect(tierOf(s, 'worldAtlas') === '2', `Orbit worldAtlas should be Tier-2, got ${tierOf(s, 'worldAtlas')}`);
 	assertNeverGated(s, 'orbit');
-
-	// PR5: the tier change cross-fades (opacity transition wired) — layout/order
-	// is instant, the map is never animated. Font-independent (duration only).
-	const transitionDuration = await page.evaluate(() => {
-		const sec = document.querySelector('.readout[data-lens] > [data-section]');
-		return sec ? getComputedStyle(sec).transitionDuration : '0s';
-	});
-	expect(
-		transitionDuration !== '0s' && transitionDuration !== '',
-		`expected a lens-diff opacity transition, got "${transitionDuration}"`,
-	);
 
 	// PR5: an explicit &b= must survive the Dark-preferring per-lens nudge.
 	// lens=links is Dark-preferring (would nudge to Dark if the basemap were
@@ -620,7 +605,7 @@ async function runLensReweightSmoke(page) {
 	expect(explicitHash.includes('b=satellite'), `explicit &b= was stripped by the lens nudge: ${explicitHash}`);
 
 	console.log(
-		'darkmap lens-reweight smoke: Bortle lead (Sky), per-lens tiers + order, diff cross-fade, explicit &b= wins, never-gated',
+		'darkmap lens-reweight smoke: Bortle lead (Sky), per-lens promote-by-order (Tier-1 lead floats up), NO dim (every section opacity===1), explicit &b= wins, never-gated',
 	);
 }
 
