@@ -87,7 +87,6 @@
 	import MapErrorToast, { type ToastErr } from '$lib/components/MapErrorToast.svelte';
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
-	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
 	import {
 		FALLBACK_CENTER,
@@ -2050,9 +2049,10 @@
 		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
 	{/if}
 
-	{#if ephemerisOpen}
-		<SkyCompass location={viewCenter} time={ephemerisTime} />
-	{/if}
+	<!-- W1 de-dup: the sky dome now lives in the RAIL instrument column
+	     (InstrumentColumn embeds <SkyCompass embedded/>). The old standalone float
+	     here duplicated it top-right over the map — removed. The feature is NOT
+	     gone, just no longer shown twice. -->
 
 	<MapToolbar
 		items={[
