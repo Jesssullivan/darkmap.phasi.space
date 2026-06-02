@@ -1,4 +1,64 @@
 <script lang="ts">
+	import type { Lens } from '$lib/lens';
+
+	// The launchpad lead: one card per persona lens. Each card states the
+	// operator's question (JTBD from docs/ux/personas-and-lenses.md §4), names the
+	// power tools that lens promotes, and deep-links into the shared map with that
+	// lens active (`/#lens=…`, decoded by url-hash.ts). This turns the docs page
+	// into a per-lens index rather than a wall of prose — the reference sections
+	// below stay intact for anyone who wants the full detail.
+	const lenses: {
+		id: Lens;
+		icon: string;
+		name: string;
+		persona: string;
+		question: string;
+		tools: string;
+		cta: string;
+	}[] = [
+		{
+			id: 'sky',
+			icon: '◐',
+			name: 'Sky',
+			persona: 'Astro instrumentation & astrophotography',
+			question: 'When and where is tonight dark, clear, and steady enough for my target?',
+			tools:
+				'VIIRS + Falchi radiance → Bortle / SQM · ephemeris & twilight gantt · SkyCompass · DEM horizon · T(λ) extinction',
+			cta: 'Open the Sky lens',
+		},
+		{
+			id: 'air',
+			icon: '☁',
+			name: 'Air',
+			persona: 'Weather, pollen & smog analyst',
+			question: 'Is the air getting better or worse here, do the sources agree, and when is the exposure window?',
+			tools:
+				'Atmosphere overlays · PM2.5 field · multi-pollutant AQI · OpenAQ ↔ CAMS cross-validation · history · the /aq dashboard',
+			cta: 'Open the Air lens',
+		},
+		{
+			id: 'links',
+			icon: '📡',
+			name: 'Links',
+			persona: 'Laser / RF instrumentation technician',
+			question: 'Given my hardware and this geometry, does the link close tonight — with margin?',
+			tools:
+				'Directable boresight (az/el) · T(λ) + live Mie + HITRAN bands · path-integrated AOD · beam footprint · link budget',
+			cta: 'Open the Links lens',
+		},
+		{
+			id: 'orbit',
+			icon: '🛰',
+			name: 'Orbit',
+			persona: 'LEO instrument setup & ground-station Tx',
+			question:
+				'When does a satellite pass over my site, is it feasible over my real horizon, and what is the az/el track?',
+			tools:
+				'TLE / SGP4 pass prediction · slant geometry & airmass · DEM horizon occlusion · T(λ) vs elevation · sub-satellite footprint',
+			cta: 'Open the Orbit lens',
+		},
+	];
+
 	const sections: { id: string; title: string }[] = [
 		{ id: 'mission', title: 'What this tool is for' },
 		{ id: 'features', title: 'Feature surface' },
@@ -20,11 +80,32 @@
 
 <article class="docs container mx-auto max-w-4xl px-6 py-12 text-sm leading-relaxed">
 	<header class="mb-8">
-		<h1 class="font-mono text-2xl font-bold tracking-tight">docs</h1>
+		<a class="map-link" href="/">← Back to the map</a>
+		<h1 class="mt-3 font-mono text-2xl font-bold tracking-tight">docs</h1>
 		<p class="text-surface-700-300 mt-2">
-			darkmap — a planning surface for instrumentation, sensor, astronomy, and low-light field work.
+			darkmap — a planning surface for instrumentation, sensor, astronomy, and low-light field work. Pick the lens that
+			matches your question; every tool stays reachable from every lens.
 		</p>
 	</header>
+
+	<section class="launchpad mb-12" aria-label="Choose a lens">
+		<ul class="lens-grid">
+			{#each lenses as l (l.id)}
+				<li class="lens-card">
+					<div class="lens-head">
+						<span class="lens-icon" aria-hidden="true">{l.icon}</span>
+						<div>
+							<h2 class="lens-name">{l.name}</h2>
+							<p class="lens-persona">{l.persona}</p>
+						</div>
+					</div>
+					<p class="lens-question">“{l.question}”</p>
+					<p class="lens-tools">{l.tools}</p>
+					<a class="lens-cta" href="/#lens={l.id}">{l.cta} <span aria-hidden="true">→</span></a>
+				</li>
+			{/each}
+		</ul>
+	</section>
 
 	<nav class="mb-10 flex flex-wrap gap-3 text-xs" aria-label="On-page navigation">
 		{#each sections as s (s.id)}
@@ -344,5 +425,102 @@
 		padding: 0.1em 0.35em;
 		border-radius: 3px;
 		font-size: 0.85em;
+	}
+
+	/* Launchpad — the per-lens index that leads the page. */
+	.map-link {
+		display: inline-block;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.8rem;
+		opacity: 0.75;
+		text-decoration: none;
+	}
+	.map-link:hover {
+		opacity: 1;
+		text-decoration: underline;
+	}
+	.lens-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	@media (min-width: 640px) {
+		.lens-grid {
+			grid-template-columns: 1fr 1fr;
+		}
+	}
+	.lens-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 1.1rem 1.2rem;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 10px;
+		background: light-dark(rgba(0, 0, 0, 0.02), rgba(255, 255, 255, 0.03));
+		transition:
+			border-color 0.15s ease,
+			transform 0.15s ease;
+	}
+	.lens-card:hover {
+		border-color: rgba(var(--accent-amber-rgb, 255, 209, 102), 0.55);
+		transform: translateY(-2px);
+	}
+	.lens-head {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.7rem;
+	}
+	.lens-icon {
+		font-size: 1.6rem;
+		line-height: 1;
+	}
+	.lens-name {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 1.05rem;
+		font-weight: 700;
+		line-height: 1.2;
+	}
+	.lens-persona {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.6;
+		margin-top: 0.15rem;
+	}
+	.lens-question {
+		font-style: italic;
+		font-size: 0.95rem;
+		line-height: 1.45;
+	}
+	.lens-tools {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.72rem;
+		line-height: 1.5;
+		opacity: 0.7;
+	}
+	.lens-cta {
+		align-self: flex-start;
+		margin-top: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.35rem 0.7rem;
+		border: 1px solid rgba(var(--accent-amber-rgb, 255, 209, 102), 0.55);
+		border-radius: 6px;
+		color: rgb(var(--accent-amber-rgb, 255, 209, 102));
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.8rem;
+		text-decoration: none;
+		transition:
+			background 0.15s ease,
+			color 0.15s ease;
+	}
+	.lens-cta:hover {
+		background: rgb(var(--accent-amber-rgb, 255, 209, 102));
+		color: #0a0c12;
+		text-decoration: none;
 	}
 </style>
