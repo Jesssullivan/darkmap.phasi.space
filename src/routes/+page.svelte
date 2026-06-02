@@ -2305,17 +2305,27 @@
 			width: 100%;
 			box-sizing: border-box;
 		}
-		/* Stage overlays (toolbar bottom-right, sky compass top-right) become
-		   position:absolute so they clip to the STAGE cell (which is
-		   position:relative) instead of the viewport — keeping them off the
+		/* Stage overlays become position:absolute so they clip to the STAGE cell
+		   (which is position:relative) instead of the viewport — keeping them off the
 		   HEADER / INSPECTOR / DOCK regions by construction. The deep-tool sheets
 		   (.sheet / .pass-plan) also clip to the stage; W3 docks them into the
 		   inspector. MapErrorToast + drop-hint already live in the stage. */
+		/* Map controls live on the map's OWN top-left corner (the conventional
+		   map-control home — Cesium/Palantir/Google Maps), a horizontal cluster.
+		   This clears the lower-right (where it crowded the inspector + the twilight
+		   gantt) — the operator's "buttons piled in the lower right" complaint. The
+		   ≤820px float fallback (compact bottom strip) is untouched. */
 		.stage :global(.toolbar) {
 			position: absolute;
-			right: 0.75rem;
-			bottom: 0.75rem;
+			top: 0.75rem;
+			left: 0.75rem;
+			right: auto;
+			bottom: auto;
 			z-index: 8;
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			max-width: calc(100% - 1.5rem);
 		}
 		/* W1 de-dup: the RAIL instrument column owns the sky dome at WIDE, so the
 		   standalone float is hidden here (it stays rendered + visible ≤1023px, where
