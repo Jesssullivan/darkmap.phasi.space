@@ -570,7 +570,15 @@ async function runLensReweightSmoke(page) {
 
 	// Links → atmosphere leads (Tier-1, floated up via negative order); viirs dims.
 	await setLens('3', 'links');
+	// TIN-1766: the Links lens leads with a compact path-AOD/T/loss summary line
+	// (rendered once the CAMS air-quality reading is in — mocked aod550=0.14).
+	await page.waitForSelector('.readout[data-lens] .links-lead', { state: 'attached', timeout: 10_000 });
 	s = await snap();
+	expect(tierOf(s, 'links-lead') === '1', `Links lead summary should be Tier-1, got ${tierOf(s, 'links-lead')}`);
+	expect(
+		Number(s.byId['links-lead'].order) < Number(s.byId.atmosphere.order),
+		`Links lead should sit above the atmosphere section (orders ${s.byId['links-lead']?.order} vs ${s.byId.atmosphere?.order})`,
+	);
 	expect(tierOf(s, 'atmosphere') === '1', `Links atmosphere should be Tier-1, got ${tierOf(s, 'atmosphere')}`);
 	expect(Number(s.byId.atmosphere.order) < 0, `Links atmosphere should float up, order=${s.byId.atmosphere?.order}`);
 	expect(tierOf(s, 'viirs') === '3', `Links viirs should dim to Tier-3, got ${tierOf(s, 'viirs')}`);
