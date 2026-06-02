@@ -79,6 +79,13 @@ html {
 	html {
 		--field-bottom-reserve: 8.75rem;
 		--map-toolbar-inset-rem: 5rem;
+		/* The mobile twilight gantt is ~200px tall — taller than --field-bottom-reserve
+		   (8.75rem ≈ 140px), so a tall readout-only state would dip ~60px into it
+		   (TIN-1810). The readout-only portrait rule clears the gantt by anchoring its
+		   bottom at this reserve instead; the gantt/attribution/toolbar keep
+		   --field-bottom-reserve. Tuned against real-font render (the GF cell is
+		   fontless so the overlap never shows in CI). */
+		--gantt-reserve-rem: 13rem;
 	}
 }
 
