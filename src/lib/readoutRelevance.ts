@@ -1,20 +1,18 @@
-// Per-lens PointReadout relevance — the single source of truth for which
-// readout sections lead, support, dim, or (eventually) hide under each lens.
+// Per-lens PointReadout relevance — the single source of truth for which readout
+// sections a lens LEADS with, supports, or sorts into the "more" tail.
 //
-// This replaces the prior two hand-maintained arrays (LENS_LEAD / LENS_DIM in
-// PointReadout.svelte). That pair had a latent gap: a section in *neither*
-// array silently fell through to Tier-2 ("support"), so forgetting to classify
-// a new section produced a full-bright row with no compile-time warning. Here
-// the table is **exhaustive** — `Record<Lens, Record<SectionId, Relevance>>`
-// forces every lens to declare a stance on every section, so a new SectionId is
-// a type error until all four lenses classify it.
+// One exhaustive `Record<Lens, Record<SectionId, Relevance>>` — TS forces every
+// lens to declare a stance on every section, so a new SectionId is a type error
+// until all four lenses classify it.
 //
-// Re-weight, never gate: 'lead'/'support'/'dim' all stay rendered + interactive
-// (they only change tier + order). 'mask' is the fourth, genuinely-hide state —
-// defined here now but NOT yet rendered anywhere (it lands in the portal PR8,
-// scoped conservatively). Until then no cell maps to 'mask', so this module is a
-// behavior-preserving extraction: tierFor/orderFor reproduce the old
-// tierOf/orderOf exactly.
+// PROMOTE, NEVER DIM (UI redesign, 2026-06-02). Earlier this model had a `dim`
+// (Tier-3 opacity) + `mask` (hide) state; the operator rejected both — a feature
+// dimmed to ~0.55 opacity reads as DISABLED ("only usable if you know the click
+// order"). A lens now re-weights by ORDER ONLY: lead sections float to the top at
+// full strength; everything else stays at full opacity and sorts below. No
+// opacity, no weight-drop, no hiding — every feature is always legibly active.
+// (The richer grouping/size/label emphasis lands with the command-deck grid; this
+// module's contract is just lead-vs-rest ordering.)
 
 import type { Lens } from './lens';
 
@@ -33,14 +31,14 @@ export type SectionId =
 	| 'ephemeris';
 
 /**
- * A lens's stance on a section:
- * - `lead`    — float to the top, Tier-1 (the lens's signature data).
- * - `support` — present at normal weight, Tier-2 (relevant, not the headline).
- * - `dim`     — Tier-3, sunk below normal but still focusable + clickable.
- * - `mask`    — genuinely irrelevant to this lens; hidden (PR8, not yet rendered).
- *               NEVER applied to a section the lens-reweight smoke names by tier.
+ * A lens's stance on a section — ALL render at full opacity + full weight:
+ * - `lead`    — the lens's signature data; floats to the top (Tier-1 headline accent).
+ * - `support` — relevant to this lens; normal position.
+ * - `more`    — off-lens; sorts below, still full strength + fully interactive
+ *               (never dimmed, never hidden — the command-deck groups it under a
+ *               visible "More" header, but it is always one obvious step away).
  */
-export type Relevance = 'lead' | 'support' | 'dim' | 'mask';
+export type Relevance = 'lead' | 'support' | 'more';
 
 /** Every (lens × section) cell is explicit — TS enforces exhaustiveness. */
 export const READOUT_RELEVANCE: Record<Lens, Record<SectionId, Relevance>> = {
@@ -50,12 +48,12 @@ export const READOUT_RELEVANCE: Record<Lens, Record<SectionId, Relevance>> = {
 		viirs: 'support',
 		worldAtlas: 'support',
 		atmosphere: 'support',
-		aqi: 'dim',
-		pm25: 'dim',
-		pollutants: 'dim',
-		history: 'dim',
-		pollen: 'dim',
-		crossval: 'dim',
+		aqi: 'more',
+		pm25: 'more',
+		pollutants: 'more',
+		history: 'more',
+		pollen: 'more',
+		crossval: 'more',
 	},
 	air: {
 		aqi: 'lead',
@@ -65,36 +63,36 @@ export const READOUT_RELEVANCE: Record<Lens, Record<SectionId, Relevance>> = {
 		history: 'support',
 		pollen: 'support',
 		crossval: 'support',
-		bortle: 'dim',
-		viirs: 'dim',
-		worldAtlas: 'dim',
-		ephemeris: 'dim',
+		bortle: 'more',
+		viirs: 'more',
+		worldAtlas: 'more',
+		ephemeris: 'more',
 	},
 	links: {
 		atmosphere: 'lead',
 		ephemeris: 'support',
-		aqi: 'dim',
-		pm25: 'dim',
-		pollutants: 'dim',
-		pollen: 'dim',
-		history: 'dim',
-		crossval: 'dim',
-		bortle: 'dim',
-		viirs: 'dim',
-		worldAtlas: 'dim',
+		aqi: 'more',
+		pm25: 'more',
+		pollutants: 'more',
+		pollen: 'more',
+		history: 'more',
+		crossval: 'more',
+		bortle: 'more',
+		viirs: 'more',
+		worldAtlas: 'more',
 	},
 	orbit: {
 		ephemeris: 'lead',
 		atmosphere: 'support',
 		bortle: 'support',
-		aqi: 'dim',
-		pm25: 'dim',
-		pollutants: 'dim',
-		pollen: 'dim',
-		history: 'dim',
-		crossval: 'dim',
-		viirs: 'dim',
-		worldAtlas: 'dim',
+		aqi: 'more',
+		pm25: 'more',
+		pollutants: 'more',
+		pollen: 'more',
+		history: 'more',
+		crossval: 'more',
+		viirs: 'more',
+		worldAtlas: 'more',
 	},
 };
 
@@ -102,19 +100,14 @@ export const READOUT_RELEVANCE: Record<Lens, Record<SectionId, Relevance>> = {
 export const relevanceFor = (lens: Lens, id: SectionId): Relevance => READOUT_RELEVANCE[lens][id];
 
 /**
- * Visual tier: 1 = lead (full amber/cyan headline), 2 = support (normal),
- * 3 = dim (Tier-3 opacity, still interactive). 'mask' maps to 2 here so that
- * if a section is ever marked 'mask' but still rendered (the pre-PR8 state),
- * it reads as a normal row rather than vanishing — masking is gated at the
- * template `{#if}`, not via tier.
+ * Visual tier: 1 = lead (full headline accent), 2 = everything else (normal).
+ * There is NO Tier-3 — the redesign promotes by order, never dims. Kept as a
+ * 1|2 signal so the lead section can take the large/accent headline treatment.
  */
-export const tierFor = (lens: Lens, id: SectionId): 1 | 2 | 3 => {
-	const r = relevanceFor(lens, id);
-	return r === 'lead' ? 1 : r === 'dim' ? 3 : 2;
-};
+export const tierFor = (lens: Lens, id: SectionId): 1 | 2 => (relevanceFor(lens, id) === 'lead' ? 1 : 2);
 
-/** Flex `order`: lead floats up (-1), dim sinks (1), everything else neutral (0). */
+/** Flex `order`: lead floats up (-1), `more` sorts below (1), support neutral (0). */
 export const orderFor = (lens: Lens, id: SectionId): number => {
 	const r = relevanceFor(lens, id);
-	return r === 'lead' ? -1 : r === 'dim' ? 1 : 0;
+	return r === 'lead' ? -1 : r === 'more' ? 1 : 0;
 };

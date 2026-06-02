@@ -108,8 +108,10 @@ try {
 	//    groups — no expand-state carryover from the previous lens). Then let
 	//    tiles settle and capture the full shipped chrome over the live map.
 	for (const lens of LENSES) {
-		await page.goto(`${BASE}/#lens=${lens.id}`, { waitUntil: 'networkidle' });
-		await page.reload({ waitUntil: 'networkidle' });
+		// `load` not `networkidle`: the live map keeps fetching tiles, so
+		// networkidle can never settle and times out the reload.
+		await page.goto(`${BASE}/#lens=${lens.id}`, { waitUntil: 'load' });
+		await page.reload({ waitUntil: 'load' });
 		// Dismiss the guided tour if it auto-opened, so the map reads cleanly.
 		await page.evaluate(() => {
 			const b = [...document.querySelectorAll('button')].find((x) => /close tour|skip/i.test(x.textContent || ''));
@@ -126,7 +128,7 @@ try {
 	}
 
 	// 4. The /docs launchpad (above the fold).
-	await page.goto(`${BASE}/docs`, { waitUntil: 'networkidle' });
+	await page.goto(`${BASE}/docs`, { waitUntil: 'load' });
 	await page.waitForTimeout(500);
 	const docsOut = join(OUT, 'docs-launchpad-full.png');
 	await page.screenshot({ path: docsOut });

@@ -527,9 +527,9 @@
 	.category {
 		transition: opacity var(--lens-diff-ms, 200ms) ease;
 	}
-	.category[data-tier='3'] {
-		opacity: var(--rail-tier3-opacity, 0.6);
-	}
+	/* PROMOTE, NEVER DIM (UI redesign): off-lens layer groups are no longer dimmed
+	   to Tier-3 (it read as disabled). The active lens auto-expands its primary
+	   group; off-lens groups stay full-strength + one click from expanding. */
 	@media (prefers-reduced-motion: reduce) {
 		.category {
 			transition: none;
