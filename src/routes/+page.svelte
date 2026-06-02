@@ -2188,6 +2188,19 @@
 			bottom: calc(var(--field-bottom-reserve, 7.75rem) + env(safe-area-inset-bottom, 0px) + 6.25rem);
 		}
 	}
+	/* TIN-1810: in portrait the gantt is taller than --field-bottom-reserve, so the
+	   READOUT-ONLY state (transmission + passplan both closed) anchors its bottom at
+	   --gantt-reserve-rem to clear the gantt instead of dipping ~60px into it. Scoped
+	   to portrait + readout-only so the short/landscape concession and the
+	   transmission/passplan top-strip placements are untouched. */
+	@media (max-width: 820px) and (orientation: portrait) {
+		.field-hud[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
+			:global(.readout[role='dialog']) {
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
+			max-height: calc(100vh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 5rem) !important;
+			max-height: calc(100dvh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 5rem) !important;
+		}
+	}
 	@media (max-width: 820px) and (orientation: landscape), (max-height: 500px) {
 		.field-hud[data-transmission='open'][data-readout='open'] {
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
