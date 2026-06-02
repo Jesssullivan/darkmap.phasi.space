@@ -2156,7 +2156,12 @@
 			position: fixed;
 			inset: 0;
 			grid-template-columns: 20rem 1fr 22rem;
-			grid-template-rows: auto 1fr auto;
+			/* minmax(0, …) on every row drops the implicit `min-content` floor.
+			   That floor makes a track size to its content's intrinsic min, which —
+			   with the fontless CI cell's zero-metric text — can enter a grid
+			   track-sizing CYCLE that pegs the main thread before DCL (the page
+			   never loads; no console). Capping the min at 0 breaks the cycle. */
+			grid-template-rows: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
 			grid-template-areas:
 				'header header header'
 				'rail stage inspector'
@@ -2165,6 +2170,9 @@
 			padding: 0.75rem;
 			box-sizing: border-box;
 		}
+		/* contain:layout isolates each region's internal layout so a child's
+		   intrinsic sizing can't propagate back into the grid track computation
+		   (belt-and-suspenders with minmax(0,…) against the fontless layout cycle). */
 		.deck-header {
 			grid-area: header;
 			display: flex;
@@ -2172,6 +2180,8 @@
 			justify-content: space-between;
 			gap: 1rem;
 			min-width: 0;
+			min-height: 0;
+			contain: layout;
 		}
 		.stage {
 			grid-area: stage;
@@ -2181,6 +2191,7 @@
 			min-height: 0;
 			border-radius: 8px;
 			overflow: hidden;
+			contain: layout;
 		}
 		.deck-inspector {
 			grid-area: inspector;
@@ -2188,11 +2199,15 @@
 			min-width: 0;
 			min-height: 0;
 			overflow: hidden;
+			contain: layout;
 		}
 		.deck-dock {
 			grid-area: dock;
 			display: block;
 			min-width: 0;
+			min-height: 0;
+			overflow: hidden;
+			contain: layout;
 		}
 		/* STAGE: the MapLibre canvas fills the stage cell — grid-area:stage, no
 		   position:fixed, no inset. MapLibre trackResize (default-on) re-fires
@@ -2373,14 +2388,15 @@
 			display: flex;
 			flex-direction: column;
 			gap: 0.6rem;
+			min-width: 0;
 			min-height: 0;
 			background: rgba(8, 10, 16, 0.85);
 			border: 1px solid rgba(255, 255, 255, 0.08);
 			border-radius: 8px;
-			backdrop-filter: blur(6px);
 			padding: 0.85rem 0.9rem;
 			box-sizing: border-box;
 			overflow: hidden;
+			contain: layout;
 		}
 		.left-dock :global(.instrument-column) {
 			flex: 0 0 auto;
