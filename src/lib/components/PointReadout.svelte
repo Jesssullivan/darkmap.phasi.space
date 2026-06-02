@@ -3,7 +3,7 @@
 	import { X } from '@lucide/svelte';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import { DEFAULT_LENS, type Lens } from '$lib/lens';
-	import { orderFor, tierFor, type SectionId } from '$lib/readoutRelevance';
+	import { orderFor, tierFor, relevanceFor, type Relevance, type SectionId } from '$lib/readoutRelevance';
 	import { bortleFromArtificialMcd } from '$lib/skyBrightness';
 	import { aerosolClarityFromAod } from '$lib/linkBudget';
 	import type { PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
@@ -268,8 +268,28 @@
 	// thin wrappers just bind the current `lens`. Section ids match the
 	// `data-section` attrs in the template.
 	const tierOf = (id: SectionId): 1 | 2 | 3 => tierFor(lens, id);
-	// Lead sections float to the top (negative order); dimmed sink below normal.
+	// Lead sections float to the top (negative order); `more` sinks below the
+	// "More — N ▾" divider (order +2). Support holds the middle (order 0).
 	const orderOf = (id: SectionId): number => orderFor(lens, id);
+	const relOf = (id: SectionId): Relevance => relevanceFor(lens, id);
+
+	// W2 — the two-group readout (command-deck.md §5). Off-lens ("more") sections
+	// stay full-strength + reachable, but collapse under ONE obvious "More — N ▾"
+	// disclosure so the lead + support scan first. Progressive disclosure (NN/g) —
+	// the OPPOSITE of dimming: one click, full contrast, never hidden by the lens.
+	let moreCollapsed = $state(true);
+	let moreCount = $state(0);
+	// Count the "more" sections that actually rendered (their data-guard passed),
+	// so the divider label is honest. Re-runs on lens/data change via the DOM read
+	// of the existing `readoutPanel` element ref.
+	$effect(() => {
+		// touch the inputs that change which sections render, then measure the DOM.
+		void lens;
+		void data;
+		void airQuality;
+		void scope;
+		moreCount = readoutPanel ? readoutPanel.querySelectorAll('[data-relevance="more"]').length : 0;
+	});
 
 	// CTA emphasis per lens (Air → AQ dashboard, Links → transmission). Sky/Orbit
 	// lead with an in-readout section, so both CTAs read as secondary (Tier-3
@@ -363,6 +383,7 @@
 <div
 	bind:this={readoutPanel}
 	class="readout"
+	class:more-collapsed={moreCollapsed && moreCount > 0}
 	data-lens={lens}
 	data-scope={scope}
 	role="dialog"
@@ -410,7 +431,13 @@
 		</div>
 	{:else}
 		{#if lens === 'sky' && bortle}
-			<section class="bortle-lead" data-section="bortle" data-tier={tierOf('bortle')} style:order={orderOf('bortle')}>
+			<section
+				class="bortle-lead"
+				data-section="bortle"
+				data-tier={tierOf('bortle')}
+				data-relevance={relOf('bortle')}
+				style:order={orderOf('bortle')}
+			>
 				<p class="bortle-class">
 					Bortle {bortle.cls}
 					<span class="bortle-label">{bortle.label}</span>
@@ -448,21 +475,36 @@
 			<p class="error">Error: {error}</p>
 		{:else if data}
 			{#if data.viirs}
-				<section data-section="viirs" data-tier={tierOf('viirs')} style:order={orderOf('viirs')}>
+				<section
+					data-section="viirs"
+					data-tier={tierOf('viirs')}
+					data-relevance={relOf('viirs')}
+					style:order={orderOf('viirs')}
+				>
 					<h4>VIIRS pixel</h4>
 					<p class="value">{viirsAvg}<span class="unit">/255</span></p>
 					<p class="note">{data.viirs.layer} · RGB({data.viirs.red},{data.viirs.green},{data.viirs.blue})</p>
 				</section>
 			{/if}
 			{#if data.worldAtlas}
-				<section data-section="worldAtlas" data-tier={tierOf('worldAtlas')} style:order={orderOf('worldAtlas')}>
+				<section
+					data-section="worldAtlas"
+					data-tier={tierOf('worldAtlas')}
+					data-relevance={relOf('worldAtlas')}
+					style:order={orderOf('worldAtlas')}
+				>
 					<h4>World Atlas radiance</h4>
 					<p class="value">{data.worldAtlas.grayIndex.toFixed(2)}<span class="unit"> mcd/m²</span></p>
 					<p class="note">Falchi 2016 modeled artificial brightness</p>
 				</section>
 			{/if}
 			{#if data.atmospheric}
-				<section data-section="atmosphere" data-tier={tierOf('atmosphere')} style:order={orderOf('atmosphere')}>
+				<section
+					data-section="atmosphere"
+					data-tier={tierOf('atmosphere')}
+					data-relevance={relOf('atmosphere')}
+					style:order={orderOf('atmosphere')}
+				>
 					<h4>Atmosphere (Open-Meteo)</h4>
 					<dl class="atmos-grid">
 						<dt>PWV</dt>
@@ -493,7 +535,13 @@
 		{/if}
 
 		{#if aqi}
-			<section class="aqi" data-section="aqi" data-tier={tierOf('aqi')} style:order={orderOf('aqi')}>
+			<section
+				class="aqi"
+				data-section="aqi"
+				data-tier={tierOf('aqi')}
+				data-relevance={relOf('aqi')}
+				style:order={orderOf('aqi')}
+			>
 				<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
 					<span class="aqi-value">{aqi.aqi}</span>
 					<span class="aqi-meta">
@@ -532,7 +580,12 @@
 		{/if}
 
 		{#if aqRows.some((r) => r.name !== 'pm25')}
-			<section data-section="pollutants" data-tier={tierOf('pollutants')} style:order={orderOf('pollutants')}>
+			<section
+				data-section="pollutants"
+				data-tier={tierOf('pollutants')}
+				data-relevance={relOf('pollutants')}
+				style:order={orderOf('pollutants')}
+			>
 				<h4>
 					Other pollutants
 					<HelpTooltip
@@ -560,7 +613,13 @@
 		{/if}
 
 		{#if historyLoading || history}
-			<section class="history" data-section="history" data-tier={tierOf('history')} style:order={orderOf('history')}>
+			<section
+				class="history"
+				data-section="history"
+				data-tier={tierOf('history')}
+				data-relevance={relOf('history')}
+				style:order={orderOf('history')}
+			>
 				<h4>
 					Station {history ? (HISTORY_LABELS[history.parameter] ?? history.parameter) : ''} history
 					<HelpTooltip
@@ -623,7 +682,12 @@
 		{/if}
 
 		{#if airQuality}
-			<section data-section="pollen" data-tier={tierOf('pollen')} style:order={orderOf('pollen')}>
+			<section
+				data-section="pollen"
+				data-tier={tierOf('pollen')}
+				data-relevance={relOf('pollen')}
+				style:order={orderOf('pollen')}
+			>
 				<h4>
 					Pollen &amp; air quality
 					<HelpTooltip
@@ -677,6 +741,7 @@
 				class="crossval"
 				data-section="crossval"
 				data-tier={tierOf('crossval')}
+				data-relevance={relOf('crossval')}
 				style:order={orderOf('crossval')}
 			>
 				<h4>
@@ -728,6 +793,7 @@
 			class="ephemeris-section"
 			data-section="ephemeris"
 			data-tier={tierOf('ephemeris')}
+			data-relevance={relOf('ephemeris')}
 			style:order={orderOf('ephemeris')}
 		>
 			<button
@@ -787,6 +853,25 @@
 				</div>
 			{/if}
 		</section>
+
+		<!-- W2 — the "More — N ▾" disclosure (command-deck.md §5). Off-lens ("more")
+		     sections stay full-strength + fully interactive, but collapse under ONE
+		     obvious, full-contrast divider so the lead + support scan first. One click
+		     reveals them — progressive disclosure (NN/g), never lens-hidden. Flex
+		     order:1 floats the divider above the more group (order:2). -->
+		{#if moreCount > 0}
+			<button
+				type="button"
+				class="more-divider"
+				data-section="more-divider"
+				style:order="1"
+				aria-expanded={!moreCollapsed}
+				onclick={() => (moreCollapsed = !moreCollapsed)}
+			>
+				<span class="more-caret" aria-hidden="true">{moreCollapsed ? '▸' : '▾'}</span>
+				<span class="more-label">More — {moreCount} {moreCount === 1 ? 'section' : 'sections'}</span>
+			</button>
+		{/if}
 
 		{#snippet transmissionCta()}
 			{#if onTransmissionForPoint && data?.atmospheric}
@@ -959,6 +1044,48 @@
 		.readout > [data-cta] {
 			transition: none;
 		}
+	}
+	/* W2 — the "More — N ▾" two-group disclosure. Off-lens ("more") sections collapse
+	   under one obvious, full-contrast divider — progressive disclosure (NN/g), NOT
+	   dimming: every section stays opacity:1 + fully interactive, one click reveals
+	   the group. When expanded the more sections (order:2) flow below the divider. */
+	.readout.more-collapsed > [data-relevance='more'] {
+		display: none;
+	}
+	.more-divider {
+		order: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		width: 100%;
+		padding: 0.4rem 0.1rem;
+		margin: 0.2rem 0 0;
+		border: none;
+		border-top: 1px solid rgba(255, 255, 255, 0.12);
+		background: none;
+		/* Subdue via COLOR, not opacity — the divider stays opacity:1 so the no-dim
+		   invariant never trips on this control (it is an affordance, not content). */
+		color: rgba(233, 236, 243, 0.72);
+		font: inherit;
+		font-size: 0.72rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		cursor: pointer;
+		transition: color 140ms ease;
+	}
+	.more-divider:hover,
+	.more-divider:focus-visible {
+		color: #e9ecf3;
+		outline: none;
+	}
+	.more-divider:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 1px;
+		border-radius: 4px;
+	}
+	.more-caret {
+		color: var(--accent-amber);
+		font-size: 0.8rem;
 	}
 	.bortle-lead,
 	.links-lead {
