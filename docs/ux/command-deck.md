@@ -5,9 +5,11 @@
 > accent-label** — **never** opacity/disable. Every deep tool has a persistent
 > in-layout launcher and inherits the click as its query.
 
-Status: **north-star / pre-build** (research-grounded). Wave 0 (de-dim) shipped
-in #380. The structural waves (W1+) are Figma-mocked for sign-off before the
-float-model teardown.
+Status: **building**. Wave 0 (de-dim) shipped in #380; **Wave 1 (the grid shell)
+shipped in #382** — the float-soup (14 `position:fixed` surfaces + the z4→z13
+ladder) is replaced by the 5-region grid at WIDE, camera-verified zero-overlap
+across all four lenses. Waves 2–5 (relocate the map toolbar + deep tools into the
+rail/inspector; responsive reflow; polish) are next.
 
 ## 1. Why (the problem this fixes)
 
@@ -116,7 +118,7 @@ number-keys 1–4 + inline shortcut hints stay.
 ## 6. Rebuild waves
 
 - **W0 — de-dim** ✅ (#380): delete the Tier-3 tokens + every dim usage; `Relevance` → `{lead,support,more}`; smoke enforces `opacity===1`. No layout change.
-- **W1 — grid shell**: `.command-deck` 5-region grid at WIDE; `.map`→`grid-area:stage`; lens+geocoder→HEADER, gantt→DOCK; delete the z-ladder + `.field-hud` scrim. Camera-verify WIDE: zero overlap.
+- **W1 — grid shell** ✅ (#382): `.command-deck` 5-region grid at WIDE; `.map`→`grid-area:stage`; lens+geocoder→HEADER, gantt→DOCK (one gantt, not two); de-duped the standalone SkyCompass float (the dome now lives only in the rail). Camera-verified WIDE zero-overlap, all four lenses. **Fontless-cell peg fix:** the grid pegged the RBE cell's main thread before DCL until `min-width:0` on the header flex children (+ `minmax(0,…)` rows) made layout metric-independent — see [[reference_darkmap_ci_testing]].
 - **W2 — inspector + two-group readout + always-on TOOLS**: dock PointReadout; "[Lens] — your tools" + "More (N) ▾"; large lead per lens; kill the data-guarded CTA gating.
 - **W3 — deep tools dock in-region**: TransmissionSheet/PassPlan/AQ render inside the inspector (master-detail / stage-shrink); wire carry-the-query; delete the `bottom:0 z12` sheet.
 - **W4 — responsive reflow + container queries**: MEDIUM + COMPACT; re-anchor the Tour to grid cells; delete the `!important` block + every `display:none` feature drop. Camera-verify 390/640/768/1024/1440.
