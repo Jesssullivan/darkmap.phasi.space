@@ -38,6 +38,13 @@ dev-open:
 build:
     cd {{ root }} && pnpm run build
 
+# Capture the shipped UI per lens with SwiftShader (real WebGL + fonts) for the
+# public-readiness packet. The CI proof cell and gstack /browse both lack WebGL,
+# so this is the only path that renders the MapLibre canvas in a capture. Builds
+# first so the captures reflect current main. Override Chrome with CHROME_BIN.
+capture-shipped-ui: build
+    cd {{ root }} && node scripts/capture-shipped-ui.mjs
+
 # Clean then build
 rebuild: clean build
 
