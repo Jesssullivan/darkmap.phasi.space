@@ -140,3 +140,50 @@ dossier-as-inspector instinct, the framed-map aesthetic, the carry-the-query dri
 is absorbed into the grid regions. The hard-won **infra stays** — the SwiftShader
 camera (now multi-breakpoint), the browser-RBE smoke suite (now enforcing the
 no-dim + non-overlap invariants), the relevance module, the deep-tool data.
+
+## 9. "Instrument Bay" — the W2–W5 execution plan (research-backed)
+
+A 4-phase, ~11-agent research+design pass (audit → SOTA research → 3 proposals →
+synthesis) chose the **Instrument Bay** spine: the map is **one gauge in a balanced
+deck**, not the whole point. Grounded in: NN/g Progressive Disclosure (2-level cap;
+reachable, never hidden) · Esri Calcite Shell (dock-pushes, overlay-banned; map
+padding re-adjusts) · VS Code Activity Bar + Material 3 Nav Rail (always-on,
+full-opacity launcher whose click swaps a docked panel) · Roberts CMV
+brushing-and-linking (carry-the-query) · NN/g Spatial Memory (shrink by **re-sizing
+tracks**, never reflowing) · Palantir Foundry / Figma UI3 (LEFT=inputs / RIGHT=outputs;
+map controls on the map's **own** edge) · Flightradar24 + NN/g pogo-sticking
+(launcher tiles carry a live headline value so users rarely drill) · Grafana Geomap +
+GEE SplitPanel (map = one co-equal, resizable pane).
+
+**Operator decisions (2026-06-02):** (1) **build Cmd-K** — a fuzzy command palette is
+the cheapest "real navigation UX" win for a keyboard-first expert audience (additive,
+hides nothing); letter-chords T/P/A/V + number-keys 1–4 ship alongside. (2) **shrink
+the map** — modest ~36–46% with a hard 380px floor where it fits (≥1366px; the laptop
+band 1024–1365px uses a 1fr stage so the floor can't force overflow) + a one-key
+"maximize map". (3) **W3 desktop-only, keep the ≤1023px float fallback** — defer the
+`--field-panel-*` deletion to W4 so mobile is never orphaned.
+
+The lens still re-weights by **order + grouping + size + accent-label only** (§4) —
+every launcher tile and readout section stays `opacity:1` and clickable in every lens.
+
+### Waves
+- **W2 — Instrument-bay ratio + carry-the-query + TOOLS cluster + two-group readout.**
+  Make the room before the tools move in: re-size the WIDE grid (RAIL 20→22rem,
+  INSPECTOR 22→26/30rem, STAGE a fractional remainder); a persistent **TOOLS launcher
+  cluster** (4 full-opacity, lens-ordered tiles) at the bottom of the RAIL; the
+  PointReadout's lead / support / "More — N ▾" hierarchy; the shared `query`
+  `{lat,lon,et,lens,layers,boresight,horizon}` rune so one map-click feeds everything.
+  _(Shipping in slices: ratio + cluster first, readout hierarchy + clickable
+  instruments next.)_
+- **W3 — Deep tools dock IN the INSPECTOR (master-detail).** `TransmissionSheet` /
+  `PassPlanPanel` / AQ render inside `.deck-inspector` yoked to the pinned point; tools
+  become non-mutually-exclusive ordered sections; seeded (ghosted/"sample") empty
+  states; finish carry-the-query (Links/Orbit hit ≤2 clicks). **WIDE-only**; the
+  ≤1023px float fallback stays until W4.
+- **W4 — Re-home the MapToolbar onto the stage's top edge + DOCK peek + responsive
+  reflow (MEDIUM/COMPACT)** + delete the `--field-panel-*` / bottom-sheet CSS.
+- **W5 — Per-lens accents (label-paired) + accelerators (Cmd-K + T/P/A/V) + per-lens
+  splitter defaults + maximize-stage + click-budget enforced in the smoke suite + docs.**
+
+### Click budgets (enforced as a smoke-suite invariant in W5)
+Sky hover=0 / ≤1 · Air ≤1 · Links ≤2 · Orbit ≤2 — a tested, non-regressing property.
