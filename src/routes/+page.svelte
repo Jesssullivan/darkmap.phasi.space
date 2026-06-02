@@ -106,6 +106,12 @@
 	import { lensStore } from '$lib/lens.svelte';
 	import { LENSES, LENS_ANNOUNCE, type Lens } from '$lib/lens';
 
+	// TEMP W1 BISECT: when true, the rail/inspector/dock CONTENT is omitted so the
+	// fontless RBE cell renders only the grid skeleton + header + stage/map. Splits
+	// "grid structure pegs the main thread" from "a content component pegs it" in a
+	// single CI cycle. MUST be false before merge.
+	const W1_BISECT_EMPTY = true;
+
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
 	let controllerLayer: Layer.Layer<MapLayerController> | undefined;
@@ -1902,18 +1908,21 @@
 	     overlays it. ≤1023px display:contents → LayerRail keeps its mobile-drawer
 	     positioning (the rail-toggle + backdrop live inside LayerRail, fixed). -->
 	<aside class="left-dock" aria-label="Lens dock">
-		<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
-		<div class="left-dock-scroll">
-			<LayerRail
-				lens={lensStore.lens}
-				layers={LAYERS}
-				states={layerState}
-				onchange={onLayerChange}
-				basemap={activeBasemap}
-				onbasemapchange={onBasemapChange}
-				time={ephemerisTime}
-			/>
-		</div>
+		<!-- TEMP W1 BISECT: rail content disabled to localize the fontless-cell layout peg. REVERT. -->
+		{#if !W1_BISECT_EMPTY}
+			<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
+			<div class="left-dock-scroll">
+				<LayerRail
+					lens={lensStore.lens}
+					layers={LAYERS}
+					states={layerState}
+					onchange={onLayerChange}
+					basemap={activeBasemap}
+					onbasemapchange={onBasemapChange}
+					time={ephemerisTime}
+				/>
+			</div>
+		{/if}
 	</aside>
 
 	<!-- STAGE region: the MapLibre canvas as grid-area:stage — NO position:fixed,
@@ -1957,33 +1966,35 @@
 	     WIDE (22rem track). ≤1023px display:contents → it keeps its bottom-right
 	     float + click-to-open behaviour. -->
 	<aside class="deck-inspector" aria-label="Point inspector">
-		<PointReadout
-			scope={readout ? 'point' : 'mean'}
-			lens={lensStore.lens}
-			lat={readout?.lat}
-			lon={readout?.lon}
-			time={ephemerisTime}
-			data={readout?.data}
-			loading={readout?.loading ?? false}
-			error={readout?.error}
-			pm25={pm25Estimate}
-			{aqEstimates}
-			{pollutantUnits}
-			airQuality={airQualityReading}
-			history={stationHistory}
-			historyLoading={stationHistoryLoading}
-			onclose={closeReadout}
-			onTransmissionForPoint={openTransmissionForPoint}
-			onAqDashboardForPoint={openAqDashboardForPoint}
-			onPlanPassForPoint={openPassPlanForPoint}
-		/>
+		{#if !W1_BISECT_EMPTY}
+			<PointReadout
+				scope={readout ? 'point' : 'mean'}
+				lens={lensStore.lens}
+				lat={readout?.lat}
+				lon={readout?.lon}
+				time={ephemerisTime}
+				data={readout?.data}
+				loading={readout?.loading ?? false}
+				error={readout?.error}
+				pm25={pm25Estimate}
+				{aqEstimates}
+				{pollutantUnits}
+				airQuality={airQualityReading}
+				history={stationHistory}
+				historyLoading={stationHistoryLoading}
+				onclose={closeReadout}
+				onTransmissionForPoint={openTransmissionForPoint}
+				onAqDashboardForPoint={openAqDashboardForPoint}
+				onPlanPassForPoint={openPassPlanForPoint}
+			/>
+		{/if}
 	</aside>
 
 	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
 	     "X floats over the twilight strip" is structurally impossible. ≤1023px
 	     display:contents → the gantt keeps its current fixed bottom-strip layout. -->
 	<div class="deck-dock">
-		{#if ephemerisOpen}
+		{#if ephemerisOpen && !W1_BISECT_EMPTY}
 			<EphemerisGantt
 				location={viewCenter}
 				time={ephemerisTime}
