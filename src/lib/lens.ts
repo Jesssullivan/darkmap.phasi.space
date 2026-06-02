@@ -22,8 +22,8 @@ export const isLens = (v: unknown): v is Lens => typeof v === 'string' && (LENSE
 /**
  * Screen-reader announcement per lens (S1 polish) — spoken via a polite
  * `aria-live` region when the lens changes, so the re-weight isn't silent to
- * assistive tech. Phrasing tracks what each lens leads with (see LENS_LEAD in
- * PointReadout); keep them in lockstep.
+ * assistive tech. Phrasing tracks what each lens leads with (see the `lead`
+ * cells in READOUT_RELEVANCE, src/lib/readoutRelevance.ts); keep them in lockstep.
  */
 export const LENS_ANNOUNCE: Record<Lens, string> = {
 	sky: 'Sky lens — leading with dark-sky brightness and ephemeris',
