@@ -88,6 +88,7 @@
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
+	import ToolsCluster from '$lib/components/ToolsCluster.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
 		FALLBACK_CENTER,
@@ -396,9 +397,11 @@
 	// selected point + ephemeris time via the shared URL-hash codec. The map zoom
 	// rides along so a "View on map" return lands where we left.
 	function openAqDashboardForPoint(): void {
-		if (!readout) return;
+		// Never gate on a pinned point (command-deck.md §5): with no pin, seed the
+		// dashboard from the viewport center so the TOOLS launcher always works.
+		const at = readout ?? { lat: viewCenter.lat, lon: viewCenter.lon };
 		const hash = encodeHash({
-			view: { lat: readout.lat, lon: readout.lon, zoom: mapInstance?.getZoom() ?? 8 },
+			view: { lat: at.lat, lon: at.lon, zoom: mapInstance?.getZoom() ?? 8 },
 			time: ephemerisTime,
 		});
 		void goto(`/aq${hash}`);
@@ -1914,6 +1917,19 @@
 				time={ephemerisTime}
 			/>
 		</div>
+		<!-- W2 — the persistent TOOLS launcher cluster: all four deep tools, always one
+		     click away, full opacity in every lens; the lens only re-orders + accents. -->
+		<ToolsCluster
+			lens={lensStore.lens}
+			hasPoint={!!readout}
+			{ephemerisOpen}
+			onlaunch={(tool) => {
+				if (tool === 'transmission') openTransmissionForPoint();
+				else if (tool === 'passplan') openPassPlanForPoint();
+				else if (tool === 'aq') openAqDashboardForPoint();
+				else ephemerisOpen = !ephemerisOpen;
+			}}
+		/>
 	</aside>
 
 	<!-- STAGE region: the MapLibre canvas as grid-area:stage — NO position:fixed,
@@ -2159,7 +2175,14 @@
 			display: grid;
 			position: fixed;
 			inset: 0;
-			grid-template-columns: 20rem 1fr 22rem;
+			/* W2 — Instrument Bay ratio (docs/ux/command-deck.md): the map is one gauge
+			   in a balanced deck, not the whole point. Laptop band (1024–1365px): a 1fr
+			   stage that never overflows (a hard min-floor + the wide side columns would
+			   exceed 1024px). RAIL 20rem, INSPECTOR 26rem (room for the docked deep tools
+			   in W3 + readout breathing). The roomy band (≥1366px, below) widens to the
+			   full bay with the 380px stage floor. trackResize re-fires map.resize on a
+			   track change; --stage-inset-* still feeds fitBounds. */
+			grid-template-columns: 20rem minmax(0, 1fr) 26rem;
 			/* minmax(0, …) on every row drops the implicit `min-content` floor.
 			   That floor makes a track size to its content's intrinsic min, which —
 			   with the fontless CI cell's zero-metric text — can enter a grid
@@ -2600,6 +2623,18 @@
 		100% {
 			transform: scale(2.2);
 			opacity: 0;
+		}
+	}
+
+	/* W2 — Instrument Bay, roomy band (≥1366px). Now there is room for the full bay:
+	   RAIL 22rem + INSPECTOR 30rem (the docked deep tools in W3) with a hard 380px
+	   STAGE floor so the map stays legible. (At 1366px: 1366 − ~48px overhead − 832px
+	   sides = 486px stage ≥ 380 ✓. Below 1366 the laptop band's 1fr stage is used so
+	   the floor can never force a horizontal overflow.) Map ≈ 36–42% — deliberately a
+	   gauge among the instruments, not the whole surface. */
+	@media (min-width: 1366px) {
+		.command-deck {
+			grid-template-columns: 22rem minmax(380px, 1fr) 30rem;
 		}
 	}
 </style>
