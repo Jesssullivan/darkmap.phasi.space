@@ -52,8 +52,15 @@
 	}
 
 	interface Props {
-		lat: number;
-		lon: number;
+		/**
+		 * The readout is a persistent dossier. In `point` scope it inspects a
+		 * clicked location (lat/lon present); in `mean` scope no point is selected
+		 * and it shows a per-lens "select a point" prompt (the viewport-mean
+		 * aggregates land in a follow-up). lat/lon are absent in `mean` scope.
+		 */
+		scope?: 'point' | 'mean';
+		lat?: number;
+		lon?: number;
 		time: Date;
 		data: ReadoutData | undefined;
 		loading: boolean;
@@ -91,6 +98,7 @@
 	}
 
 	let {
+		scope = 'point',
 		lat,
 		lon,
 		time,
@@ -232,6 +240,17 @@
 	};
 
 	const fmtCoord = (n: number) => n.toFixed(4);
+
+	// Per-lens prompt shown in the persistent dossier when no point is selected
+	// (`mean` scope). Condensed from the JTBD questions in personas-and-lenses.md
+	// §4 / the /docs launchpad, so the empty state reads as "this is the question
+	// this lens answers — drop a pin to answer it here".
+	const LENS_PROMPT: Record<Lens, string> = {
+		sky: 'How dark, clear, and steady is the sky here tonight?',
+		air: 'Is the air getting better or worse here — and when is the exposure window?',
+		links: 'Will an optical / RF link close over this path, with margin?',
+		orbit: 'When does a satellite pass over this site, above the real horizon?',
+	};
 	const viirsAvg = $derived.by(() =>
 		data?.viirs ? Math.round((data.viirs.red + data.viirs.green + data.viirs.blue) / 3) : undefined,
 	);
@@ -273,6 +292,7 @@
 	let lastScrollResetKey = '';
 
 	async function loadEphemeris(): Promise<void> {
+		if (lat == null || lon == null) return; // mean scope — no pin to compute against
 		ephemerisLoading = true;
 		ephemerisError = null;
 		try {
@@ -304,8 +324,9 @@
 
 	$effect(() => {
 		const resetKey = [
-			lat.toFixed(5),
-			lon.toFixed(5),
+			scope,
+			lat?.toFixed(5) ?? '—',
+			lon?.toFixed(5) ?? '—',
 			time.getUTCFullYear(),
 			time.getUTCMonth(),
 			time.getUTCDate(),
@@ -339,469 +360,505 @@
 	};
 </script>
 
-<div bind:this={readoutPanel} class="readout" data-lens={lens} role="dialog" aria-label="Point readout">
-	<button class="close" type="button" aria-label="Close readout" onclick={onclose}>
-		<X size={16} aria-hidden="true" />
-	</button>
-	<header>
-		<h3>Point readout</h3>
-		<p class="locator" title="Marked on the map">
-			<svg
-				class="locator-mark"
-				viewBox="0 0 24 24"
-				width="11"
-				height="11"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				aria-hidden="true"
-			>
-				<circle cx="12" cy="12" r="6" />
-				<line x1="12" y1="0" x2="12" y2="4" />
-				<line x1="12" y1="20" x2="12" y2="24" />
-				<line x1="0" y1="12" x2="4" y2="12" />
-				<line x1="20" y1="12" x2="24" y2="12" />
-			</svg>
-			<span>{fmtCoord(lat)}°, {fmtCoord(lon)}°</span>
-		</p>
-	</header>
-	{#if lens === 'sky' && bortle}
-		<section class="bortle-lead" data-section="bortle" data-tier={tierOf('bortle')} style:order={orderOf('bortle')}>
-			<p class="bortle-class">
-				Bortle {bortle.cls}
-				<span class="bortle-label">{bortle.label}</span>
-			</p>
-			<p class="bortle-sqm">
-				SQM ≈ {bortle.sqm.toFixed(2)}<span class="unit"> mag/arcsec²</span>
-				<HelpTooltip
-					text={`Modeled, not measured: Falchi 2016 artificial zenith brightness (${data?.worldAtlas?.grayIndex.toFixed(2)} mcd/m²) plus the natural dark-sky floor, mapped to SQM and the approximate Bortle scale. Cross-check it against the VIIRS measured pixel below.`}
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag">modeled</span>
-					{/snippet}
-				</HelpTooltip>
-			</p>
-		</section>
-	{/if}
-	{#if lens === 'links' && airQuality?.aod550 != null}
-		{@const clarity = aerosolClarityFromAod(airQuality.aod550)}
-		<section class="links-lead" data-section="links-lead" data-tier="1" style:order="-2">
-			<p class="links-lead-line">
-				Path AOD₅₅₀ {airQuality.aod550.toFixed(2)} · T {(clarity.transmittance * 100).toFixed(0)}% · ~{clarity.lossDb.toFixed(
-					1,
-				)} dB
-				<HelpTooltip
-					text="Aerosol clarity estimate from the CAMS path-AOD at 550 nm (zenith T = exp(−AOD), loss = −10·log₁₀T). A labeled estimate — the full multi-constituent T(λ) and the Tx/Rx link margin (go/no-go) are in “Design a link”."
-				>
-					{#snippet trigger()}<span class="modeled-tag">aerosol est.</span>{/snippet}
-				</HelpTooltip>
-			</p>
-		</section>
-	{/if}
-	{#if loading}
-		<p class="loading">Querying upstream…</p>
-	{:else if error}
-		<p class="error">Error: {error}</p>
-	{:else if data}
-		{#if data.viirs}
-			<section data-section="viirs" data-tier={tierOf('viirs')} style:order={orderOf('viirs')}>
-				<h4>VIIRS pixel</h4>
-				<p class="value">{viirsAvg}<span class="unit">/255</span></p>
-				<p class="note">{data.viirs.layer} · RGB({data.viirs.red},{data.viirs.green},{data.viirs.blue})</p>
-			</section>
-		{/if}
-		{#if data.worldAtlas}
-			<section data-section="worldAtlas" data-tier={tierOf('worldAtlas')} style:order={orderOf('worldAtlas')}>
-				<h4>World Atlas radiance</h4>
-				<p class="value">{data.worldAtlas.grayIndex.toFixed(2)}<span class="unit"> mcd/m²</span></p>
-				<p class="note">Falchi 2016 modeled artificial brightness</p>
-			</section>
-		{/if}
-		{#if data.atmospheric}
-			<section data-section="atmosphere" data-tier={tierOf('atmosphere')} style:order={orderOf('atmosphere')}>
-				<h4>Atmosphere (Open-Meteo)</h4>
-				<dl class="atmos-grid">
-					<dt>PWV</dt>
-					<dd>
-						{#if data.atmospheric.pwv === null}
-							<span class="muted">unavailable</span>
-						{:else}
-							{data.atmospheric.pwv.toFixed(1)}<span class="unit"> mm</span>
-						{/if}
-					</dd>
-					<dt>RH</dt>
-					<dd>{Math.round(data.atmospheric.rh)}<span class="unit"> %</span></dd>
-					<dt>Cloud (L/M/H)</dt>
-					<dd>
-						{Math.round(data.atmospheric.cloudLow)}/{Math.round(data.atmospheric.cloudMid)}/{Math.round(
-							data.atmospheric.cloudHigh,
-						)}<span class="unit"> %</span>
-					</dd>
-					<dt>Visibility</dt>
-					<dd>{(data.atmospheric.visibility / 1000).toFixed(1)}<span class="unit"> km</span></dd>
-				</dl>
-				<p class="note">Forecast hour {data.atmospheric.matchedTime}Z · CC-BY Open-Meteo</p>
-			</section>
-		{/if}
-		{#if !data.viirs && !data.worldAtlas && !data.atmospheric}
-			<p class="loading">No data at this point.</p>
-		{/if}
-	{/if}
-
-	{#if aqi}
-		<section class="aqi" data-section="aqi" data-tier={tierOf('aqi')} style:order={orderOf('aqi')}>
-			<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
-				<span class="aqi-value">{aqi.aqi}</span>
-				<span class="aqi-meta">
-					<span class="aqi-cat">AQI · {aqi.category.name}</span>
-					<span class="aqi-dom">dominant {POLLUTANT_LABELS[aqi.dominant] ?? aqi.dominant}</span>
-				</span>
-				<HelpTooltip
-					text="US-EPA Air Quality Index, composited as the max sub-index across the modeled criteria pollutants. Nowcast approximation: built from the latest kernel-diffused values, NOT the official averaging windows (PM 24-hr, O₃/CO 8-hr, SO₂/NO₂ 1-hr). Pollutants whose units can't be resolved are skipped."
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag">≈ nowcast</span>
-					{/snippet}
-				</HelpTooltip>
-			</div>
-		</section>
-	{/if}
-
-	{#if pm25 && pm25.valueUgm3 !== null}
-		<section data-section="pm25" data-tier={tierOf('pm25')} style:order={orderOf('pm25')}>
-			<h4>
-				PM2.5
-				<HelpTooltip
-					text="Modeled, not measured: a Gaussian kernel-diffusion estimate from nearby OpenAQ ground stations (weighted by distance, with a Kish effective-N confidence). It is the surface concentration interpolated to this point — the confidence and station coverage are shown below."
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag">modeled</span>
-					{/snippet}
-				</HelpTooltip>
-			</h4>
-			<p class="value">{pm25.valueUgm3.toFixed(1)}<span class="unit"> µg/m³</span></p>
-			<p class="note">{pm25AqiCategory(pm25.valueUgm3)}</p>
-			<p class="note coverage" class:low={pm25.confidence === 'low'}>
-				{pm25.confidence} confidence · {formatStationCount(pm25.contributingStations)}{fmtNearest(pm25.nearestKm)}
-			</p>
-		</section>
-	{/if}
-
-	{#if aqRows.some((r) => r.name !== 'pm25')}
-		<section data-section="pollutants" data-tier={tierOf('pollutants')} style:order={orderOf('pollutants')}>
-			<h4>
-				Other pollutants
-				<HelpTooltip
-					text="Modeled, not measured: each criteria pollutant kernel-diffused from nearby OpenAQ ground stations (same Gaussian estimate as PM2.5). Coverage and confidence are per-pollutant — a station may report PM2.5 but not O₃. Units are the OpenAQ provider units."
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag">modeled</span>
-					{/snippet}
-				</HelpTooltip>
-			</h4>
-			<dl>
-				{#each aqRows as row (row.name)}
-					{#if row.name !== 'pm25'}
-						<dt>{row.label}</dt>
-						<dd>
-							{row.est.valueUgm3!.toFixed(row.est.valueUgm3! < 10 ? 1 : 0)}<span class="unit"> {row.units}</span>
-							<span class="aq-cov" class:low={row.est.confidence === 'low'}>
-								· {formatStationCount(row.est.contributingStations)}{fmtNearest(row.est.nearestKm)}
-							</span>
-						</dd>
-					{/if}
-				{/each}
-			</dl>
-		</section>
-	{/if}
-
-	{#if historyLoading || history}
-		<section class="history" data-section="history" data-tier={tierOf('history')} style:order={orderOf('history')}>
-			<h4>
-				Station {history ? (HISTORY_LABELS[history.parameter] ?? history.parameter) : ''} history
-				<HelpTooltip
-					text="Measured, not modeled: recent hourly-aggregate readings from the single nearest OpenAQ ground sensor (not the diffused field). Only hours the sensor actually reported are drawn — missing hours stay gaps, never interpolated. The 24-h mean is the mean over the real samples only; the trend compares the newer half of the samples against the older half."
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag measured">measured</span>
-					{/snippet}
-				</HelpTooltip>
-			</h4>
-			{#if historyLoading && !history}
-				<p class="loading">Fetching nearest-station history…</p>
-			{:else if history && history.sampleCount === 0}
-				<p class="note">No hourly samples in the last {fmtWindowHours(history)} h at the nearest station.</p>
-			{:else if history}
-				<div class="spark-row">
-					<svg
-						class="sparkline"
-						width={SPARK_W}
-						height={SPARK_H}
-						viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-						role="img"
-						aria-label={`${history.sampleCount} hourly samples over ${fmtWindowHours(history)} hours`}
-					>
-						{#if sparkPoints.length > 1}
-							<path
-								d={sparkPath}
-								fill="none"
-								stroke="var(--accent-amber)"
-								stroke-width="1.25"
-								stroke-linejoin="round"
-							/>
-						{/if}
-						{#each sparkPoints as p (p.x)}
-							<circle cx={p.x} cy={p.y} r="1.1" fill="var(--accent-amber)" />
-						{/each}
-					</svg>
-					<div class="spark-stats">
-						<span class="spark-mean">
-							{#if history.mean === null}
-								<span class="muted">—</span>
-							{:else}
-								{history.mean.toFixed(history.mean < 10 ? 1 : 0)}
-							{/if}
-							<span class="unit"> {history.units ?? 'µg/m³'}</span>
-							<span class="trend trend-{history.trend}" aria-hidden="true">{TREND_GLYPH[history.trend]}</span>
-						</span>
-						<span class="spark-sub"
-							>{fmtWindowHours(history)}-h mean · {history.sampleCount} samples · {history.trend}</span
-						>
-					</div>
-				</div>
-				<p class="note">
-					Window {history.windowFrom.slice(0, 16).replace('T', ' ')}–{history.windowTo.slice(11, 16)}Z · nearest station
-					{#if history.stale}· <span class="stale">stale ({history.latestAt?.slice(0, 10)})</span>{/if}
-				</p>
-			{/if}
-		</section>
-	{/if}
-
-	{#if airQuality}
-		<section data-section="pollen" data-tier={tierOf('pollen')} style:order={orderOf('pollen')}>
-			<h4>
-				Pollen &amp; air quality
-				<HelpTooltip
-					text="Modeled from the CAMS air-quality reanalysis/forecast (Open-Meteo), sampled at this point and hour. Pollen is in grains/m³; a species with no value is out of season or unsupported in this region (shown as “none reported”, not zero). AOD is the CAMS column aerosol optical depth; surface ozone is µg/m³ (not total-column Dobson)."
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag">modeled</span>
-					{/snippet}
-				</HelpTooltip>
-			</h4>
-			{#if reportedPollen.length > 0}
-				<dl>
-					{#each reportedPollen as species (species)}
-						<dt>{POLLEN_LABELS[species]} pollen</dt>
-						<dd>{airQuality.pollen[species]!.toFixed(0)}<span class="unit"> grains/m³</span></dd>
-					{/each}
-				</dl>
-				{#if missingPollenCount > 0}
-					<p class="note">{missingPollenCount} other species not in season — none reported.</p>
-				{/if}
-				{#if pollenTau && pollenTau.tau > 0}
-					<p class="note">
-						Optical depth τ ≈ {pollenTau.tau.toExponential(1)}{pollenTau.negligible
-							? ' — negligible for transmission'
-							: ''}
-					</p>
-				{/if}
-			{:else}
-				<p class="note">No pollen reported for this hour / region.</p>
-			{/if}
-			<dl>
-				{#if airQuality.aod550 !== null}
-					<dt>AOD₅₅₀</dt>
-					<dd>{airQuality.aod550.toFixed(2)}</dd>
-				{/if}
-				{#if airQuality.dust !== null}
-					<dt>Dust</dt>
-					<dd>{airQuality.dust.toFixed(1)}<span class="unit"> µg/m³</span></dd>
-				{/if}
-				{#if airQuality.ozone !== null}
-					<dt>Surface O₃</dt>
-					<dd>{airQuality.ozone.toFixed(0)}<span class="unit"> µg/m³</span></dd>
-				{/if}
-			</dl>
-			<p class="note">Hour {airQuality.matchedTime}Z · CC-BY Open-Meteo (CAMS)</p>
-		</section>
-	{/if}
-
-	{#if crossValHasSignal}
-		<section class="crossval" data-section="crossval" data-tier={tierOf('crossval')} style:order={orderOf('crossval')}>
-			<h4>
-				Source cross-check
-				<HelpTooltip
-					text="Lines up the air-quality sources at this point and reports their bias ONLY where both have data. Stations = OpenAQ ground PM2.5 (measured, then kernel-diffused); CAMS = modeled PM2.5 / column AOD. The Stations→AOD figure is an engineering bridge from surface PM2.5, not a measured column. A missing source is shown as no data — never as agreement. GIBS MODIS AOD is a visual cross-check on the map: there is no trustworthy point-decode in v1, so it is not compared numerically."
-				>
-					{#snippet trigger()}
-						<span class="modeled-tag">derived</span>
-					{/snippet}
-				</HelpTooltip>
-			</h4>
-			{#if crossVal.pairs.length === 0}
-				<p class="note">{crossVal.emptyReason}</p>
-			{:else}
-				<dl class="crossval-grid">
-					{#each crossVal.pairs as pair (pair.quantity)}
-						<dt>
-							{pair.quantity === 'pm25' ? 'PM2.5' : 'AOD₅₅₀'}
-							<span class="cv-level" class:conflict={pair.level === 'conflict'} class:differ={pair.level === 'differ'}>
-								{pair.level}
-							</span>
-						</dt>
-						<dd>
-							Δ {pair.bias >= 0 ? '+' : ''}{pair.quantity === 'pm25'
-								? pair.bias.toFixed(1)
-								: pair.bias.toFixed(2)}{pair.units ? ` ${pair.units}` : ''}{pair.relDiff !== null
-								? ` · ${Math.round(pair.relDiff * 100)}%`
-								: ''}
-						</dd>
-						<dd class="cv-note">{pair.note}</dd>
-					{/each}
-				</dl>
-				{#if crossVal.hasConflict}
-					<p class="note cv-conflict-note">
-						Sources disagree across a clean/unhealthy boundary — treat both with caution.
-					</p>
-				{/if}
-			{/if}
-			<p class="note">Numeric: OpenAQ ↔ CAMS only. GIBS MODIS AOD is a visual cross-check (no point-decode in v1).</p>
-		</section>
-	{/if}
-
-	<section
-		class="ephemeris-section"
-		data-section="ephemeris"
-		data-tier={tierOf('ephemeris')}
-		style:order={orderOf('ephemeris')}
-	>
-		<button
-			class="ephemeris-header"
-			type="button"
-			aria-expanded={ephemerisOpen}
-			aria-controls="pin-ephemeris-body"
-			onclick={toggleEphemeris}
-		>
-			<span class="caret" aria-hidden="true">{ephemerisOpen ? '▾' : '▸'}</span>
-			<span>Horizon-aware ephemeris</span>
+<div
+	bind:this={readoutPanel}
+	class="readout"
+	data-lens={lens}
+	data-scope={scope}
+	role="dialog"
+	aria-label={scope === 'point' ? 'Point readout' : 'Viewport readout'}
+>
+	{#if scope === 'point'}
+		<button class="close" type="button" aria-label="Close readout" onclick={onclose}>
+			<X size={16} aria-hidden="true" />
 		</button>
-		{#if ephemerisOpen}
-			<div id="pin-ephemeris-body" class="ephemeris-body">
-				{#if ephemerisLoading}
-					<p class="loading">Tracing local horizon…</p>
-					<p class="note">Fetching elevation tiles + raycasting 36 azimuths. First open takes a few seconds.</p>
-				{:else if ephemerisError}
-					<p class="error">{ephemerisError}</p>
-				{:else if ephemeris}
-					{@const r = ephemeris.refined}
-					{@const f = ephemeris.flat.events}
-					<dl class="events">
-						<dt>Astro dawn</dt>
-						<dd>
-							{fmtClock(r.astronomicalDawn)}<span class="delta">{deltaMin(f.astronomicalDawn, r.astronomicalDawn)}</span
-							>
-						</dd>
-						<dt>Nautical dawn</dt>
-						<dd>{fmtClock(r.nauticalDawn)}<span class="delta">{deltaMin(f.nauticalDawn, r.nauticalDawn)}</span></dd>
-						<dt>Civil dawn</dt>
-						<dd>{fmtClock(r.civilDawn)}<span class="delta">{deltaMin(f.civilDawn, r.civilDawn)}</span></dd>
-						<dt>Sunrise</dt>
-						<dd>{fmtClock(r.sunrise)}<span class="delta">{deltaMin(f.sunrise, r.sunrise)}</span></dd>
-						<dt>Sunset</dt>
-						<dd>{fmtClock(r.sunset)}<span class="delta">{deltaMin(f.sunset, r.sunset)}</span></dd>
-						<dt>Civil dusk</dt>
-						<dd>{fmtClock(r.civilDusk)}<span class="delta">{deltaMin(f.civilDusk, r.civilDusk)}</span></dd>
-						<dt>Nautical dusk</dt>
-						<dd>{fmtClock(r.nauticalDusk)}<span class="delta">{deltaMin(f.nauticalDusk, r.nauticalDusk)}</span></dd>
-						<dt>Astro dusk</dt>
-						<dd>
-							{fmtClock(r.astronomicalDusk)}<span class="delta">{deltaMin(f.astronomicalDusk, r.astronomicalDusk)}</span
-							>
-						</dd>
-					</dl>
-					<p class="note">
-						UTC · (±m) = shift vs flat horizon at this pin. Terrain from Mapzen Terrarium z=12 · {ephemeris.fans.length}
-						dense {ephemeris.fans.length === 1 ? 'fan' : 'fans'} at the sun's event azimuths.
-					</p>
-				{:else}
-					<p class="note">Click to compute terrain-aware twilight times for this pin.</p>
-				{/if}
-			</div>
+	{/if}
+	<header>
+		<h3>{scope === 'point' ? 'Point readout' : 'Viewport'}</h3>
+		{#if scope === 'point' && lat != null && lon != null}
+			<p class="locator" title="Marked on the map">
+				<svg
+					class="locator-mark"
+					viewBox="0 0 24 24"
+					width="11"
+					height="11"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					aria-hidden="true"
+				>
+					<circle cx="12" cy="12" r="6" />
+					<line x1="12" y1="0" x2="12" y2="4" />
+					<line x1="12" y1="20" x2="12" y2="24" />
+					<line x1="0" y1="12" x2="4" y2="12" />
+					<line x1="20" y1="12" x2="24" y2="12" />
+				</svg>
+				<span>{fmtCoord(lat)}°, {fmtCoord(lon)}°</span>
+			</p>
+		{:else}
+			<p class="locator locator-mean">no point selected</p>
 		{/if}
-	</section>
-
-	{#snippet transmissionCta()}
-		{#if onTransmissionForPoint && data?.atmospheric}
-			<button
-				type="button"
-				class="transmission-link"
-				data-cta="transmission"
-				data-tier={ctaTier('transmission')}
-				aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
-				onclick={onTransmissionForPoint}
-			>
-				<span class="cta-text">
-					<span class="cta-label">Spectral transmission T(λ)</span>
-					<span class="cta-sub">directable boresight · AOD · band guidance</span>
-				</span>
-				<span class="cta-caret" aria-hidden="true">→</span>
-			</button>
-		{/if}
-	{/snippet}
-
-	{#snippet aqDashboardCta()}
-		{#if onAqDashboardForPoint && data}
-			<button
-				type="button"
-				class="transmission-link aq-dashboard-link"
-				data-cta="aq"
-				data-tier={ctaTier('aq')}
-				aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
-				onclick={onAqDashboardForPoint}
-			>
-				<span class="cta-text">
-					<span class="cta-label">Air-quality dashboard</span>
-					<span class="cta-sub">history · multi-pollutant AQI · source cross-check</span>
-				</span>
-				<span class="cta-caret" aria-hidden="true">→</span>
-			</button>
-		{/if}
-	{/snippet}
-
-	{#snippet passCta()}
-		{#if onPlanPassForPoint && data}
-			<button
-				type="button"
-				class="transmission-link pass-plan-link"
-				data-cta="pass"
-				data-tier={ctaTier('pass')}
-				aria-label="Plan a satellite pass for this point — SGP4 passes gated by the local terrain horizon, with an az/el track and Doppler"
-				onclick={onPlanPassForPoint}
-			>
-				<span class="cta-text">
-					<span class="cta-label">Plan a pass</span>
-					<span class="cta-sub">DEM-gated AOS/LOS · az/el track · Doppler</span>
-				</span>
-				<span class="cta-caret" aria-hidden="true">→</span>
-			</button>
-		{/if}
-	{/snippet}
-
-	<!-- Promoted CTA first so Tab order matches visual order (WCAG 2.4.3). -->
-	{#if primaryCta === 'pass'}
-		{@render passCta()}
-		{@render transmissionCta()}
-		{@render aqDashboardCta()}
-	{:else if primaryCta === 'aq'}
-		{@render aqDashboardCta()}
-		{@render transmissionCta()}
-		{@render passCta()}
+	</header>
+	{#if scope === 'mean'}
+		<div class="dossier-empty" data-section="dossier-empty">
+			<p class="dossier-prompt">{LENS_PROMPT[lens]}</p>
+			<p class="dossier-hint">
+				Click anywhere on the map to inspect that point — Bortle &amp; SQM, air quality, path transmission, and pass
+				windows, re-weighted for the {lens} lens.
+			</p>
+		</div>
 	{:else}
-		{@render transmissionCta()}
-		{@render aqDashboardCta()}
-		{@render passCta()}
+		{#if lens === 'sky' && bortle}
+			<section class="bortle-lead" data-section="bortle" data-tier={tierOf('bortle')} style:order={orderOf('bortle')}>
+				<p class="bortle-class">
+					Bortle {bortle.cls}
+					<span class="bortle-label">{bortle.label}</span>
+				</p>
+				<p class="bortle-sqm">
+					SQM ≈ {bortle.sqm.toFixed(2)}<span class="unit"> mag/arcsec²</span>
+					<HelpTooltip
+						text={`Modeled, not measured: Falchi 2016 artificial zenith brightness (${data?.worldAtlas?.grayIndex.toFixed(2)} mcd/m²) plus the natural dark-sky floor, mapped to SQM and the approximate Bortle scale. Cross-check it against the VIIRS measured pixel below.`}
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag">modeled</span>
+						{/snippet}
+					</HelpTooltip>
+				</p>
+			</section>
+		{/if}
+		{#if lens === 'links' && airQuality?.aod550 != null}
+			{@const clarity = aerosolClarityFromAod(airQuality.aod550)}
+			<section class="links-lead" data-section="links-lead" data-tier="1" style:order="-2">
+				<p class="links-lead-line">
+					Path AOD₅₅₀ {airQuality.aod550.toFixed(2)} · T {(clarity.transmittance * 100).toFixed(0)}% · ~{clarity.lossDb.toFixed(
+						1,
+					)} dB
+					<HelpTooltip
+						text="Aerosol clarity estimate from the CAMS path-AOD at 550 nm (zenith T = exp(−AOD), loss = −10·log₁₀T). A labeled estimate — the full multi-constituent T(λ) and the Tx/Rx link margin (go/no-go) are in “Design a link”."
+					>
+						{#snippet trigger()}<span class="modeled-tag">aerosol est.</span>{/snippet}
+					</HelpTooltip>
+				</p>
+			</section>
+		{/if}
+		{#if loading}
+			<p class="loading">Querying upstream…</p>
+		{:else if error}
+			<p class="error">Error: {error}</p>
+		{:else if data}
+			{#if data.viirs}
+				<section data-section="viirs" data-tier={tierOf('viirs')} style:order={orderOf('viirs')}>
+					<h4>VIIRS pixel</h4>
+					<p class="value">{viirsAvg}<span class="unit">/255</span></p>
+					<p class="note">{data.viirs.layer} · RGB({data.viirs.red},{data.viirs.green},{data.viirs.blue})</p>
+				</section>
+			{/if}
+			{#if data.worldAtlas}
+				<section data-section="worldAtlas" data-tier={tierOf('worldAtlas')} style:order={orderOf('worldAtlas')}>
+					<h4>World Atlas radiance</h4>
+					<p class="value">{data.worldAtlas.grayIndex.toFixed(2)}<span class="unit"> mcd/m²</span></p>
+					<p class="note">Falchi 2016 modeled artificial brightness</p>
+				</section>
+			{/if}
+			{#if data.atmospheric}
+				<section data-section="atmosphere" data-tier={tierOf('atmosphere')} style:order={orderOf('atmosphere')}>
+					<h4>Atmosphere (Open-Meteo)</h4>
+					<dl class="atmos-grid">
+						<dt>PWV</dt>
+						<dd>
+							{#if data.atmospheric.pwv === null}
+								<span class="muted">unavailable</span>
+							{:else}
+								{data.atmospheric.pwv.toFixed(1)}<span class="unit"> mm</span>
+							{/if}
+						</dd>
+						<dt>RH</dt>
+						<dd>{Math.round(data.atmospheric.rh)}<span class="unit"> %</span></dd>
+						<dt>Cloud (L/M/H)</dt>
+						<dd>
+							{Math.round(data.atmospheric.cloudLow)}/{Math.round(data.atmospheric.cloudMid)}/{Math.round(
+								data.atmospheric.cloudHigh,
+							)}<span class="unit"> %</span>
+						</dd>
+						<dt>Visibility</dt>
+						<dd>{(data.atmospheric.visibility / 1000).toFixed(1)}<span class="unit"> km</span></dd>
+					</dl>
+					<p class="note">Forecast hour {data.atmospheric.matchedTime}Z · CC-BY Open-Meteo</p>
+				</section>
+			{/if}
+			{#if !data.viirs && !data.worldAtlas && !data.atmospheric}
+				<p class="loading">No data at this point.</p>
+			{/if}
+		{/if}
+
+		{#if aqi}
+			<section class="aqi" data-section="aqi" data-tier={tierOf('aqi')} style:order={orderOf('aqi')}>
+				<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
+					<span class="aqi-value">{aqi.aqi}</span>
+					<span class="aqi-meta">
+						<span class="aqi-cat">AQI · {aqi.category.name}</span>
+						<span class="aqi-dom">dominant {POLLUTANT_LABELS[aqi.dominant] ?? aqi.dominant}</span>
+					</span>
+					<HelpTooltip
+						text="US-EPA Air Quality Index, composited as the max sub-index across the modeled criteria pollutants. Nowcast approximation: built from the latest kernel-diffused values, NOT the official averaging windows (PM 24-hr, O₃/CO 8-hr, SO₂/NO₂ 1-hr). Pollutants whose units can't be resolved are skipped."
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag">≈ nowcast</span>
+						{/snippet}
+					</HelpTooltip>
+				</div>
+			</section>
+		{/if}
+
+		{#if pm25 && pm25.valueUgm3 !== null}
+			<section data-section="pm25" data-tier={tierOf('pm25')} style:order={orderOf('pm25')}>
+				<h4>
+					PM2.5
+					<HelpTooltip
+						text="Modeled, not measured: a Gaussian kernel-diffusion estimate from nearby OpenAQ ground stations (weighted by distance, with a Kish effective-N confidence). It is the surface concentration interpolated to this point — the confidence and station coverage are shown below."
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag">modeled</span>
+						{/snippet}
+					</HelpTooltip>
+				</h4>
+				<p class="value">{pm25.valueUgm3.toFixed(1)}<span class="unit"> µg/m³</span></p>
+				<p class="note">{pm25AqiCategory(pm25.valueUgm3)}</p>
+				<p class="note coverage" class:low={pm25.confidence === 'low'}>
+					{pm25.confidence} confidence · {formatStationCount(pm25.contributingStations)}{fmtNearest(pm25.nearestKm)}
+				</p>
+			</section>
+		{/if}
+
+		{#if aqRows.some((r) => r.name !== 'pm25')}
+			<section data-section="pollutants" data-tier={tierOf('pollutants')} style:order={orderOf('pollutants')}>
+				<h4>
+					Other pollutants
+					<HelpTooltip
+						text="Modeled, not measured: each criteria pollutant kernel-diffused from nearby OpenAQ ground stations (same Gaussian estimate as PM2.5). Coverage and confidence are per-pollutant — a station may report PM2.5 but not O₃. Units are the OpenAQ provider units."
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag">modeled</span>
+						{/snippet}
+					</HelpTooltip>
+				</h4>
+				<dl>
+					{#each aqRows as row (row.name)}
+						{#if row.name !== 'pm25'}
+							<dt>{row.label}</dt>
+							<dd>
+								{row.est.valueUgm3!.toFixed(row.est.valueUgm3! < 10 ? 1 : 0)}<span class="unit"> {row.units}</span>
+								<span class="aq-cov" class:low={row.est.confidence === 'low'}>
+									· {formatStationCount(row.est.contributingStations)}{fmtNearest(row.est.nearestKm)}
+								</span>
+							</dd>
+						{/if}
+					{/each}
+				</dl>
+			</section>
+		{/if}
+
+		{#if historyLoading || history}
+			<section class="history" data-section="history" data-tier={tierOf('history')} style:order={orderOf('history')}>
+				<h4>
+					Station {history ? (HISTORY_LABELS[history.parameter] ?? history.parameter) : ''} history
+					<HelpTooltip
+						text="Measured, not modeled: recent hourly-aggregate readings from the single nearest OpenAQ ground sensor (not the diffused field). Only hours the sensor actually reported are drawn — missing hours stay gaps, never interpolated. The 24-h mean is the mean over the real samples only; the trend compares the newer half of the samples against the older half."
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag measured">measured</span>
+						{/snippet}
+					</HelpTooltip>
+				</h4>
+				{#if historyLoading && !history}
+					<p class="loading">Fetching nearest-station history…</p>
+				{:else if history && history.sampleCount === 0}
+					<p class="note">No hourly samples in the last {fmtWindowHours(history)} h at the nearest station.</p>
+				{:else if history}
+					<div class="spark-row">
+						<svg
+							class="sparkline"
+							width={SPARK_W}
+							height={SPARK_H}
+							viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+							role="img"
+							aria-label={`${history.sampleCount} hourly samples over ${fmtWindowHours(history)} hours`}
+						>
+							{#if sparkPoints.length > 1}
+								<path
+									d={sparkPath}
+									fill="none"
+									stroke="var(--accent-amber)"
+									stroke-width="1.25"
+									stroke-linejoin="round"
+								/>
+							{/if}
+							{#each sparkPoints as p (p.x)}
+								<circle cx={p.x} cy={p.y} r="1.1" fill="var(--accent-amber)" />
+							{/each}
+						</svg>
+						<div class="spark-stats">
+							<span class="spark-mean">
+								{#if history.mean === null}
+									<span class="muted">—</span>
+								{:else}
+									{history.mean.toFixed(history.mean < 10 ? 1 : 0)}
+								{/if}
+								<span class="unit"> {history.units ?? 'µg/m³'}</span>
+								<span class="trend trend-{history.trend}" aria-hidden="true">{TREND_GLYPH[history.trend]}</span>
+							</span>
+							<span class="spark-sub"
+								>{fmtWindowHours(history)}-h mean · {history.sampleCount} samples · {history.trend}</span
+							>
+						</div>
+					</div>
+					<p class="note">
+						Window {history.windowFrom.slice(0, 16).replace('T', ' ')}–{history.windowTo.slice(11, 16)}Z · nearest
+						station
+						{#if history.stale}· <span class="stale">stale ({history.latestAt?.slice(0, 10)})</span>{/if}
+					</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if airQuality}
+			<section data-section="pollen" data-tier={tierOf('pollen')} style:order={orderOf('pollen')}>
+				<h4>
+					Pollen &amp; air quality
+					<HelpTooltip
+						text="Modeled from the CAMS air-quality reanalysis/forecast (Open-Meteo), sampled at this point and hour. Pollen is in grains/m³; a species with no value is out of season or unsupported in this region (shown as “none reported”, not zero). AOD is the CAMS column aerosol optical depth; surface ozone is µg/m³ (not total-column Dobson)."
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag">modeled</span>
+						{/snippet}
+					</HelpTooltip>
+				</h4>
+				{#if reportedPollen.length > 0}
+					<dl>
+						{#each reportedPollen as species (species)}
+							<dt>{POLLEN_LABELS[species]} pollen</dt>
+							<dd>{airQuality.pollen[species]!.toFixed(0)}<span class="unit"> grains/m³</span></dd>
+						{/each}
+					</dl>
+					{#if missingPollenCount > 0}
+						<p class="note">{missingPollenCount} other species not in season — none reported.</p>
+					{/if}
+					{#if pollenTau && pollenTau.tau > 0}
+						<p class="note">
+							Optical depth τ ≈ {pollenTau.tau.toExponential(1)}{pollenTau.negligible
+								? ' — negligible for transmission'
+								: ''}
+						</p>
+					{/if}
+				{:else}
+					<p class="note">No pollen reported for this hour / region.</p>
+				{/if}
+				<dl>
+					{#if airQuality.aod550 !== null}
+						<dt>AOD₅₅₀</dt>
+						<dd>{airQuality.aod550.toFixed(2)}</dd>
+					{/if}
+					{#if airQuality.dust !== null}
+						<dt>Dust</dt>
+						<dd>{airQuality.dust.toFixed(1)}<span class="unit"> µg/m³</span></dd>
+					{/if}
+					{#if airQuality.ozone !== null}
+						<dt>Surface O₃</dt>
+						<dd>{airQuality.ozone.toFixed(0)}<span class="unit"> µg/m³</span></dd>
+					{/if}
+				</dl>
+				<p class="note">Hour {airQuality.matchedTime}Z · CC-BY Open-Meteo (CAMS)</p>
+			</section>
+		{/if}
+
+		{#if crossValHasSignal}
+			<section
+				class="crossval"
+				data-section="crossval"
+				data-tier={tierOf('crossval')}
+				style:order={orderOf('crossval')}
+			>
+				<h4>
+					Source cross-check
+					<HelpTooltip
+						text="Lines up the air-quality sources at this point and reports their bias ONLY where both have data. Stations = OpenAQ ground PM2.5 (measured, then kernel-diffused); CAMS = modeled PM2.5 / column AOD. The Stations→AOD figure is an engineering bridge from surface PM2.5, not a measured column. A missing source is shown as no data — never as agreement. GIBS MODIS AOD is a visual cross-check on the map: there is no trustworthy point-decode in v1, so it is not compared numerically."
+					>
+						{#snippet trigger()}
+							<span class="modeled-tag">derived</span>
+						{/snippet}
+					</HelpTooltip>
+				</h4>
+				{#if crossVal.pairs.length === 0}
+					<p class="note">{crossVal.emptyReason}</p>
+				{:else}
+					<dl class="crossval-grid">
+						{#each crossVal.pairs as pair (pair.quantity)}
+							<dt>
+								{pair.quantity === 'pm25' ? 'PM2.5' : 'AOD₅₅₀'}
+								<span
+									class="cv-level"
+									class:conflict={pair.level === 'conflict'}
+									class:differ={pair.level === 'differ'}
+								>
+									{pair.level}
+								</span>
+							</dt>
+							<dd>
+								Δ {pair.bias >= 0 ? '+' : ''}{pair.quantity === 'pm25'
+									? pair.bias.toFixed(1)
+									: pair.bias.toFixed(2)}{pair.units ? ` ${pair.units}` : ''}{pair.relDiff !== null
+									? ` · ${Math.round(pair.relDiff * 100)}%`
+									: ''}
+							</dd>
+							<dd class="cv-note">{pair.note}</dd>
+						{/each}
+					</dl>
+					{#if crossVal.hasConflict}
+						<p class="note cv-conflict-note">
+							Sources disagree across a clean/unhealthy boundary — treat both with caution.
+						</p>
+					{/if}
+				{/if}
+				<p class="note">Numeric: OpenAQ ↔ CAMS only. GIBS MODIS AOD is a visual cross-check (no point-decode in v1).</p>
+			</section>
+		{/if}
+
+		<section
+			class="ephemeris-section"
+			data-section="ephemeris"
+			data-tier={tierOf('ephemeris')}
+			style:order={orderOf('ephemeris')}
+		>
+			<button
+				class="ephemeris-header"
+				type="button"
+				aria-expanded={ephemerisOpen}
+				aria-controls="pin-ephemeris-body"
+				onclick={toggleEphemeris}
+			>
+				<span class="caret" aria-hidden="true">{ephemerisOpen ? '▾' : '▸'}</span>
+				<span>Horizon-aware ephemeris</span>
+			</button>
+			{#if ephemerisOpen}
+				<div id="pin-ephemeris-body" class="ephemeris-body">
+					{#if ephemerisLoading}
+						<p class="loading">Tracing local horizon…</p>
+						<p class="note">Fetching elevation tiles + raycasting 36 azimuths. First open takes a few seconds.</p>
+					{:else if ephemerisError}
+						<p class="error">{ephemerisError}</p>
+					{:else if ephemeris}
+						{@const r = ephemeris.refined}
+						{@const f = ephemeris.flat.events}
+						<dl class="events">
+							<dt>Astro dawn</dt>
+							<dd>
+								{fmtClock(r.astronomicalDawn)}<span class="delta"
+									>{deltaMin(f.astronomicalDawn, r.astronomicalDawn)}</span
+								>
+							</dd>
+							<dt>Nautical dawn</dt>
+							<dd>{fmtClock(r.nauticalDawn)}<span class="delta">{deltaMin(f.nauticalDawn, r.nauticalDawn)}</span></dd>
+							<dt>Civil dawn</dt>
+							<dd>{fmtClock(r.civilDawn)}<span class="delta">{deltaMin(f.civilDawn, r.civilDawn)}</span></dd>
+							<dt>Sunrise</dt>
+							<dd>{fmtClock(r.sunrise)}<span class="delta">{deltaMin(f.sunrise, r.sunrise)}</span></dd>
+							<dt>Sunset</dt>
+							<dd>{fmtClock(r.sunset)}<span class="delta">{deltaMin(f.sunset, r.sunset)}</span></dd>
+							<dt>Civil dusk</dt>
+							<dd>{fmtClock(r.civilDusk)}<span class="delta">{deltaMin(f.civilDusk, r.civilDusk)}</span></dd>
+							<dt>Nautical dusk</dt>
+							<dd>{fmtClock(r.nauticalDusk)}<span class="delta">{deltaMin(f.nauticalDusk, r.nauticalDusk)}</span></dd>
+							<dt>Astro dusk</dt>
+							<dd>
+								{fmtClock(r.astronomicalDusk)}<span class="delta"
+									>{deltaMin(f.astronomicalDusk, r.astronomicalDusk)}</span
+								>
+							</dd>
+						</dl>
+						<p class="note">
+							UTC · (±m) = shift vs flat horizon at this pin. Terrain from Mapzen Terrarium z=12 · {ephemeris.fans
+								.length}
+							dense {ephemeris.fans.length === 1 ? 'fan' : 'fans'} at the sun's event azimuths.
+						</p>
+					{:else}
+						<p class="note">Click to compute terrain-aware twilight times for this pin.</p>
+					{/if}
+				</div>
+			{/if}
+		</section>
+
+		{#snippet transmissionCta()}
+			{#if onTransmissionForPoint && data?.atmospheric}
+				<button
+					type="button"
+					class="transmission-link"
+					data-cta="transmission"
+					data-tier={ctaTier('transmission')}
+					aria-label="Open spectral transmission analysis for this point — T(λ), AOD, Ångström, and a directable laser/EO/RF boresight"
+					onclick={onTransmissionForPoint}
+				>
+					<span class="cta-text">
+						<span class="cta-label">Spectral transmission T(λ)</span>
+						<span class="cta-sub">directable boresight · AOD · band guidance</span>
+					</span>
+					<span class="cta-caret" aria-hidden="true">→</span>
+				</button>
+			{/if}
+		{/snippet}
+
+		{#snippet aqDashboardCta()}
+			{#if onAqDashboardForPoint && data}
+				<button
+					type="button"
+					class="transmission-link aq-dashboard-link"
+					data-cta="aq"
+					data-tier={ctaTier('aq')}
+					aria-label="Open the air-quality analysis dashboard for this point — time-series history, multi-pollutant AQI, and source cross-validation"
+					onclick={onAqDashboardForPoint}
+				>
+					<span class="cta-text">
+						<span class="cta-label">Air-quality dashboard</span>
+						<span class="cta-sub">history · multi-pollutant AQI · source cross-check</span>
+					</span>
+					<span class="cta-caret" aria-hidden="true">→</span>
+				</button>
+			{/if}
+		{/snippet}
+
+		{#snippet passCta()}
+			{#if onPlanPassForPoint && data}
+				<button
+					type="button"
+					class="transmission-link pass-plan-link"
+					data-cta="pass"
+					data-tier={ctaTier('pass')}
+					aria-label="Plan a satellite pass for this point — SGP4 passes gated by the local terrain horizon, with an az/el track and Doppler"
+					onclick={onPlanPassForPoint}
+				>
+					<span class="cta-text">
+						<span class="cta-label">Plan a pass</span>
+						<span class="cta-sub">DEM-gated AOS/LOS · az/el track · Doppler</span>
+					</span>
+					<span class="cta-caret" aria-hidden="true">→</span>
+				</button>
+			{/if}
+		{/snippet}
+
+		<!-- Promoted CTA first so Tab order matches visual order (WCAG 2.4.3). -->
+		{#if primaryCta === 'pass'}
+			{@render passCta()}
+			{@render transmissionCta()}
+			{@render aqDashboardCta()}
+		{:else if primaryCta === 'aq'}
+			{@render aqDashboardCta()}
+			{@render transmissionCta()}
+			{@render passCta()}
+		{:else}
+			{@render transmissionCta()}
+			{@render aqDashboardCta()}
+			{@render passCta()}
+		{/if}
 	{/if}
 </div>
 
@@ -842,6 +899,42 @@
 			max-height: calc(100dvh - 4rem - 1rem);
 			overflow-y: auto;
 		}
+	}
+	/* Persistent dossier — `mean` scope (no point selected). The dossier stays
+	   mounted on desktop so the lens question + (later) viewport-mean are visible
+	   on arrival. Mobile keeps the click-to-open behaviour: the mean panel is
+	   hidden ≤820px so it never competes with the gantt / toolbar for the narrow
+	   bottom strip (mobile is desktop-second — see personas §11). */
+	.readout[data-scope='mean'] {
+		animation: none;
+	}
+	@media (max-width: 820px), (max-height: 500px) {
+		.readout[data-scope='mean'] {
+			display: none;
+		}
+	}
+	.locator-mean {
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		font-size: 0.7rem;
+		opacity: 0.55;
+	}
+	.dossier-empty {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 0.25rem 0 0.1rem;
+	}
+	.dossier-prompt {
+		font-size: 0.95rem;
+		font-weight: 600;
+		line-height: 1.35;
+		color: rgb(var(--accent-amber-rgb, 255, 209, 102));
+	}
+	.dossier-hint {
+		font-size: 0.78rem;
+		line-height: 1.5;
+		opacity: 0.72;
 	}
 	/* Header always leads; the lens only reorders the data sections below it. */
 	.readout > header {
