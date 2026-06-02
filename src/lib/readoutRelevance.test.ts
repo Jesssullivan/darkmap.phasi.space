@@ -37,9 +37,9 @@ describe('tierFor / orderFor — promote by order, NEVER dim', () => {
 		expect(tierFor('orbit', 'ephemeris')).toBe(1);
 	});
 
-	it('off-lens "more" → tier 2 (NOT 3) + order 1 (sorts below, full strength)', () => {
+	it('off-lens "more" → tier 2 (NOT 3) + order 2 (sorts below the "More ▾" divider, full strength)', () => {
 		expect(tierFor('sky', 'aqi')).toBe(2);
-		expect(orderFor('sky', 'aqi')).toBe(1);
+		expect(orderFor('sky', 'aqi')).toBe(2);
 		expect(tierFor('air', 'bortle')).toBe(2);
 		expect(tierFor('links', 'viirs')).toBe(2);
 	});
@@ -65,8 +65,10 @@ describe('tierFor / orderFor — promote by order, NEVER dim', () => {
 			for (const id of SECTIONS) {
 				const t = tierFor(lens, id);
 				const o = orderFor(lens, id);
+				// tier 1 (lead) → -1; tier 2 is support (order 0) or "more" (order 2,
+				// below the "More — N ▾" divider at order 1).
 				if (t === 1) expect(o).toBe(-1);
-				else expect(o === 0 || o === 1).toBe(true);
+				else expect(o === 0 || o === 2).toBe(true);
 			}
 		}
 	});

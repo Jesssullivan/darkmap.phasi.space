@@ -539,8 +539,26 @@ async function runLensReweightSmoke(page) {
 		);
 	};
 	// Snapshot every present section's id/tier/computed order+opacity+interactivity.
-	const snap = () =>
-		page.evaluate(() => {
+	// W2 — the off-lens "more" sections collapse under a "More — N ▾" disclosure by
+	// default (progressive disclosure, NOT dimming — command-deck §5). Reveal it
+	// first so the never-gated invariant below verifies the EXPANDED state is
+	// full-strength + reachable. Persisted across lens switches, so this is a no-op
+	// after the first expand. The divider itself (data-section="more-divider") is the
+	// always-present, one-click affordance that keeps the group reachable.
+	const snap = async () => {
+		const more = readout.locator('.more-divider');
+		if ((await more.count()) > 0 && (await more.first().getAttribute('aria-expanded')) === 'false') {
+			await more.first().click();
+			// Wait for the reveal to flush before snapshotting (no collapsed group left).
+			await page.waitForFunction(
+				() => {
+					const d = document.querySelector('.readout[data-lens] .more-divider');
+					return !d || d.getAttribute('aria-expanded') === 'true';
+				},
+				{ timeout: 5_000 },
+			);
+		}
+		return page.evaluate(() => {
 			const byId = {};
 			for (const s of document.querySelectorAll('.readout[data-lens] > [data-section]')) {
 				const cs = getComputedStyle(s);
@@ -555,6 +573,7 @@ async function runLensReweightSmoke(page) {
 			}
 			return { hasBortleLead: !!document.querySelector('.readout[data-lens] .bortle-lead'), byId };
 		});
+	};
 	const tierOf = (snapshot, id) => snapshot.byId[id]?.tier;
 	const expect = (cond, msg) => {
 		if (!cond) throw new Error(`lens-reweight: ${msg}`);

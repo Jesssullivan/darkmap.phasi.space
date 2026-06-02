@@ -106,8 +106,12 @@ export const relevanceFor = (lens: Lens, id: SectionId): Relevance => READOUT_RE
  */
 export const tierFor = (lens: Lens, id: SectionId): 1 | 2 => (relevanceFor(lens, id) === 'lead' ? 1 : 2);
 
-/** Flex `order`: lead floats up (-1), `more` sorts below (1), support neutral (0). */
+/**
+ * Flex `order`: lead floats up (-1), support neutral (0), `more` sorts to the
+ * bottom (+2). The gap at +1 is reserved for the PointReadout "More — N ▾"
+ * disclosure divider, which sits between the support group and the more group.
+ */
 export const orderFor = (lens: Lens, id: SectionId): number => {
 	const r = relevanceFor(lens, id);
-	return r === 'lead' ? -1 : r === 'more' ? 1 : 0;
+	return r === 'lead' ? -1 : r === 'more' ? 2 : 0;
 };
