@@ -289,8 +289,7 @@ async function runPointReadoutSmoke(page) {
 	await runMapCanvasSmoke(page);
 
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
-	await canvas.click({ position: { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) } });
+	await canvas.click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
@@ -326,8 +325,7 @@ async function runMobileHudSmoke(page) {
 	await page.locator('.toolbar').waitFor({ state: 'visible', timeout: 20_000 });
 
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
-	await canvas.click({ position: { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) } });
+	await canvas.click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ state: 'visible', timeout: 20_000 });
@@ -492,8 +490,7 @@ async function runLensReweightSmoke(page) {
 	// Open the readout over the mocked point (viirs + worldAtlas + atmospheric).
 	await runMapCanvasSmoke(page);
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
-	await canvas.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	await canvas.click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
 	await readout.getByText(/World Atlas radiance/i).waitFor({ state: 'attached', timeout: 20_000 });
@@ -631,11 +628,7 @@ async function runLinkBudgetSmoke(page) {
 	// Open the Links deep tool: readout → spectral transmission sheet (which now
 	// hosts the link-budget panel).
 	await runMapCanvasSmoke(page);
-	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
-	await page
-		.locator(MAP_CANVAS_SELECTOR)
-		.first()
-		.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	await page.locator(MAP_CANVAS_SELECTOR).first().click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
 	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click();
@@ -696,11 +689,7 @@ async function runOrbitSmoke(page) {
 		null,
 		{ timeout: 10_000 },
 	);
-	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
-	await page
-		.locator(MAP_CANVAS_SELECTOR)
-		.first()
-		.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	await page.locator(MAP_CANVAS_SELECTOR).first().click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 	const readout = page.getByRole('dialog', { name: /point readout/i });
 	await readout.waitFor({ timeout: 20_000 });
 	// Wait for the readout to populate (the CTA is gated on loaded data).
@@ -922,8 +911,7 @@ async function runSmogSmoke(page) {
 	// Click the map to focus it (opens the readout — harmless, its fetches are
 	// mocked) so the number-key lens accelerator is delivered to the window.
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
-	const vp = page.viewportSize() ?? DEFAULT_VIEWPORT;
-	await canvas.click({ position: { x: Math.round(vp.width / 2), y: Math.round(vp.height / 2) } });
+	await canvas.click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 
 	// Arm the watcher BEFORE the lens switch — the station fetch is the guard.
 	const openaqRequest = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/atmospheric/openaq', {
