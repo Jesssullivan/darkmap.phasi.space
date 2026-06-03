@@ -886,7 +886,11 @@
 		opacity: 0.7;
 		color: #e9ecf3;
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — width arm narrowed from 820px to <640px: at MEDIUM (≥640px) the gantt owns
+	   its own full-width dock row, so it keeps the full event clock + the desktop
+	   placement (the COMPACT bottom-strip compaction + the .events{display:none}
+	   concession only apply below 640px). The short-screen arm is unchanged. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.gantt {
 			left: 0.75rem;
 			right: var(--map-toolbar-inset-rem, 5rem);
