@@ -3039,12 +3039,26 @@
 		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
+		/* W4c (TIN-1866): readout-ONLY (no tool open) at short/landscape — the gantt's
+		   full event clock here is taller than --field-bottom-reserve, so anchor the
+		   readout bottom at --gantt-reserve-rem to clear it (mirrors the portrait
+		   TIN-1810 fix, which is orientation:portrait-scoped and misses this band). */
+		.command-deck[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
+			:global(.readout[role='dialog']) {
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
+			max-height: calc(100dvh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 1rem) !important;
+		}
 		.command-deck[data-transmission='open'] :global(.toolbar),
 		.command-deck[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
 		.command-deck[data-transmission='open'] :global(.sheet) {
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
+			/* W4c: anchor the deep-tool sheet above the gantt's full footprint at
+			   short/landscape (the --field-panel-bottom reserve is ~10px shy of the
+			   gantt top here) so the sheet never dips into the gantt row. */
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px)) !important;
+			max-height: min(34dvh, calc(100dvh - var(--gantt-reserve-rem, 13rem) - 4rem)) !important;
 		}
 	}
 	/* ===== W4c (TIN-1866) — COMPACT-tall ResponsiveDock band (<640px, height≥501) =====
