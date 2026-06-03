@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, Menu, X } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, CloudFog, Layers, Lightbulb, Menu, X } from '@lucide/svelte';
 	import { BASEMAPS } from '$lib/basemaps';
 	import { rampFor, VIIRS_RAMP } from '$lib/color-ramps';
 	import { VIIRS_YEARS, type RasterLayerDef } from '$lib/layers';
@@ -29,9 +29,33 @@
 		time?: Date;
 		/** Active persona lens (S1 PR4) — auto-expands + emphasizes its primary group. */
 		lens?: Lens;
+		/**
+		 * W4b — MEDIUM (640–1023px) icon-collapsed mode. When true the rail renders
+		 * icon-only (a single "layers" affordance) so it fits the 4.5rem collapsed
+		 * column; expanding (railExpanded on +page) sets it false and the full rail
+		 * shows. Progressive disclosure — the full rail is one click away, never
+		 * hidden-as-disabled. Inert at COMPACT (<640, drawer) + WIDE (≥1024, full).
+		 */
+		compact?: boolean;
+		/**
+		 * W4b — invoked when a compact-mode rail icon is clicked, so the parent can
+		 * expand the rail (set railExpanded=true). The reveal affordance — clicking
+		 * any rail icon opens the full rail. Optional (COMPACT/WIDE never pass it).
+		 */
+		onexpand?: () => void;
 	}
 
-	let { layers, states, onchange, basemap, onbasemapchange, time, lens = DEFAULT_LENS }: Props = $props();
+	let {
+		layers,
+		states,
+		onchange,
+		basemap,
+		onbasemapchange,
+		time,
+		lens = DEFAULT_LENS,
+		compact = false,
+		onexpand,
+	}: Props = $props();
 
 	let drawerOpen = $state(false);
 	const close = () => (drawerOpen = false);
@@ -51,6 +75,11 @@
 	// public overlay — it backs the point-query readout only.)
 	const lightExtras = $derived(layers.filter((l) => l.group === 'world_atlas'));
 	const atmosphericLayers = $derived(layers.filter((l) => l.group === 'atmospheric'));
+
+	// W4b — count active overlays per group so the collapsed icon-rail can badge
+	// "how many layers are on" at a glance, without expanding.
+	const lightOnCount = $derived([...VIIRS_YEARS, ...lightExtras].filter((l) => states[l.id]?.on).length);
+	const atmosphereOnCount = $derived(atmosphericLayers.filter((l) => states[l.id]?.on).length);
 
 	let lightOpen = $state(true);
 	let atmosphereOpen = $state(false);
@@ -146,115 +175,103 @@
 	{/if}
 {/snippet}
 
-<aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers" data-tour="rail">
-	<header>
-		<h2>Layers</h2>
-		<p>VIIRS · World Atlas · Atmosphere</p>
-	</header>
-
-	<section class="basemap-section" aria-label="Basemap">
-		<p class="section-title">
-			<span>Basemap</span>
-			{#if basemap}
-				{@const h = layerHealth.getHealth(basemap)}
-				{#if h.tag !== 'idle'}
-					<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>{healthLabel(h)}</span>
-				{/if}
-			{/if}
-		</p>
-		<div class="basemap-row" role="radiogroup" aria-label="Basemap">
-			{#each BASEMAPS as bm (bm.id)}
-				<button
-					type="button"
-					class="basemap-chip"
-					class:active={basemap === bm.id}
-					aria-pressed={basemap === bm.id}
-					title={bm.description}
-					onclick={() => onbasemapchange(bm.id)}
-				>
-					{bm.label}
-				</button>
-			{/each}
-		</div>
-	</section>
-
-	<section class="category" data-tier={lightTier} aria-label="Light Pollution" data-tour="light-pollution">
-		<button type="button" class="category-header" aria-expanded={lightOpen} onclick={() => (lightOpen = !lightOpen)}>
-			{#if lightOpen}
-				<ChevronDown size={14} aria-hidden="true" />
-			{:else}
-				<ChevronRight size={14} aria-hidden="true" />
-			{/if}
-			<span>Light Pollution</span>
+{#if compact}
+	<!-- W4b — MEDIUM icon-only rail. A vertical strip of group icons (Light Pollution,
+	     Atmosphere) badged with the active-layer count; clicking any icon expands the
+	     full rail (onexpand → railExpanded=true on +page). Full opacity, fully
+	     reachable — the full rail is one click away (progressive disclosure, NOT
+	     hidden-as-disabled). Rendered only when the parent grid column is the 4.5rem
+	     collapsed track (MEDIUM); COMPACT (drawer) + WIDE (full rail) never pass
+	     compact=true, so their rendering is byte-identical. -->
+	<div class="layer-rail-icons" aria-label="Map layers (collapsed)" data-tour="rail">
+		<button
+			type="button"
+			class="rail-icon"
+			aria-label="Light Pollution layers — expand to edit"
+			title="Light Pollution{lightOnCount ? ` (${lightOnCount} on)` : ''}"
+			onclick={() => onexpand?.()}
+		>
+			<Lightbulb size={18} aria-hidden="true" />
+			{#if lightOnCount}<span class="rail-icon-badge" aria-hidden="true">{lightOnCount}</span>{/if}
 		</button>
+		{#if atmosphericLayers.length > 0}
+			<button
+				type="button"
+				class="rail-icon"
+				aria-label="Atmosphere layers — expand to edit"
+				title="Atmosphere{atmosphereOnCount ? ` (${atmosphereOnCount} on)` : ''}"
+				onclick={() => onexpand?.()}
+			>
+				<CloudFog size={18} aria-hidden="true" />
+				{#if atmosphereOnCount}<span class="rail-icon-badge" aria-hidden="true">{atmosphereOnCount}</span>{/if}
+			</button>
+		{/if}
+		<button
+			type="button"
+			class="rail-icon"
+			aria-label="All layers — expand the rail"
+			title="Expand layers"
+			onclick={() => onexpand?.()}
+		>
+			<Layers size={18} aria-hidden="true" />
+		</button>
+	</div>
+{:else}
+	<aside class="layer-rail" class:open={drawerOpen} aria-label="Map layers" data-tour="rail">
+		<header>
+			<h2>Layers</h2>
+			<p>VIIRS · World Atlas · Atmosphere</p>
+		</header>
 
-		{#if lightOpen}
-			<ul>
-				<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
-				<li>
-					<label class="layer-toggle">
-						<input
-							type="checkbox"
-							checked={viirsOn}
-							onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
-						/>
-						<span class="label">VIIRS Annual</span>
-						{#if viirsOn && activeViirsId}
-							{@const h = layerHealth.getHealth(activeViirsId)}
-							{#if h.tag !== 'idle' && h.tag !== 'rendered'}
-								<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
-									{healthLabel(h)}
-								</span>
-							{/if}
-						{/if}
-					</label>
-					<div class="year-row" role="radiogroup" aria-label="VIIRS year">
-						{#each VIIRS_YEARS as l (l.id)}
-							<button
-								type="button"
-								class="year-chip"
-								class:active={activeViirsId === l.id}
-								aria-pressed={activeViirsId === l.id}
-								disabled={!viirsOn}
-								onclick={() => pickViirsYear(l.id)}
-							>
-								{l.year}
-							</button>
-						{/each}
-					</div>
-					{#if viirsOn}
-						<div class="opacity-row">
-							<input
-								type="range"
-								min="0"
-								max="1"
-								step="0.05"
-								value={viirsOpacity}
-								aria-label="VIIRS opacity"
-								oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
-							/>
-							<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
-						</div>
+		<section class="basemap-section" aria-label="Basemap">
+			<p class="section-title">
+				<span>Basemap</span>
+				{#if basemap}
+					{@const h = layerHealth.getHealth(basemap)}
+					{#if h.tag !== 'idle'}
+						<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>{healthLabel(h)}</span>
 					{/if}
-					<div class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</div>
-					{#if viirsOn}
-						<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
-					{/if}
-				</li>
+				{/if}
+			</p>
+			<div class="basemap-row" role="radiogroup" aria-label="Basemap">
+				{#each BASEMAPS as bm (bm.id)}
+					<button
+						type="button"
+						class="basemap-chip"
+						class:active={basemap === bm.id}
+						aria-pressed={basemap === bm.id}
+						title={bm.description}
+						onclick={() => onbasemapchange(bm.id)}
+					>
+						{bm.label}
+					</button>
+				{/each}
+			</div>
+		</section>
 
-				<!-- World Atlas (styled): one toggle + opacity. -->
-				{#each lightExtras as layer (layer.id)}
-					{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+		<section class="category" data-tier={lightTier} aria-label="Light Pollution" data-tour="light-pollution">
+			<button type="button" class="category-header" aria-expanded={lightOpen} onclick={() => (lightOpen = !lightOpen)}>
+				{#if lightOpen}
+					<ChevronDown size={14} aria-hidden="true" />
+				{:else}
+					<ChevronRight size={14} aria-hidden="true" />
+				{/if}
+				<span>Light Pollution</span>
+			</button>
+
+			{#if lightOpen}
+				<ul>
+					<!-- VIIRS Annual: single toggle + year picker + shared opacity. -->
 					<li>
 						<label class="layer-toggle">
 							<input
 								type="checkbox"
-								checked={ls.on}
-								onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+								checked={viirsOn}
+								onchange={(e) => toggleViirs((e.target as HTMLInputElement).checked)}
 							/>
-							<span class="label">{layer.label}</span>
-							{#if ls.on}
-								{@const h = layerHealth.getHealth(layer.id)}
+							<span class="label">VIIRS Annual</span>
+							{#if viirsOn && activeViirsId}
+								{@const h = layerHealth.getHealth(activeViirsId)}
 								{#if h.tag !== 'idle' && h.tag !== 'rendered'}
 									<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
 										{healthLabel(h)}
@@ -262,76 +279,60 @@
 								{/if}
 							{/if}
 						</label>
-						{#if ls.on}
+						<div class="year-row" role="radiogroup" aria-label="VIIRS year">
+							{#each VIIRS_YEARS as l (l.id)}
+								<button
+									type="button"
+									class="year-chip"
+									class:active={activeViirsId === l.id}
+									aria-pressed={activeViirsId === l.id}
+									disabled={!viirsOn}
+									onclick={() => pickViirsYear(l.id)}
+								>
+									{l.year}
+								</button>
+							{/each}
+						</div>
+						{#if viirsOn}
 							<div class="opacity-row">
 								<input
 									type="range"
 									min="0"
 									max="1"
 									step="0.05"
-									value={ls.opacity}
-									aria-label="{layer.label} opacity"
-									oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
+									value={viirsOpacity}
+									aria-label="VIIRS opacity"
+									oninput={(e) => setViirsOpacity(Number((e.target as HTMLInputElement).value))}
 								/>
-								<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
+								<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
 							</div>
 						{/if}
-						<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
-						{#if ls.on && layer.upstreamLayer}
-							{@const ramp = rampFor(layer.upstreamLayer)}
-							{#if ramp}
-								<Legend {ramp} title="{layer.label} scale" />
-							{/if}
+						<div class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</div>
+						{#if viirsOn}
+							<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
 						{/if}
 					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
 
-	{#if atmosphericLayers.length > 0}
-		<section class="category" data-tier={atmosphereTier} aria-label="Atmosphere" data-tour="atmosphere">
-			<button
-				type="button"
-				class="category-header"
-				data-tour="atmosphere-header"
-				aria-expanded={atmosphereOpen}
-				onclick={() => (atmosphereOpen = !atmosphereOpen)}
-			>
-				{#if atmosphereOpen}
-					<ChevronDown size={14} aria-hidden="true" />
-				{:else}
-					<ChevronRight size={14} aria-hidden="true" />
-				{/if}
-				<span>Atmosphere</span>
-				{#if atmosphericStale}
-					<span class="stale-pill" title="Time is outside the typical fetch window">outside fetch window</span>
-				{/if}
-			</button>
-
-			{#if atmosphereOpen}
-				<ul>
-					{#each atmosphericLayers as layer (layer.id)}
+					<!-- World Atlas (styled): one toggle + opacity. -->
+					{#each lightExtras as layer (layer.id)}
 						{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
-						<li class:stale={atmosphericStale && ls.on}>
-							<div class="atmospheric-row-head">
-								<label class="layer-toggle">
-									<input
-										type="checkbox"
-										checked={ls.on}
-										onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
-									/>
-									<span class="label">{layer.label}</span>
-									{#if ls.on}
-										{@const h = layerHealth.getHealth(layer.id)}
-										{#if h.tag !== 'idle' && h.tag !== 'rendered'}
-											<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
-												{healthLabel(h)}
-											</span>
-										{/if}
+						<li>
+							<label class="layer-toggle">
+								<input
+									type="checkbox"
+									checked={ls.on}
+									onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+								/>
+								<span class="label">{layer.label}</span>
+								{#if ls.on}
+									{@const h = layerHealth.getHealth(layer.id)}
+									{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+										<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+											{healthLabel(h)}
+										</span>
 									{/if}
-								</label>
-							</div>
+								{/if}
+							</label>
 							{#if ls.on}
 								<div class="opacity-row">
 									<input
@@ -347,13 +348,84 @@
 								</div>
 							{/if}
 							<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
+							{#if ls.on && layer.upstreamLayer}
+								{@const ramp = rampFor(layer.upstreamLayer)}
+								{#if ramp}
+									<Legend {ramp} title="{layer.label} scale" />
+								{/if}
+							{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
 		</section>
-	{/if}
-</aside>
+
+		{#if atmosphericLayers.length > 0}
+			<section class="category" data-tier={atmosphereTier} aria-label="Atmosphere" data-tour="atmosphere">
+				<button
+					type="button"
+					class="category-header"
+					data-tour="atmosphere-header"
+					aria-expanded={atmosphereOpen}
+					onclick={() => (atmosphereOpen = !atmosphereOpen)}
+				>
+					{#if atmosphereOpen}
+						<ChevronDown size={14} aria-hidden="true" />
+					{:else}
+						<ChevronRight size={14} aria-hidden="true" />
+					{/if}
+					<span>Atmosphere</span>
+					{#if atmosphericStale}
+						<span class="stale-pill" title="Time is outside the typical fetch window">outside fetch window</span>
+					{/if}
+				</button>
+
+				{#if atmosphereOpen}
+					<ul>
+						{#each atmosphericLayers as layer (layer.id)}
+							{@const ls = states[layer.id] ?? { on: false, opacity: layer.opacity }}
+							<li class:stale={atmosphericStale && ls.on}>
+								<div class="atmospheric-row-head">
+									<label class="layer-toggle">
+										<input
+											type="checkbox"
+											checked={ls.on}
+											onchange={(e) => onchange(layer.id, { on: (e.target as HTMLInputElement).checked })}
+										/>
+										<span class="label">{layer.label}</span>
+										{#if ls.on}
+											{@const h = layerHealth.getHealth(layer.id)}
+											{#if h.tag !== 'idle' && h.tag !== 'rendered'}
+												<span class="health-pill health-{healthTone(h)}" title={h.reason ?? healthLabel(h)}>
+													{healthLabel(h)}
+												</span>
+											{/if}
+										{/if}
+									</label>
+								</div>
+								{#if ls.on}
+									<div class="opacity-row">
+										<input
+											type="range"
+											min="0"
+											max="1"
+											step="0.05"
+											value={ls.opacity}
+											aria-label="{layer.label} opacity"
+											oninput={(e) => onchange(layer.id, { opacity: Number((e.target as HTMLInputElement).value) })}
+										/>
+										<span class="opacity-pct" aria-hidden="true">{Math.round(ls.opacity * 100)}%</span>
+									</div>
+								{/if}
+								<div class="desc">{layer.description} {@render modelInfo(layer.id)}</div>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/if}
+	</aside>
+{/if}
 
 <style>
 	.rail-toggle {
@@ -409,13 +481,13 @@
 		backdrop-filter: blur(6px);
 		animation: fade-in 0.2s ease-out;
 	}
-	/* Command Deck RAIL (W1): at WIDE the rail is RE-HOMED as a flex child of
-	   +page's .left-dock grid cell — drop the float anchors + own chrome (the dock
-	   draws the card) + own scroll (it moves to .left-dock-scroll). Keyed to the
-	   WIDE grid breakpoint (≥1024px) so the re-home engages exactly with the grid.
-	   The base rule above + the mobile drawer (≤640px) + the 641px toggle-hide all
-	   stay byte-identical, so the COMPACT + MEDIUM fallback bands render as before. */
-	@media (min-width: 1024px) {
+	/* Command Deck RAIL (W1/W4b): at MEDIUM+WIDE the rail is RE-HOMED as a flex child
+	   of +page's .left-dock grid cell — drop the float anchors + own chrome (the dock
+	   draws the card) + own scroll (it moves to .left-dock-scroll). Keyed to the grid
+	   breakpoint (≥640px) so the re-home engages exactly with the MEDIUM/WIDE grid
+	   (W4b moved this from ≥1024px). The base float rule above + the mobile drawer
+	   (<640px) stay byte-identical, so COMPACT renders as before. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.layer-rail {
 			position: static;
 			top: auto;
@@ -432,6 +504,58 @@
 			padding: 0;
 			animation: none;
 		}
+	}
+
+	/* W4b — the MEDIUM icon-only rail (compact=true): a vertical strip of group icons
+	   that fits the 4.5rem collapsed column. Full opacity; each icon expands the rail
+	   (onexpand). Only rendered at MEDIUM-collapsed (the parent never passes
+	   compact=true at COMPACT/WIDE), so no breakpoint guard is needed here. */
+	.layer-rail-icons {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.4rem;
+		width: 100%;
+		font-family: var(--font-mono, ui-monospace, monospace);
+	}
+	.rail-icon {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.4rem;
+		height: 2.4rem;
+		background: rgba(255, 255, 255, 0.05);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 7px;
+		cursor: pointer;
+	}
+	.rail-icon:hover {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+	.rail-icon:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 2px;
+	}
+	.rail-icon-badge {
+		position: absolute;
+		top: -0.3rem;
+		right: -0.3rem;
+		min-width: 1rem;
+		height: 1rem;
+		padding: 0 0.2rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.6rem;
+		font-weight: 700;
+		line-height: 1;
+		border-radius: 999px;
+		background: var(--accent-amber);
+		color: #0a0e16;
+		font-variant-numeric: tabular-nums;
 	}
 
 	@keyframes fade-in {
@@ -755,7 +879,12 @@
 		}
 	}
 
-	@media (max-width: 640px) {
+	/* COMPACT mobile drawer (<640px). W4b moved the upper bound from `max-width:640px`
+	   to `max-width:639.98px` and the toggle-hide from `min-width:641px` to
+	   `min-width:640px`, so the drawer ends and the MEDIUM grid (which engages at
+	   exactly 640px — matching +page's data-layout-tier JS boundary) begins on a clean
+	   sub-pixel cascade with NO dead-band. <640px is unchanged = byte-identical. */
+	@media (max-width: 639.98px) {
 		.rail-toggle-label {
 			display: inline;
 		}
@@ -782,7 +911,7 @@
 		}
 	}
 
-	@media (min-width: 641px) {
+	@media (min-width: 640px) {
 		.rail-toggle {
 			display: none;
 		}

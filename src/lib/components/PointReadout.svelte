@@ -993,7 +993,11 @@
 	.readout[data-scope='mean'] {
 		animation: none;
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — was `max-width:820px`: the mean dossier was hidden on the narrow COMPACT
+	   bottom strip. At MEDIUM (≥640px) the readout lives in the inspector grid cell,
+	   which must ALWAYS show the dossier (mean or point) — never display:none. So the
+	   width arm narrowed to <640px (COMPACT only); the short-screen arm is unchanged. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.readout[data-scope='mean'] {
 			display: none;
 		}
@@ -1487,7 +1491,10 @@
 		opacity: 0.65;
 		color: #e9ecf3;
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — width arm narrowed from 820px to <640px: at MEDIUM the readout docks in
+	   the inspector grid cell (de-floated by +page), so this COMPACT float placement
+	   only applies below 640px. The short-screen arm is unchanged. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.readout {
 			left: 0.75rem;
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem);

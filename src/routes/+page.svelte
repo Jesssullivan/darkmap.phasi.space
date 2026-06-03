@@ -77,7 +77,7 @@
 		geometry: RouteGeoJsonGeometry;
 	};
 	type RouteGeoJsonFC = { type: 'FeatureCollection'; features: RouteGeoJsonFeature[] };
-	import { Compass, LocateFixed, SunMoon, Upload, X } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Compass, LocateFixed, PanelLeftOpen, SunMoon, Upload, X } from '@lucide/svelte';
 	import Tour, { type TourStep } from '$lib/components/Tour.svelte';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
@@ -150,6 +150,39 @@
 	};
 	let ephemerisOpen = $state(false);
 	let ephemerisTime: Date = $state(initialTime());
+
+	// W4b (TIN-1865) — MEDIUM (640–1023px) Command Deck progressive-disclosure
+	// state. Both reflect onto .command-deck as data-rail-expanded /
+	// data-inspector-open; the ≥640px grid widens the matching column track so the
+	// 1fr stage SHRINKS (push, never overlay). Inert at COMPACT (<640, drawer) and
+	// WIDE (≥1024, both columns permanent) — those bands ignore the attributes, so
+	// they render byte-identical. railExpanded gates the icon-only ↔ full rail;
+	// inspectorOpen gates the thin tab ↔ readout column (auto-opened on pin below).
+	let railExpanded = $state(false);
+	let inspectorOpen = $state(false);
+	// W4b — the live layout tier (set by the matchMedia listeners in onMount below).
+	// `compact` (icon-only) rail is MEDIUM-ONLY: at WIDE the rail must render the FULL
+	// panel (byte-identical to before), and at COMPACT it is the mobile drawer (the
+	// LayerRail's own <640 rendering) — neither passes the icon-only mode. SSR starts
+	// 'wide' so the first paint matches the desktop default before hydration.
+	let layoutTier = $state<'compact' | 'medium' | 'wide'>('wide');
+	const railCompact = $derived(layoutTier === 'medium' && !railExpanded);
+
+	// W4b — MEDIUM mutual exclusion. At 640px a 16rem rail + a 20rem inspector
+	// together leave the 1fr stage a ~16px sliver (the map all but vanishes). To keep
+	// the map usable while honoring "push, never overlay", only ONE wide panel opens
+	// at a time: expanding the rail collapses the inspector to its tab, and opening
+	// the inspector collapses the rail to its icon column. Inert at COMPACT/WIDE (the
+	// attributes are ignored there), so this only shapes MEDIUM — and WIDE keeps both
+	// columns permanently via its own grid-template-columns override.
+	function setRailExpanded(next: boolean): void {
+		railExpanded = next;
+		if (next) inspectorOpen = false;
+	}
+	function setInspectorOpen(next: boolean): void {
+		inspectorOpen = next;
+		if (next) railExpanded = false;
+	}
 
 	// Guided tour — custom, no-dep. Spotlights the rail, the atmospheric overlays
 	// + spectral widget, the click-to-readout map, and the twilight tools.
@@ -999,6 +1032,11 @@
 		readoutInflight = controller;
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
+		// W4b — pinning a point auto-opens the MEDIUM inspector column so the readout
+		// is visible without a second click (the tab handle stays the manual toggle).
+		// Goes through setInspectorOpen so the rail collapses to its icon column (mutual
+		// exclusion keeps the map usable). Inert outside MEDIUM.
+		setInspectorOpen(true);
 		// Drop the locator crosshair immediately so the point is visible while the readout loads.
 		pointMarker?.place(lon, lat);
 
@@ -1834,10 +1872,14 @@
 	// (compact <640 / medium 640–1023 / wide ≥1024; command-deck.md §3).
 	onMount(() => {
 		if (!browser) return;
-		const wide = window.matchMedia('(min-width: 1024px)');
-		const medium = window.matchMedia('(min-width: 640px)');
+		const wide = window.matchMedia('(min-width: 1024px) and (min-height: 501px)');
+		const medium = window.matchMedia('(min-width: 640px) and (min-height: 501px)');
 		const applyTier = () => {
-			document.documentElement.dataset.layoutTier = wide.matches ? 'wide' : medium.matches ? 'medium' : 'compact';
+			const tier = wide.matches ? 'wide' : medium.matches ? 'medium' : 'compact';
+			document.documentElement.dataset.layoutTier = tier;
+			// W4b — mirror the tier into reactive state so `railCompact` (icon-only rail)
+			// can be MEDIUM-only; WIDE/COMPACT never get the icon mode.
+			layoutTier = tier;
 		};
 		applyTier();
 		wide.addEventListener('change', applyTier);
@@ -1900,6 +1942,8 @@
 	data-readout={readout ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
 	data-passplan={passPlanOpen ? 'open' : 'closed'}
+	data-rail-expanded={railExpanded}
+	data-inspector-open={inspectorOpen}
 >
 	<!-- HEADER region: lens chips (left) + geocoder (right), out of the float-soup
 	     into a reserved top row. ≤1023px display:contents → both keep their own
@@ -1929,6 +1973,25 @@
 	     overlays it. ≤1023px display:contents → LayerRail keeps its mobile-drawer
 	     positioning (the rail-toggle + backdrop live inside LayerRail, fixed). -->
 	<aside class="left-dock" aria-label="Lens dock">
+		<!-- W4b — MEDIUM rail-expand toggle. At MEDIUM the rail is a 4.5rem icon column
+		     by default; this button widens its grid track (push, never overlay) to
+		     reveal the full rail. Full-opacity, always reachable; hidden at COMPACT
+		     (drawer owns it) + WIDE (rail is the permanent 20rem column) via CSS. -->
+		<button
+			type="button"
+			class="rail-expand-toggle"
+			aria-label={railExpanded ? 'Collapse layers panel' : 'Expand layers panel'}
+			aria-expanded={railExpanded}
+			title={railExpanded ? 'Collapse layers panel' : 'Expand layers panel'}
+			onclick={() => setRailExpanded(!railExpanded)}
+		>
+			{#if railExpanded}
+				<ChevronLeft size={18} aria-hidden="true" />
+			{:else}
+				<PanelLeftOpen size={18} aria-hidden="true" />
+			{/if}
+			<span class="rail-expand-label">Layers</span>
+		</button>
 		<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
 		<div class="left-dock-scroll">
 			<LayerRail
@@ -1939,6 +2002,8 @@
 				basemap={activeBasemap}
 				onbasemapchange={onBasemapChange}
 				time={ephemerisTime}
+				compact={railCompact}
+				onexpand={() => setRailExpanded(true)}
 			/>
 		</div>
 		<!-- W2 — the persistent TOOLS launcher cluster: all four deep tools, always one
@@ -1997,78 +2062,100 @@
 	     WIDE (22rem track). ≤1023px display:contents → it keeps its bottom-right
 	     float + click-to-open behaviour. -->
 	<aside class="deck-inspector" aria-label="Point inspector">
-		<PointReadout
-			scope={readout ? 'point' : 'mean'}
-			lens={lensStore.lens}
-			lat={readout?.lat}
-			lon={readout?.lon}
-			time={ephemerisTime}
-			data={readout?.data}
-			loading={readout?.loading ?? false}
-			error={readout?.error}
-			pm25={pm25Estimate}
-			{aqEstimates}
-			{pollutantUnits}
-			airQuality={airQualityReading}
-			history={stationHistory}
-			historyLoading={stationHistoryLoading}
-			onclose={closeReadout}
-			onTransmissionForPoint={openTransmissionForPoint}
-			onAqDashboardForPoint={openAqDashboardForPoint}
-			onPlanPassForPoint={openPassPlanForPoint}
-		/>
-		<!-- W3 — the deep tools dock IN the inspector (master-detail), below the
+		<!-- W4b — MEDIUM inspector tab. The always-visible, full-opacity handle for the
+		     readout column: collapsed it is a thin vertical "Inspector" rail; opening
+		     widens the grid track (push, never overlay) so the readout shows. The
+		     readout is NEVER hidden-as-disabled — this tab is its reachable affordance.
+		     Hidden at COMPACT (float fallback) + WIDE (permanent column) via CSS. -->
+		<button
+			type="button"
+			class="inspector-tab"
+			aria-label={inspectorOpen ? 'Collapse inspector' : 'Expand inspector'}
+			aria-expanded={inspectorOpen}
+			title={inspectorOpen ? 'Collapse inspector' : 'Expand inspector'}
+			onclick={() => setInspectorOpen(!inspectorOpen)}
+		>
+			{#if inspectorOpen}
+				<ChevronRight size={16} aria-hidden="true" />
+			{:else}
+				<ChevronLeft size={16} aria-hidden="true" />
+			{/if}
+			<span class="inspector-tab-label">Inspector</span>
+		</button>
+		<div class="inspector-body">
+			<PointReadout
+				scope={readout ? 'point' : 'mean'}
+				lens={lensStore.lens}
+				lat={readout?.lat}
+				lon={readout?.lon}
+				time={ephemerisTime}
+				data={readout?.data}
+				loading={readout?.loading ?? false}
+				error={readout?.error}
+				pm25={pm25Estimate}
+				{aqEstimates}
+				{pollutantUnits}
+				airQuality={airQualityReading}
+				history={stationHistory}
+				historyLoading={stationHistoryLoading}
+				onclose={closeReadout}
+				onTransmissionForPoint={openTransmissionForPoint}
+				onAqDashboardForPoint={openAqDashboardForPoint}
+				onPlanPassForPoint={openPassPlanForPoint}
+			/>
+			<!-- W3 — the deep tools dock IN the inspector (master-detail), below the
 		     readout overview, yoked to the pinned point. At WIDE they flow in this
 		     column (CSS de-floats them); ≤1023px the .deck-inspector is display:contents
 		     so each component's own position:fixed float is the byte-identical fallback.
 		     One tool at a time (open*ForPoint mutually exclude). -->
-		{#if transmissionOpen}
-			<TransmissionSheet
-				pointLat={readout?.lat}
-				pointLon={readout?.lon}
-				curve={transmissionCurve}
-				loading={transmissionLoading}
-				error={transmissionError}
-				onclose={closeTransmission}
-				aerosolType={transmissionAerosolType}
-				aod={transmissionAod}
-				aodSource={transmissionConstituents?.aod550.caption}
-				pwvSource={transmissionConstituents?.pwv.caption}
-				angstrom={transmissionAngstrom}
-				{onAerosolTypeChange}
-				{onAodChange}
-				{onAngstromChange}
-				selectedBandId={transmissionBandId}
-				bandCurve={transmissionBandCurve}
-				bandLoading={transmissionBandLoading}
-				bandError={transmissionBandError}
-				{onBandSelect}
-				lookAzimuthDeg={transmissionAzimuthDeg}
-				lookElevationDeg={transmissionElevationDeg}
-				lookTarget={transmissionLookTarget}
-				{lookZenithDeg}
-				{lookAirmass}
-				lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
-				lookOccluded={lookOcclusion.occluded}
-				blocked={transmissionBlocked}
-				{sunAvailable}
-				{moonAvailable}
-				lookHorizon={transmissionPin?.polygon ?? null}
-				{onLookTargetChange}
-				{onLookAzimuthChange}
-				{onLookElevationChange}
-				showBeam={beamShow}
-				beamwidthDeg={beamBeamwidthDeg}
-				{beamRangeKm}
-				{onBeamToggle}
-				{onBeamwidthChange}
-				{onBeamRangeChange}
-				pathAod={beamPathAod}
-			/>
-		{/if}
-		{#if passPlanOpen && readout}
-			<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
-		{/if}
+			{#if transmissionOpen}
+				<TransmissionSheet
+					pointLat={readout?.lat}
+					pointLon={readout?.lon}
+					curve={transmissionCurve}
+					loading={transmissionLoading}
+					error={transmissionError}
+					onclose={closeTransmission}
+					aerosolType={transmissionAerosolType}
+					aod={transmissionAod}
+					aodSource={transmissionConstituents?.aod550.caption}
+					pwvSource={transmissionConstituents?.pwv.caption}
+					angstrom={transmissionAngstrom}
+					{onAerosolTypeChange}
+					{onAodChange}
+					{onAngstromChange}
+					selectedBandId={transmissionBandId}
+					bandCurve={transmissionBandCurve}
+					bandLoading={transmissionBandLoading}
+					bandError={transmissionBandError}
+					{onBandSelect}
+					lookAzimuthDeg={transmissionAzimuthDeg}
+					lookElevationDeg={transmissionElevationDeg}
+					lookTarget={transmissionLookTarget}
+					{lookZenithDeg}
+					{lookAirmass}
+					lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
+					lookOccluded={lookOcclusion.occluded}
+					blocked={transmissionBlocked}
+					{sunAvailable}
+					{moonAvailable}
+					lookHorizon={transmissionPin?.polygon ?? null}
+					{onLookTargetChange}
+					{onLookAzimuthChange}
+					{onLookElevationChange}
+					showBeam={beamShow}
+					beamwidthDeg={beamBeamwidthDeg}
+					{beamRangeKm}
+					{onBeamToggle}
+					{onBeamwidthChange}
+					{onBeamRangeChange}
+					pathAod={beamPathAod}
+				/>
+			{/if}
+			{#if passPlanOpen && readout}
+				<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
+			{/if}
+		</div>
 	</aside>
 
 	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
@@ -2183,12 +2270,13 @@
 		position: fixed;
 		inset: 0;
 	}
-	/* ===== W1 — the Command Deck grid shell (docs/ux/command-deck.md §2/§3) =====
-	   ≤1023px: the deck is `display:contents` (inert) — every region wrapper is
-	   also display:contents, so each child reverts to its own current fixed
-	   positioning. This is the TEMPORARY single-column fallback (full responsive =
-	   W4); it keeps the COMPACT layout byte-identical, which the 390px browser-RBE
-	   smoke contracts depend on. */
+	/* ===== W1/W4b — the Command Deck grid shell (docs/ux/command-deck.md §2/§3) =====
+	   COMPACT (<640px): the deck is `display:contents` (inert) — every region wrapper
+	   is also display:contents, so each child reverts to its own current fixed
+	   positioning (the mobile-drawer/float layout). This unbracketed base keeps the
+	   COMPACT layout byte-identical, which the 390px browser-RBE smoke contracts
+	   depend on. MEDIUM (≥640px) + WIDE (≥1024px) override it with the real grid
+	   below — a strict min-width cascade (no paired max/min brackets). */
 	.command-deck,
 	.deck-header,
 	.stage,
@@ -2196,24 +2284,41 @@
 	.deck-dock {
 		display: contents;
 	}
-	/* WIDE (≥1024px): ONE real grid. Two areas can never occupy the same pixels,
-	   so the map + twilight strip can only be SHRUNK, never occluded. Tracks:
-	   [20rem rail][1fr stage][22rem inspector]; rows: header / body / dock. This
-	   replaces the PR5 --portal-inset faux-grid + the z4→z13 ladder + the
-	   .field-hud{pointer-events:none} scrim. */
-	@media (min-width: 1024px) {
+	/* W4b — the MEDIUM-only disclosure affordances (rail-expand toggle + inspector
+	   tab) are OFF at COMPACT (<640): the deck is display:contents there, so any
+	   stray flow element would shift the byte-identical mobile layout. They turn on
+	   in the ≥640px block; WIDE turns them off again (permanent columns, no handles).
+	   The .inspector-body wrapper is display:contents at COMPACT so the readout +
+	   deep tools keep their own float positioning (the byte-identical fallback). */
+	.rail-expand-toggle,
+	.inspector-tab {
+		display: none;
+	}
+	.inspector-body {
+		display: contents;
+	}
+	/* ===== MEDIUM + WIDE shared structure (≥640px): ONE real grid. =====
+	   Two grid areas can never occupy the same pixels, so the map + twilight strip
+	   can only be SHRUNK, never occluded — overlap is impossible by construction.
+	   Areas: 'header header header' / 'rail stage inspector' / 'dock dock dock'.
+	   The COLUMN TRACKS differ by band: MEDIUM drives them from state vars (the rail
+	   + inspector PUSH the 1fr stage when expanded); WIDE overrides to fixed wide
+	   columns (the ≥1024px block further down). This replaces the PR5 --portal-inset
+	   faux-grid + the z4→z13 ladder + the .field-hud{pointer-events:none} scrim. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.command-deck {
 			display: grid;
 			position: fixed;
 			inset: 0;
-			/* W2 — Instrument Bay ratio (docs/ux/command-deck.md): the map is one gauge
-			   in a balanced deck, not the whole point. Laptop band (1024–1365px): a 1fr
-			   stage that never overflows (a hard min-floor + the wide side columns would
-			   exceed 1024px). RAIL 20rem, INSPECTOR 26rem (room for the docked deep tools
-			   in W3 + readout breathing). The roomy band (≥1366px, below) widens to the
-			   full bay with the 380px stage floor. trackResize re-fires map.resize on a
-			   track change; --stage-inset-* still feeds fitBounds. */
-			grid-template-columns: 20rem minmax(0, 1fr) 26rem;
+			/* W4b — MEDIUM column tracks driven by the disclosure state on .command-deck.
+			   --rail-w: 4.5rem icon column collapsed → 16rem full rail when expanded.
+			   --insp-w: 2.5rem inspector tab collapsed → 20rem readout column when open.
+			   The middle 1fr stage absorbs the difference, so expanding either side
+			   SHRINKS the stage — that IS "push, never overlay". WIDE overrides the
+			   whole grid-template-columns line below, so these vars are MEDIUM-only. */
+			--rail-w: 4.5rem;
+			--insp-w: 2.5rem;
+			grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--insp-w);
 			/* minmax(0, …) on every row drops the implicit `min-content` floor.
 			   That floor makes a track size to its content's intrinsic min, which —
 			   with the fontless CI cell's zero-metric text — can enter a grid
@@ -2227,6 +2332,14 @@
 			gap: 0.75rem;
 			padding: 0.75rem;
 			box-sizing: border-box;
+		}
+		/* W4b — the disclosure state widens the matching column track. The 1fr stage
+		   shrinks to compensate; nothing overlays (the tracks are spatially separate). */
+		.command-deck[data-rail-expanded='true'] {
+			--rail-w: 16rem;
+		}
+		.command-deck[data-inspector-open='true'] {
+			--insp-w: 20rem;
 		}
 		/* contain:layout isolates each region's internal layout so a child's
 		   intrinsic sizing can't propagate back into the grid track computation
@@ -2253,15 +2366,71 @@
 		}
 		.deck-inspector {
 			grid-area: inspector;
-			display: block;
+			/* flex column: the inspector tab (MEDIUM) pins on top; the scrolling body
+			   fills the rest. At WIDE the tab is display:none, so it is body-only. */
+			display: flex;
+			flex-direction: column;
 			min-width: 0;
 			min-height: 0;
-			/* W3 — the inspector is the scroll container for the readout + a docked deep
-			   tool stack. overflow-y:auto (not hidden) lets Playwright auto-scroll a low
-			   control (e.g. the link-budget Tx-power input) into view = actionable. */
+			overflow: hidden;
+			contain: layout;
+		}
+		/* W4b — the MEDIUM inspector tab: a thin, full-opacity vertical handle. Collapsed
+		   the column is 2.5rem (--insp-w) and the "Inspector" label reads bottom-to-top;
+		   opening widens the track to 20rem (push, never overlay) so the readout shows.
+		   The readout is NEVER hidden-as-disabled — this tab is its reachable affordance. */
+		.inspector-tab {
+			flex: 0 0 auto;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 0.4rem;
+			width: 100%;
+			background: rgba(255, 255, 255, 0.05);
+			color: #e9ecf3;
+			border: 1px solid rgba(255, 255, 255, 0.12);
+			border-radius: 6px;
+			padding: 0.45rem 0.3rem;
+			font-family: var(--font-mono, ui-monospace, monospace);
+			font-size: 0.78rem;
+			cursor: pointer;
+		}
+		.inspector-tab:hover {
+			background: rgba(255, 255, 255, 0.1);
+		}
+		.inspector-tab:focus-visible {
+			outline: 2px solid var(--accent-amber);
+			outline-offset: 2px;
+		}
+		.inspector-tab-label {
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+		}
+		/* Collapsed (2.5rem tab): stack the chevron + the vertical "Inspector" label. */
+		.command-deck:not([data-inspector-open='true']) .inspector-tab {
+			flex-direction: column;
+			height: 100%;
+			align-items: center;
+		}
+		.command-deck:not([data-inspector-open='true']) .inspector-tab-label {
+			writing-mode: vertical-rl;
+			margin-top: 0.4rem;
+		}
+		/* The readout/deep-tool body scrolls within the column (overflow-y:auto, not
+		   hidden, lets Playwright auto-scroll a low control into view = actionable).
+		   Collapsed it is clipped by the 2.5rem track + .deck-inspector overflow:hidden;
+		   the tab is the handle, so nothing is lost — expand reveals it. */
+		.inspector-body {
+			display: block;
+			flex: 1 1 auto;
+			min-height: 0;
+			min-width: 0;
+			margin-top: 0.5rem;
 			overflow-y: auto;
 			overflow-x: hidden;
-			contain: layout;
+		}
+		.command-deck:not([data-inspector-open='true']) .inspector-body {
+			margin-top: 0;
 		}
 		.deck-dock {
 			grid-area: dock;
@@ -2279,11 +2448,12 @@
 			inset: 0;
 		}
 
-		/* De-fix the region children at WIDE: the lens chips + geocoder (HEADER),
-		   the PointReadout (INSPECTOR), and the twilight gantt (DOCK) drop their
-		   own position:fixed/inset/z-index and flow into their grid cells. Their
-		   own ≤1023px float positioning is untouched (the COMPACT fallback). The
-		   stage overlays (toolbar, sky, sheets) stay fixed — W2/W3 dock them. */
+		/* De-fix the region children at MEDIUM+WIDE: the lens chips + geocoder
+		   (HEADER), the PointReadout (INSPECTOR), and the twilight gantt (DOCK) drop
+		   their own position:fixed/inset/z-index and flow into their grid cells. Their
+		   own <640px float positioning is untouched (the COMPACT fallback). The stage
+		   overlays (toolbar, sky, sheets) stay fixed at COMPACT; here they clip to the
+		   stage. */
 		/* min-width:0 on BOTH flex children drops the default `min-width:auto`
 		   min-content floor. In the fontless CI RBE cell, degenerate text metrics
 		   leave the chips'/input's min-content inline-size unresolvable, which can
@@ -2313,10 +2483,9 @@
 			right: 0;
 			z-index: 20;
 		}
-		/* INSPECTOR: the readout is the persistent right column — fills the 22rem
-		   cell, no fixed anchor, scrolls within the cell. Covers the base readout
-		   AND the deep-tool overview states (deep tools still float as sheets in
-		   W1; W3 docks them into this column). */
+		/* INSPECTOR: the readout is the persistent right column — fills the cell, no
+		   fixed anchor, scrolls within the cell. Covers the base readout AND the
+		   deep-tool overview states. */
 		.deck-inspector :global(.readout) {
 			position: static;
 			inset: auto;
@@ -2330,7 +2499,7 @@
 		}
 		/* W3 — the docked deep tools flow in the inspector column below the readout:
 		   de-float them (mirrors the .readout rule above), cap to the cell + scroll
-		   internally, and kill the slide-up entrance (pointless docked). ≤1023px the
+		   internally, and kill the slide-up entrance (pointless docked). <640px the
 		   inspector is display:contents, so the components' OWN position:fixed float
 		   applies unchanged = the byte-identical fallback. */
 		.deck-inspector :global(.sheet),
@@ -2362,14 +2531,12 @@
 		}
 		/* Stage overlays become position:absolute so they clip to the STAGE cell
 		   (which is position:relative) instead of the viewport — keeping them off the
-		   HEADER / INSPECTOR / DOCK regions by construction. The deep-tool sheets
-		   (.sheet / .pass-plan) also clip to the stage; W3 docks them into the
-		   inspector. MapErrorToast + drop-hint already live in the stage. */
+		   HEADER / INSPECTOR / DOCK regions by construction. MapErrorToast + drop-hint
+		   already live in the stage. */
 		/* Map controls live on the map's OWN top-left corner (the conventional
 		   map-control home — Cesium/Palantir/Google Maps), a horizontal cluster.
 		   This clears the lower-right (where it crowded the inspector + the twilight
-		   gantt) — the operator's "buttons piled in the lower right" complaint. The
-		   ≤820px float fallback (compact bottom strip) is untouched. */
+		   gantt) — the operator's "buttons piled in the lower right" complaint. */
 		.stage :global(.toolbar) {
 			position: absolute;
 			top: 0.75rem;
@@ -2382,17 +2549,44 @@
 			gap: 0.4rem;
 			max-width: calc(100% - 1.5rem);
 		}
-		/* W1 de-dup: the RAIL instrument column owns the sky dome at WIDE, so the
-		   standalone float is hidden here (it stays rendered + visible ≤1023px, where
-		   the rail is hidden — one dome at every breakpoint, never removed). */
+		/* De-dup: the RAIL instrument column owns the embedded sky dome. The standalone
+		   float is hidden ONLY when that embedded dome is actually visible — i.e. at
+		   MEDIUM when the rail is EXPANDED (the instrument tiles show). At MEDIUM
+		   COLLAPSED the instrument column is icon-hidden, so the standalone float MUST
+		   stay = one dome at every state, never removed (W4b honesty bar). WIDE always
+		   shows the embedded dome, so it hides the float unconditionally (below). */
+		.command-deck[data-rail-expanded='true'] .stage :global(.sky) {
+			display: none;
+		}
+		.stage :global(.maplibregl-ctrl-bottom-right) {
+			z-index: 2;
+		}
+	}
+	/* ===== WIDE-only column tracks (≥1024px) =====
+	   W2 — Instrument Bay ratio (docs/ux/command-deck.md): the map is one gauge in a
+	   balanced deck, not the whole point. RAIL 20rem (full rail always shown), STAGE
+	   1fr, INSPECTOR 26rem (room for the docked deep tools + readout breathing). This
+	   overrides the MEDIUM state-driven tracks above, so at WIDE both side columns are
+	   permanent (no icon-rail / no tab) — the data-rail-expanded / data-inspector-open
+	   attributes are inert. The shared structure (areas, rows, de-float rules, stage
+	   overlays) is inherited from the ≥640px block. */
+	@media (min-width: 1024px) and (min-height: 501px) {
+		.command-deck {
+			grid-template-columns: 20rem minmax(0, 1fr) 26rem;
+		}
+		/* WIDE — the rail's instrument column always shows the embedded dome, so the
+		   standalone float is hidden unconditionally (the data-rail-expanded attribute
+		   is inert at WIDE). One dome, never two. */
 		.stage :global(.sky) {
 			display: none;
 		}
-		/* W3 — the deep tools left the .stage for the inspector; this WIDE stage-clip
-		   rule is now dead (matches nothing) and is removed. The ≤1023px float fallback
-		   is unaffected (it lives in the components' own CSS + the data-* overrides). */
-		.stage :global(.maplibregl-ctrl-bottom-right) {
-			z-index: 2;
+		/* WIDE — the inspector is the permanent 26rem column: no tab handle, the body
+		   flows from the top of the cell (drop the MEDIUM tab gap). */
+		.inspector-tab {
+			display: none;
+		}
+		.inspector-body {
+			margin-top: 0;
 		}
 	}
 	/* Decorative frame — at WIDE it is the STAGE cell's inset border (was a z4
@@ -2404,7 +2598,7 @@
 		inset: 0;
 		pointer-events: none;
 	}
-	@media (min-width: 1024px) {
+	@media (min-width: 1024px) and (min-height: 501px) {
 		.portal-frame {
 			display: block;
 		}
@@ -2467,17 +2661,22 @@
 		z-index: 100;
 		pointer-events: none;
 	}
-	/* RAIL region. ≤1023px: display:contents = inert wrapper, so LayerRail +
+	/* RAIL region. <640px: display:contents = inert wrapper, so LayerRail +
 	   InstrumentColumn fall back to their OWN positioning (the mobile drawer stays
-	   unchanged). At WIDE: the left grid cell (20rem track) — a real region that
-	   PUSHES the stage, never overlays it. Instrument row pinned on top
-	   (flex:0 0 auto); the rail scrolls below (.left-dock-scroll owns the scroll;
-	   the re-homed .layer-rail goes position:static + overflow:visible at WIDE).
-	   The card chrome moves here from the rail. */
+	   unchanged). At MEDIUM+WIDE: the left grid cell — a real region that PUSHES the
+	   stage, never overlays it. Instrument row pinned on top (flex:0 0 auto); the
+	   rail scrolls below (.left-dock-scroll owns the scroll; the re-homed .layer-rail
+	   goes position:static + overflow:visible at ≥640px). The card chrome moves here
+	   from the rail. */
 	.left-dock {
 		display: contents;
 	}
-	@media (min-width: 1024px) {
+	/* MEDIUM + WIDE shared: the rail card. At MEDIUM the column track is 4.5rem
+	   (collapsed icon column) or 16rem (expanded) — set on .command-deck via --rail-w;
+	   this card just fills it (overflow:hidden clips the wide content while collapsed).
+	   The rail-expand toggle is pinned on top; below it the instrument row + the
+	   scrolling rail body. WIDE overrides the padding + always shows everything. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.left-dock {
 			grid-area: rail;
 			display: flex;
@@ -2488,7 +2687,7 @@
 			background: rgba(8, 10, 16, 0.85);
 			border: 1px solid rgba(255, 255, 255, 0.08);
 			border-radius: 8px;
-			padding: 0.85rem 0.9rem;
+			padding: 0.6rem 0.55rem;
 			box-sizing: border-box;
 			overflow: hidden;
 			contain: layout;
@@ -2504,6 +2703,93 @@
 			-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent);
 		}
 		.left-dock-scroll::-webkit-scrollbar {
+			display: none;
+		}
+		/* W4b — the MEDIUM rail-expand toggle: a full-opacity icon button pinned at the
+		   top of the rail card. Collapsed it is icon-only (label hidden); expanded the
+		   "Layers" label shows. It widens the grid track (push), never overlays. */
+		.rail-expand-toggle {
+			flex: 0 0 auto;
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			align-self: flex-start;
+			background: rgba(255, 255, 255, 0.05);
+			color: #e9ecf3;
+			border: 1px solid rgba(255, 255, 255, 0.12);
+			border-radius: 6px;
+			padding: 0.4rem 0.45rem;
+			font-family: var(--font-mono, ui-monospace, monospace);
+			font-size: 0.8rem;
+			cursor: pointer;
+		}
+		.rail-expand-toggle:hover {
+			background: rgba(255, 255, 255, 0.1);
+		}
+		.rail-expand-toggle:focus-visible {
+			outline: 2px solid var(--accent-amber);
+			outline-offset: 2px;
+		}
+		.rail-expand-label {
+			display: none;
+		}
+		/* Collapsed (icon column): hide the instrument tiles (too wide for 4.5rem) and
+		   the deep-tool labels — the LayerRail's own `compact` prop renders icon-only.
+		   Everything stays full-opacity + reachable: expanding reveals it (progressive
+		   disclosure), NOT display:none-as-disable. */
+		:global(html[data-layout-tier='medium'])
+			.command-deck:not([data-rail-expanded='true'])
+			.left-dock
+			:global(.instrument-column) {
+			display: none;
+		}
+		/* Expanded: show the "Layers" label + the instrument tiles. */
+		.command-deck[data-rail-expanded='true'] .rail-expand-label {
+			display: inline;
+		}
+		:global(html[data-layout-tier='medium'])
+			.command-deck[data-rail-expanded='true']
+			.left-dock
+			:global(.instrument-column) {
+			display: flex;
+		}
+		/* Collapsed — the ToolsCluster renders icon-only: drop the section title + each
+		   tile's text + the Open/Pin hint, center the icon, square the tile to the 4.5rem
+		   column. Full opacity + clickable (still launches the tool); expanding restores
+		   the labelled tiles. NOT a disable — the icon is the launcher. */
+		:global(html[data-layout-tier='medium'])
+			.command-deck:not([data-rail-expanded='true'])
+			.left-dock
+			:global(.cluster-title),
+		:global(html[data-layout-tier='medium'])
+			.command-deck:not([data-rail-expanded='true'])
+			.left-dock
+			:global(.tool-text),
+		:global(html[data-layout-tier='medium'])
+			.command-deck:not([data-rail-expanded='true'])
+			.left-dock
+			:global(.tool-go) {
+			display: none;
+		}
+		:global(html[data-layout-tier='medium'])
+			.command-deck:not([data-rail-expanded='true'])
+			.left-dock
+			:global(.tool-tile) {
+			justify-content: center;
+			padding: 0.4rem;
+		}
+	}
+	/* WIDE-only: the rail is the permanent 20rem column — roomier padding, no MEDIUM
+	   icon-toggle. The instrument row + full rail + full ToolsCluster all render via
+	   their own defaults: the MEDIUM-collapse rules above are gated on
+	   html[data-layout-tier='medium'], so they never fire at WIDE — WIDE is
+	   byte-identical with no re-override needed. */
+	@media (min-width: 1024px) and (min-height: 501px) {
+		.left-dock {
+			padding: 0.85rem 0.9rem;
+		}
+		/* The MEDIUM icon-toggle is not part of the WIDE permanent rail. */
+		.rail-expand-toggle {
 			display: none;
 		}
 	}
@@ -2550,9 +2836,11 @@
 	.attribution a {
 		color: var(--accent-amber);
 	}
-	/* WIDE: the attribution sits at the bottom-left of the STAGE cell (which is
-	   position:relative), clear of the dock row. */
-	@media (min-width: 1024px) {
+	/* MEDIUM+WIDE: the attribution sits at the bottom-left of the STAGE cell (which is
+	   position:relative at ≥640px), clear of the dock row — instead of the COMPACT
+	   field-bottom-reserve offset. W4b broadened this from WIDE-only to ≥640px so the
+	   MEDIUM stage anchors it correctly too. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.attribution {
 			bottom: 0.75rem;
 			left: 0.75rem;
@@ -2564,7 +2852,10 @@
 	   this is the desktop default. Scoped to the COMPACT float fallback (≤1023px);
 	   at WIDE the readout lives in the INSPECTOR grid cell so this never applies.
 	   (Deep-tool-into-inspector docking is W3.) */
-	@media (max-width: 1023px) {
+	/* W4b — was `max-width:1023px` (COMPACT + MEDIUM). At MEDIUM the readout + deep
+	   tools now dock in the inspector grid cell (de-floated above), so this COMPACT
+	   float-fallback is scoped to <640px to avoid fighting the MEDIUM grid. */
+	@media (max-width: 639.98px) {
 		.command-deck[data-transmission='open'] :global(.readout[role='dialog']),
 		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			top: calc(1rem + env(safe-area-inset-top, 0px));
@@ -2576,7 +2867,11 @@
 			overflow-y: auto;
 		}
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — the width arm narrowed from 820px to 639.98px: the 640–820px band is now
+	   MEDIUM (grid-docked readout/sheet/toolbar), so the COMPACT float-fallback no
+	   longer applies there. The (max-height:500px) short-screen arm is unchanged, so
+	   COMPACT + every breakpoint's short-screen behavior stays byte-identical. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.command-deck :global(.readout[role='dialog']) {
 			bottom: calc(
 				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
@@ -2622,7 +2917,7 @@
 	   --gantt-reserve-rem to clear the gantt instead of dipping ~60px into it. Scoped
 	   to portrait + readout-only so the short/landscape concession and the
 	   transmission/passplan top-strip placements are untouched. */
-	@media (max-width: 820px) and (orientation: portrait) {
+	@media (max-width: 639.98px) and (orientation: portrait) {
 		.command-deck[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
 			:global(.readout[role='dialog']) {
 			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
@@ -2630,7 +2925,7 @@
 			max-height: calc(100dvh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 5rem) !important;
 		}
 	}
-	@media (max-width: 820px) and (orientation: landscape), (max-height: 500px) {
+	@media (max-width: 639.98px) and (orientation: landscape), (max-height: 500px) {
 		.command-deck[data-transmission='open'][data-readout='open'] {
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
