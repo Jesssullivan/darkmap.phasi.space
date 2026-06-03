@@ -673,7 +673,12 @@ async function runLinkBudgetSmoke(page) {
 	await readout.waitFor({ timeout: 20_000 });
 	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click();
 	const lb = page.locator('.link-budget');
-	await lb.waitFor({ state: 'visible', timeout: 20_000 });
+	// W3 — the sheet now docks IN the inspector column; the link-budget panel sits
+	// low in it and can be below the scroll fold on the fontless cell. `attached`
+	// (matches the point-readout pattern) avoids viewport-fit fragility; the
+	// `tx.fill('-60')` step below still proves real actionability (Playwright
+	// auto-scrolls the now-scrollable inspector to the input).
+	await lb.waitFor({ state: 'attached', timeout: 20_000 });
 
 	const read = () =>
 		page.evaluate(() => {
