@@ -984,9 +984,12 @@
 		stationHistory = null;
 		stationHistoryLoading = false;
 		pointMarker?.remove();
-		// V3 — the sheet is anchored to the selected point; clearing the point
-		// leaves it with nothing to describe, so dismiss it too.
+		// V3/W3 — the deep tools are anchored to the selected point; clearing the
+		// point leaves them with nothing to describe, so dismiss both. (This is the
+		// point-unpin path only — a LENS switch never calls closeReadout, so a pinned
+		// point + an open tool survive a lens change with the coordinate intact.)
 		if (transmissionOpen) closeTransmission();
+		if (passPlanOpen) closePassPlan();
 	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
@@ -1993,6 +1996,58 @@
 			onAqDashboardForPoint={openAqDashboardForPoint}
 			onPlanPassForPoint={openPassPlanForPoint}
 		/>
+		<!-- W3 — the deep tools dock IN the inspector (master-detail), below the
+		     readout overview, yoked to the pinned point. At WIDE they flow in this
+		     column (CSS de-floats them); ≤1023px the .deck-inspector is display:contents
+		     so each component's own position:fixed float is the byte-identical fallback.
+		     One tool at a time (open*ForPoint mutually exclude). -->
+		{#if transmissionOpen}
+			<TransmissionSheet
+				pointLat={readout?.lat}
+				pointLon={readout?.lon}
+				curve={transmissionCurve}
+				loading={transmissionLoading}
+				error={transmissionError}
+				onclose={closeTransmission}
+				aerosolType={transmissionAerosolType}
+				aod={transmissionAod}
+				aodSource={transmissionConstituents?.aod550.caption}
+				pwvSource={transmissionConstituents?.pwv.caption}
+				angstrom={transmissionAngstrom}
+				{onAerosolTypeChange}
+				{onAodChange}
+				{onAngstromChange}
+				selectedBandId={transmissionBandId}
+				bandCurve={transmissionBandCurve}
+				bandLoading={transmissionBandLoading}
+				bandError={transmissionBandError}
+				{onBandSelect}
+				lookAzimuthDeg={transmissionAzimuthDeg}
+				lookElevationDeg={transmissionElevationDeg}
+				lookTarget={transmissionLookTarget}
+				{lookZenithDeg}
+				{lookAirmass}
+				lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
+				lookOccluded={lookOcclusion.occluded}
+				blocked={transmissionBlocked}
+				{sunAvailable}
+				{moonAvailable}
+				lookHorizon={transmissionPin?.polygon ?? null}
+				{onLookTargetChange}
+				{onLookAzimuthChange}
+				{onLookElevationChange}
+				showBeam={beamShow}
+				beamwidthDeg={beamBeamwidthDeg}
+				{beamRangeKm}
+				{onBeamToggle}
+				{onBeamwidthChange}
+				{onBeamRangeChange}
+				pathAod={beamPathAod}
+			/>
+		{/if}
+		{#if passPlanOpen && readout}
+			<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
+		{/if}
 	</aside>
 
 	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
@@ -2017,54 +2072,9 @@
 <Tour bind:open={tourOpen} steps={tourSteps} />
 
 {#snippet fieldFloats()}
-	{#if transmissionOpen}
-		<TransmissionSheet
-			pointLat={readout?.lat}
-			pointLon={readout?.lon}
-			curve={transmissionCurve}
-			loading={transmissionLoading}
-			error={transmissionError}
-			onclose={closeTransmission}
-			aerosolType={transmissionAerosolType}
-			aod={transmissionAod}
-			aodSource={transmissionConstituents?.aod550.caption}
-			pwvSource={transmissionConstituents?.pwv.caption}
-			angstrom={transmissionAngstrom}
-			{onAerosolTypeChange}
-			{onAodChange}
-			{onAngstromChange}
-			selectedBandId={transmissionBandId}
-			bandCurve={transmissionBandCurve}
-			bandLoading={transmissionBandLoading}
-			bandError={transmissionBandError}
-			{onBandSelect}
-			lookAzimuthDeg={transmissionAzimuthDeg}
-			lookElevationDeg={transmissionElevationDeg}
-			lookTarget={transmissionLookTarget}
-			{lookZenithDeg}
-			{lookAirmass}
-			lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
-			lookOccluded={lookOcclusion.occluded}
-			blocked={transmissionBlocked}
-			{sunAvailable}
-			{moonAvailable}
-			lookHorizon={transmissionPin?.polygon ?? null}
-			{onLookTargetChange}
-			{onLookAzimuthChange}
-			{onLookElevationChange}
-			showBeam={beamShow}
-			beamwidthDeg={beamBeamwidthDeg}
-			{beamRangeKm}
-			{onBeamToggle}
-			{onBeamwidthChange}
-			{onBeamRangeChange}
-			pathAod={beamPathAod}
-		/>
-	{/if}
-
-	{#if passPlanOpen && readout}
-		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
-	{/if}
+	<!-- W3 moved the deep tools (TransmissionSheet / PassPlanPanel) OUT of here into
+	     the .deck-inspector cell (master-detail). fieldFloats now carries only the
+	     map-anchored overlays (sky compass, MapToolbar, error toast, drop hint). -->
 
 	<!-- The sky dome. At WIDE the RAIL instrument column shows the embedded dome, so
 	     this standalone float is hidden there (.stage .sky → display:none) to avoid
@@ -2225,7 +2235,11 @@
 			display: block;
 			min-width: 0;
 			min-height: 0;
-			overflow: hidden;
+			/* W3 — the inspector is the scroll container for the readout + a docked deep
+			   tool stack. overflow-y:auto (not hidden) lets Playwright auto-scroll a low
+			   control (e.g. the link-budget Tx-power input) into view = actionable. */
+			overflow-y: auto;
+			overflow-x: hidden;
 			contain: layout;
 		}
 		.deck-dock {
@@ -2293,6 +2307,26 @@
 			overflow-y: auto;
 			animation: none;
 		}
+		/* W3 — the docked deep tools flow in the inspector column below the readout:
+		   de-float them (mirrors the .readout rule above), cap to the cell + scroll
+		   internally, and kill the slide-up entrance (pointless docked). ≤1023px the
+		   inspector is display:contents, so the components' OWN position:fixed float
+		   applies unchanged = the byte-identical fallback. */
+		.deck-inspector :global(.sheet),
+		.deck-inspector :global(.pass-plan) {
+			position: static;
+			inset: auto;
+			left: auto;
+			right: auto;
+			bottom: auto;
+			z-index: auto;
+			width: 100%;
+			max-width: none;
+			max-height: 100%;
+			overflow-y: auto;
+			animation: none;
+			box-sizing: border-box;
+		}
 		/* DOCK: the gantt is the full-width bottom row — drop its fixed bottom-strip
 		   anchor + the toolbar inset (it owns the whole row now). */
 		.deck-dock :global(.gantt) {
@@ -2333,14 +2367,9 @@
 		.stage :global(.sky) {
 			display: none;
 		}
-		.stage :global(.sheet),
-		.stage :global(.pass-plan) {
-			position: absolute;
-			left: 0;
-			right: 0;
-			bottom: 0;
-			z-index: 12;
-		}
+		/* W3 — the deep tools left the .stage for the inspector; this WIDE stage-clip
+		   rule is now dead (matches nothing) and is removed. The ≤1023px float fallback
+		   is unaffected (it lives in the components' own CSS + the data-* overrides). */
 		.stage :global(.maplibregl-ctrl-bottom-right) {
 			z-index: 2;
 		}
