@@ -382,12 +382,22 @@ async function runMobileHudSmoke(page) {
 	// short/landscape viewports (height <=500: switcher top-left + right-half
 	// sheet leave no clean spot) the overview yields and hides until the tool
 	// closes; that's a deliberate space concession, not lens-gating.
+	// W4c (TIN-1866): the COMPACT ResponsiveDock is ONE sheet whose Readout and
+	// Tools views are mutually exclusive — opening the transmission tool swaps the
+	// readout view OUT (height:0). The overview+detail coexistence does NOT hold
+	// there, so detect the swap-host and skip the readout-coexistence assertion.
+	// The float layout + tall non-dock viewports keep the readout mounted as before.
 	const transmissionPairs = [
 		['.sheet', '.toolbar'],
 		['.sheet', '.gantt'],
 	];
+	const swapHost = await page.evaluate(
+		() =>
+			document.documentElement.dataset.layoutTier === 'compact' &&
+			!!document.querySelector('[data-responsive-dock], .responsive-dock'),
+	);
 	const vpHeight = (page.viewportSize() ?? { height: 0 }).height;
-	if (vpHeight > 500) {
+	if (vpHeight > 500 && !swapHost) {
 		await readout.waitFor({ state: 'visible', timeout: 20_000 });
 		transmissionPairs.push(['.sheet', '.readout[role="dialog"]']);
 	}

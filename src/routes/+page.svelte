@@ -89,6 +89,7 @@
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
 	import ToolsCluster from '$lib/components/ToolsCluster.svelte';
+	import ResponsiveDock, { type DockView } from '$lib/components/ResponsiveDock.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
 		FALLBACK_CENTER,
@@ -167,6 +168,16 @@
 	// 'wide' so the first paint matches the desktop default before hydration.
 	let layoutTier = $state<'compact' | 'medium' | 'wide'>('wide');
 	const railCompact = $derived(layoutTier === 'medium' && !railExpanded);
+
+	// W4c (TIN-1866) — the COMPACT ResponsiveDock engages at width<640 AND a tall
+	// enough viewport (height ≥501). Below that height the BYTE-IDENTICAL
+	// LANDSCAPE-short float fallback owns the layout (the dock host is display:none
+	// there and the readout/tools/gantt float as before). SSR starts `true` so the
+	// first paint matches the desktop default before hydration.
+	let viewportTall = $state(true);
+	const dockActive = $derived(layoutTier === 'compact' && viewportTall);
+	// (The ONE bottom-sheet's swap-view state is declared below, after the
+	// transmission/pass-plan state it derives from — W4c, see `dockView`.)
 
 	// W4b — MEDIUM mutual exclusion. At 640px a 16rem rail + a 20rem inspector
 	// together leave the 1fr stage a ~16px sliver (the map all but vanishes). To keep
@@ -264,6 +275,27 @@
 	// default (0.15) and shows it in the readout so users know it's not measured.
 	let transmissionOpen = $state(false);
 	let passPlanOpen = $state(false);
+
+	// W4c (TIN-1866) — the COMPACT ResponsiveDock's ONE-sheet swap view. Derived from
+	// the existing point/tool state so the smoke's canvas-pin → Readout view and
+	// "open transmission" → Tools view flows fall out for free. A manual segment tap
+	// pins a view via `dockViewPinned` until the underlying state moves it again
+	// (the open/close handlers clear the pin so state always wins after an action).
+	let dockViewPinned = $state<DockView | null>(null);
+	const dockView = $derived<DockView>(dockViewPinned ?? (transmissionOpen || passPlanOpen ? 'tools' : 'readout'));
+	function setDockView(next: DockView): void {
+		// Layers swaps to the (tall) rail drawer; keep the sheet's pin null so closing
+		// the drawer lands back on the state-driven view (the point), not a blank sheet.
+		dockViewPinned = next === 'layers' ? null : next;
+	}
+	// Opening the layers drawer from the dock = the existing rail-toggle path (the
+	// tall, detach-on-close drawer the mobile-layers smoke contracts on). Reusing it
+	// keeps the layers list at height≥500 without a second layers implementation.
+	function openLayersFromDock(): void {
+		const toggle = document.querySelector<HTMLButtonElement>('[data-tour="rail-toggle"]');
+		if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click();
+	}
+
 	let transmissionCurve = $state<TransmissionCurve | undefined>(undefined);
 	let transmissionLoading = $state(false);
 	let transmissionError = $state<string | undefined>(undefined);
@@ -413,6 +445,8 @@
 	function openTransmissionForPoint(): void {
 		passPlanOpen = false;
 		transmissionOpen = true;
+		// W4c — let the state-driven dock view (→ Tools) take over the COMPACT sheet.
+		dockViewPinned = null;
 		void loadTransmissionPin();
 		void refreshTransmission();
 	}
@@ -421,9 +455,11 @@
 	function openPassPlanForPoint(): void {
 		transmissionOpen = false;
 		passPlanOpen = true;
+		dockViewPinned = null;
 	}
 	function closePassPlan(): void {
 		passPlanOpen = false;
+		dockViewPinned = null;
 	}
 
 	// Hand off to the dedicated AQ-analysis dashboard (/aq, V6-4), seeded from the
@@ -569,6 +605,9 @@
 
 	function closeTransmission(): void {
 		transmissionOpen = false;
+		// W4c — closing the tool swaps the COMPACT dock back to the Readout view
+		// (state-driven default), the smoke's "close → readout visible again" step.
+		dockViewPinned = null;
 		transmissionBandId = null;
 		transmissionBandCurve = undefined;
 		// Reset the boresight to the zenith default so the next open starts honestly
@@ -1023,6 +1062,9 @@
 		// point + an open tool survive a lens change with the coordinate intact.)
 		if (transmissionOpen) closeTransmission();
 		if (passPlanOpen) closePassPlan();
+		// W4c — unpinning returns the COMPACT dock to its state-driven default (the
+		// viewport-readout view), clearing any manual segment pin.
+		dockViewPinned = null;
 	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
@@ -1037,6 +1079,9 @@
 		// Goes through setInspectorOpen so the rail collapses to its icon column (mutual
 		// exclusion keeps the map usable). Inert outside MEDIUM.
 		setInspectorOpen(true);
+		// W4c — a fresh pin shows the COMPACT dock's Readout view (clear any manual
+		// segment pin) + the dock auto-raises to HALF (ResponsiveDock effect on hasPoint).
+		dockViewPinned = null;
 		// Drop the locator crosshair immediately so the point is visible while the readout loads.
 		pointMarker?.place(lon, lat);
 
@@ -1874,19 +1919,26 @@
 		if (!browser) return;
 		const wide = window.matchMedia('(min-width: 1024px) and (min-height: 501px)');
 		const medium = window.matchMedia('(min-width: 640px) and (min-height: 501px)');
+		// W4c — the dock's tall-enough gate (matches its CSS engagement query so the
+		// JS render and the styling agree on the COMPACT-tall band exactly).
+		const tall = window.matchMedia('(min-height: 501px)');
 		const applyTier = () => {
 			const tier = wide.matches ? 'wide' : medium.matches ? 'medium' : 'compact';
 			document.documentElement.dataset.layoutTier = tier;
 			// W4b — mirror the tier into reactive state so `railCompact` (icon-only rail)
 			// can be MEDIUM-only; WIDE/COMPACT never get the icon mode.
 			layoutTier = tier;
+			// W4c — the ResponsiveDock engages only when COMPACT and tall enough.
+			viewportTall = tall.matches;
 		};
 		applyTier();
 		wide.addEventListener('change', applyTier);
 		medium.addEventListener('change', applyTier);
+		tall.addEventListener('change', applyTier);
 		return () => {
 			wide.removeEventListener('change', applyTier);
 			medium.removeEventListener('change', applyTier);
+			tall.removeEventListener('change', applyTier);
 		};
 	});
 
@@ -1944,6 +1996,7 @@
 	data-passplan={passPlanOpen ? 'open' : 'closed'}
 	data-rail-expanded={railExpanded}
 	data-inspector-open={inspectorOpen}
+	data-dock-active={dockActive}
 >
 	<!-- HEADER region: lens chips (left) + geocoder (right), out of the float-soup
 	     into a reserved top row. ≤1023px display:contents → both keep their own
@@ -2082,100 +2135,52 @@
 			{/if}
 			<span class="inspector-tab-label">Inspector</span>
 		</button>
-		<div class="inspector-body">
-			<PointReadout
-				scope={readout ? 'point' : 'mean'}
-				lens={lensStore.lens}
-				lat={readout?.lat}
-				lon={readout?.lon}
-				time={ephemerisTime}
-				data={readout?.data}
-				loading={readout?.loading ?? false}
-				error={readout?.error}
-				pm25={pm25Estimate}
-				{aqEstimates}
-				{pollutantUnits}
-				airQuality={airQualityReading}
-				history={stationHistory}
-				historyLoading={stationHistoryLoading}
-				onclose={closeReadout}
-				onTransmissionForPoint={openTransmissionForPoint}
-				onAqDashboardForPoint={openAqDashboardForPoint}
-				onPlanPassForPoint={openPassPlanForPoint}
-			/>
-			<!-- W3 — the deep tools dock IN the inspector (master-detail), below the
-		     readout overview, yoked to the pinned point. At WIDE they flow in this
-		     column (CSS de-floats them); ≤1023px the .deck-inspector is display:contents
-		     so each component's own position:fixed float is the byte-identical fallback.
-		     One tool at a time (open*ForPoint mutually exclude). -->
-			{#if transmissionOpen}
-				<TransmissionSheet
-					pointLat={readout?.lat}
-					pointLon={readout?.lon}
-					curve={transmissionCurve}
-					loading={transmissionLoading}
-					error={transmissionError}
-					onclose={closeTransmission}
-					aerosolType={transmissionAerosolType}
-					aod={transmissionAod}
-					aodSource={transmissionConstituents?.aod550.caption}
-					pwvSource={transmissionConstituents?.pwv.caption}
-					angstrom={transmissionAngstrom}
-					{onAerosolTypeChange}
-					{onAodChange}
-					{onAngstromChange}
-					selectedBandId={transmissionBandId}
-					bandCurve={transmissionBandCurve}
-					bandLoading={transmissionBandLoading}
-					bandError={transmissionBandError}
-					{onBandSelect}
-					lookAzimuthDeg={transmissionAzimuthDeg}
-					lookElevationDeg={transmissionElevationDeg}
-					lookTarget={transmissionLookTarget}
-					{lookZenithDeg}
-					{lookAirmass}
-					lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
-					lookOccluded={lookOcclusion.occluded}
-					blocked={transmissionBlocked}
-					{sunAvailable}
-					{moonAvailable}
-					lookHorizon={transmissionPin?.polygon ?? null}
-					{onLookTargetChange}
-					{onLookAzimuthChange}
-					{onLookElevationChange}
-					showBeam={beamShow}
-					beamwidthDeg={beamBeamwidthDeg}
-					{beamRangeKm}
-					{onBeamToggle}
-					{onBeamwidthChange}
-					{onBeamRangeChange}
-					pathAod={beamPathAod}
-				/>
-			{/if}
-			{#if passPlanOpen && readout}
-				<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
-			{/if}
-		</div>
+		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered
+		     below); the inspector body keeps them for MEDIUM/WIDE (grid) + COMPACT-short
+		     (the byte-identical float fallback). One render site each — never duplicated. -->
+		{#if !dockActive}
+			<div class="inspector-body">
+				{@render readoutBlock()}
+				{@render toolsBlock()}
+			</div>
+		{/if}
 	</aside>
 
 	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
 	     "X floats over the twilight strip" is structurally impossible. ≤1023px
-	     display:contents → the gantt keeps its current fixed bottom-strip layout. -->
+	     display:contents → the gantt keeps its current fixed bottom-strip layout.
+	     W4c — at COMPACT-tall the gantt is the dock sheet's thin top row instead. -->
 	<div class="deck-dock">
-		{#if ephemerisOpen}
-			<EphemerisGantt
-				location={viewCenter}
-				time={ephemerisTime}
-				bounds={viewBounds}
-				zoom={viewZoom}
-				onTimeChange={(t) => {
-					setEphemerisTime(t);
-					scheduleHashWrite();
-				}}
-			/>
+		{#if !dockActive}
+			{@render ganttBlock()}
 		{/if}
 	</div>
 </div>
+
+<!-- W4c (TIN-1866) — the COMPACT (<640px, height≥501) ResponsiveDock: ONE non-modal
+     bottom-sheet (PEEK/HALF/FULL scroll-snap) that SWAPS Layers/Readout/Tools in a
+     single panel. Replaces the old display:contents float-soup at COMPACT. Inert
+     elsewhere (dockActive is false at MEDIUM/WIDE + COMPACT-short, where the grid /
+     byte-identical float fallback own the layout). -->
+{#if dockActive}
+	<ResponsiveDock
+		view={dockView}
+		onViewChange={setDockView}
+		onOpenLayers={openLayersFromDock}
+		hasPoint={!!readout}
+		toolsActive={transmissionOpen || passPlanOpen}
+	>
+		{#snippet ganttRow()}
+			{@render ganttBlock()}
+		{/snippet}
+		{#snippet readoutView()}
+			{@render readoutBlock()}
+		{/snippet}
+		{#snippet toolsView()}
+			{@render toolsBlock()}
+		{/snippet}
+	</ResponsiveDock>
+{/if}
 
 <Tour bind:open={tourOpen} steps={tourSteps} />
 
@@ -2250,6 +2255,103 @@
 	<footer class="attribution">
 		<a href="/docs">credits + sources</a>
 	</footer>
+{/snippet}
+
+<!-- W4c — single render sites for the readout / deep-tools / gantt. Placed in the
+     INSPECTOR + DOCK grid cells at MEDIUM/WIDE + the COMPACT-short float fallback;
+     re-homed into the ResponsiveDock's ONE sheet at COMPACT-tall. Never duplicated:
+     each is rendered in exactly one of those two locations per the dockActive gate. -->
+{#snippet readoutBlock()}
+	<PointReadout
+		scope={readout ? 'point' : 'mean'}
+		lens={lensStore.lens}
+		lat={readout?.lat}
+		lon={readout?.lon}
+		time={ephemerisTime}
+		data={readout?.data}
+		loading={readout?.loading ?? false}
+		error={readout?.error}
+		pm25={pm25Estimate}
+		{aqEstimates}
+		{pollutantUnits}
+		airQuality={airQualityReading}
+		history={stationHistory}
+		historyLoading={stationHistoryLoading}
+		onclose={closeReadout}
+		onTransmissionForPoint={openTransmissionForPoint}
+		onAqDashboardForPoint={openAqDashboardForPoint}
+		onPlanPassForPoint={openPassPlanForPoint}
+	/>
+{/snippet}
+
+{#snippet toolsBlock()}
+	<!-- W3/W4c — the deep tools (master-detail), yoked to the pinned point. One tool
+	     at a time (open*ForPoint mutually exclude). At WIDE/MEDIUM they flow in the
+	     inspector column; at COMPACT-tall they are the dock's Tools view; at
+	     COMPACT-short each component's own position:fixed float is the byte-identical
+	     fallback. -->
+	{#if transmissionOpen}
+		<TransmissionSheet
+			pointLat={readout?.lat}
+			pointLon={readout?.lon}
+			curve={transmissionCurve}
+			loading={transmissionLoading}
+			error={transmissionError}
+			onclose={closeTransmission}
+			aerosolType={transmissionAerosolType}
+			aod={transmissionAod}
+			aodSource={transmissionConstituents?.aod550.caption}
+			pwvSource={transmissionConstituents?.pwv.caption}
+			angstrom={transmissionAngstrom}
+			{onAerosolTypeChange}
+			{onAodChange}
+			{onAngstromChange}
+			selectedBandId={transmissionBandId}
+			bandCurve={transmissionBandCurve}
+			bandLoading={transmissionBandLoading}
+			bandError={transmissionBandError}
+			{onBandSelect}
+			lookAzimuthDeg={transmissionAzimuthDeg}
+			lookElevationDeg={transmissionElevationDeg}
+			lookTarget={transmissionLookTarget}
+			{lookZenithDeg}
+			{lookAirmass}
+			lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
+			lookOccluded={lookOcclusion.occluded}
+			blocked={transmissionBlocked}
+			{sunAvailable}
+			{moonAvailable}
+			lookHorizon={transmissionPin?.polygon ?? null}
+			{onLookTargetChange}
+			{onLookAzimuthChange}
+			{onLookElevationChange}
+			showBeam={beamShow}
+			beamwidthDeg={beamBeamwidthDeg}
+			{beamRangeKm}
+			{onBeamToggle}
+			{onBeamwidthChange}
+			{onBeamRangeChange}
+			pathAod={beamPathAod}
+		/>
+	{/if}
+	{#if passPlanOpen && readout}
+		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
+	{/if}
+{/snippet}
+
+{#snippet ganttBlock()}
+	{#if ephemerisOpen}
+		<EphemerisGantt
+			location={viewCenter}
+			time={ephemerisTime}
+			bounds={viewBounds}
+			zoom={viewZoom}
+			onTimeChange={(t) => {
+				setEphemerisTime(t);
+				scheduleHashWrite();
+			}}
+		/>
+	{/if}
 {/snippet}
 
 <style>
@@ -2937,12 +3039,54 @@
 		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
+		/* W4c (TIN-1866): readout-ONLY (no tool open) at short/landscape — the gantt's
+		   full event clock here is taller than --field-bottom-reserve, so anchor the
+		   readout bottom at --gantt-reserve-rem to clear it (mirrors the portrait
+		   TIN-1810 fix, which is orientation:portrait-scoped and misses this band). */
+		.command-deck[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
+			:global(.readout[role='dialog']) {
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
+			max-height: calc(100dvh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 1rem) !important;
+		}
 		.command-deck[data-transmission='open'] :global(.toolbar),
 		.command-deck[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
 		.command-deck[data-transmission='open'] :global(.sheet) {
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
+			/* W4c: anchor the deep-tool sheet above the gantt's full footprint at
+			   short/landscape (the --field-panel-bottom reserve is ~10px shy of the
+			   gantt top here) so the sheet never dips into the gantt row. */
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px)) !important;
+			max-height: min(34dvh, calc(100dvh - var(--gantt-reserve-rem, 13rem) - 4rem)) !important;
+		}
+	}
+	/* ===== W4c (TIN-1866) — COMPACT-tall ResponsiveDock band (<640px, height≥501) =====
+	   The dock is a fixed bottom-sheet covering up to ~88dvh, so the bottom-right
+	   float home for the MapToolbar would sit UNDER the sheet (overlap). Re-home the
+	   toolbar to the map strip's top-left — on the always-visible map above the sheet
+	   — clear of the gantt/readout/sheet by construction. Gated on
+	   [data-dock-active='true'] so it engages only when the dock is actually live
+	   (post-hydration); the COMPACT-short / landscape-short float fallback + the
+	   pre-hydration paint keep their byte-identical placement. The !important matches
+	   the float-fallback rules' specificity so this wins inside the same band. */
+	@media (max-width: 639.98px) and (min-height: 501px) {
+		.command-deck[data-dock-active='true'] :global(.toolbar) {
+			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
+			left: max(0.75rem, env(safe-area-inset-left, 0px)) !important;
+			right: auto !important;
+			bottom: auto !important;
+			flex-direction: row !important;
+			flex-wrap: wrap !important;
+			width: auto !important;
+			max-width: calc(100vw - 1.5rem) !important;
+			z-index: 8 !important;
+		}
+		/* The attribution's bottom-left float would also dip under the sheet — hide it
+		   while the dock owns the bottom (the /docs credits link lives in the dock's
+		   reachable content surfaces; not lost). */
+		.command-deck[data-dock-active='true'] .attribution {
+			display: none !important;
 		}
 	}
 	:global(.follow-marker) {

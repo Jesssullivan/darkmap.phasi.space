@@ -909,6 +909,20 @@
 		.layer-rail.open {
 			transform: translateX(0);
 		}
+		/* W4c — the COMPACT ResponsiveDock sheet is z-index:11; the layers drawer is
+		   the Layers swap-view, so the drawer + its backdrop must sit ABOVE the dock
+		   (z-12). The rail-toggle (the open/close control) must in turn sit ABOVE the
+		   drawer so "close layers" stays clickable while the drawer overlays its
+		   corner — bump it to z-13 (its base is z-12). */
+		.layer-rail {
+			z-index: 12;
+		}
+		.rail-backdrop {
+			z-index: 12;
+		}
+		.rail-toggle {
+			z-index: 13;
+		}
 	}
 
 	@media (min-width: 640px) {
