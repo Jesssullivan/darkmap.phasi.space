@@ -45,6 +45,13 @@ build:
 capture-shipped-ui: build
     cd {{ root }} && node scripts/capture-shipped-ui.mjs
 
+# W4f — Command Deck breakpoint-boundary gate: assert data-layout-tier + the map
+# canvas floor across the breakpoint set + 639/640/641 & 1023/1024/1025 triplets +
+# a DPR=2 pass (SwiftShader, real WebGL+fonts). Exits non-zero on a tier/floor
+# regression. Override Chrome with CHROME_BIN.
+capture-breakpoints: build
+    cd {{ root }} && node scripts/capture-breakpoints.mjs
+
 # Clean then build
 rebuild: clean build
 
