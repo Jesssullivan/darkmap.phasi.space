@@ -1827,6 +1827,27 @@
 		return () => clearTimeout(t);
 	});
 
+	// W4a (TIN-1864) — publish the responsive layout tier as a DOM signal on
+	// <html> so the browser-RBE smoke can select the right non-overlap contract
+	// per breakpoint (and W4b/W4c read the same boundaries). Pure signal: it sets
+	// no styles itself. Boundaries match the Command Deck cascade
+	// (compact <640 / medium 640–1023 / wide ≥1024; command-deck.md §3).
+	onMount(() => {
+		if (!browser) return;
+		const wide = window.matchMedia('(min-width: 1024px)');
+		const medium = window.matchMedia('(min-width: 640px)');
+		const applyTier = () => {
+			document.documentElement.dataset.layoutTier = wide.matches ? 'wide' : medium.matches ? 'medium' : 'compact';
+		};
+		applyTier();
+		wide.addEventListener('change', applyTier);
+		medium.addEventListener('change', applyTier);
+		return () => {
+			wide.removeEventListener('change', applyTier);
+			medium.removeEventListener('change', applyTier);
+		};
+	});
+
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
 		readoutGen++;
