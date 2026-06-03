@@ -1872,8 +1872,8 @@
 	// (compact <640 / medium 640–1023 / wide ≥1024; command-deck.md §3).
 	onMount(() => {
 		if (!browser) return;
-		const wide = window.matchMedia('(min-width: 1024px)');
-		const medium = window.matchMedia('(min-width: 640px)');
+		const wide = window.matchMedia('(min-width: 1024px) and (min-height: 501px)');
+		const medium = window.matchMedia('(min-width: 640px) and (min-height: 501px)');
 		const applyTier = () => {
 			const tier = wide.matches ? 'wide' : medium.matches ? 'medium' : 'compact';
 			document.documentElement.dataset.layoutTier = tier;
@@ -2305,7 +2305,7 @@
 	   + inspector PUSH the 1fr stage when expanded); WIDE overrides to fixed wide
 	   columns (the ≥1024px block further down). This replaces the PR5 --portal-inset
 	   faux-grid + the z4→z13 ladder + the .field-hud{pointer-events:none} scrim. */
-	@media (min-width: 640px) {
+	@media (min-width: 640px) and (min-height: 501px) {
 		.command-deck {
 			display: grid;
 			position: fixed;
@@ -2570,7 +2570,7 @@
 	   permanent (no icon-rail / no tab) — the data-rail-expanded / data-inspector-open
 	   attributes are inert. The shared structure (areas, rows, de-float rules, stage
 	   overlays) is inherited from the ≥640px block. */
-	@media (min-width: 1024px) {
+	@media (min-width: 1024px) and (min-height: 501px) {
 		.command-deck {
 			grid-template-columns: 20rem minmax(0, 1fr) 26rem;
 		}
@@ -2598,7 +2598,7 @@
 		inset: 0;
 		pointer-events: none;
 	}
-	@media (min-width: 1024px) {
+	@media (min-width: 1024px) and (min-height: 501px) {
 		.portal-frame {
 			display: block;
 		}
@@ -2676,7 +2676,7 @@
 	   this card just fills it (overflow:hidden clips the wide content while collapsed).
 	   The rail-expand toggle is pinned on top; below it the instrument row + the
 	   scrolling rail body. WIDE overrides the padding + always shows everything. */
-	@media (min-width: 640px) {
+	@media (min-width: 640px) and (min-height: 501px) {
 		.left-dock {
 			grid-area: rail;
 			display: flex;
@@ -2784,7 +2784,7 @@
 	   their own defaults: the MEDIUM-collapse rules above are gated on
 	   html[data-layout-tier='medium'], so they never fire at WIDE — WIDE is
 	   byte-identical with no re-override needed. */
-	@media (min-width: 1024px) {
+	@media (min-width: 1024px) and (min-height: 501px) {
 		.left-dock {
 			padding: 0.85rem 0.9rem;
 		}
@@ -2840,7 +2840,7 @@
 	   position:relative at ≥640px), clear of the dock row — instead of the COMPACT
 	   field-bottom-reserve offset. W4b broadened this from WIDE-only to ≥640px so the
 	   MEDIUM stage anchors it correctly too. */
-	@media (min-width: 640px) {
+	@media (min-width: 640px) and (min-height: 501px) {
 		.attribution {
 			bottom: 0.75rem;
 			left: 0.75rem;

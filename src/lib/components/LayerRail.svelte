@@ -487,7 +487,7 @@
 	   breakpoint (≥640px) so the re-home engages exactly with the MEDIUM/WIDE grid
 	   (W4b moved this from ≥1024px). The base float rule above + the mobile drawer
 	   (<640px) stay byte-identical, so COMPACT renders as before. */
-	@media (min-width: 640px) {
+	@media (min-width: 640px) and (min-height: 501px) {
 		.layer-rail {
 			position: static;
 			top: auto;
