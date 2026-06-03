@@ -775,6 +775,15 @@ async function runOrbitSmoke(page) {
 
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 	const results = await page.evaluate((inputPairs) => {
+		// W4a (TIN-1864): the COMPACT swap-host is ONE bottom-sheet whose
+		// Layers/Readout/Tools views are mutually exclusive, so a swapped-out pair
+		// member (e.g. the point readout while the transmission sheet shows) is
+		// legitimately absent — not an overlap failure. Tolerate a null box ONLY in
+		// that COMPACT swap-host; everywhere else (today's float fallback, medium,
+		// wide) a missing box stays a hard error so real regressions still throw.
+		const layoutTier = document.documentElement.dataset.layoutTier ?? '';
+		const swapHost = document.querySelector('[data-responsive-dock], .responsive-dock');
+		const tolerateAbsent = layoutTier === 'compact' && swapHost instanceof HTMLElement;
 		const boxFor = (selector) => {
 			const node = document.querySelector(selector);
 			if (!(node instanceof HTMLElement)) return null;
@@ -808,12 +817,12 @@ async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 				a !== null &&
 				b !== null &&
 				!(a.right <= b.left + 2 || b.right <= a.left + 2 || a.bottom <= b.top + 2 || b.bottom <= a.top + 2);
-			return { a, aSelector, b, bSelector, overlap };
+			return { a, aSelector, b, bSelector, overlap, tolerateAbsent };
 		});
 	}, pairs);
 
 	for (const result of results) {
-		if (!result.a || !result.b) {
+		if ((!result.a || !result.b) && !result.tolerateAbsent) {
 			throw new Error(`missing visible HUD box for ${label}: ${JSON.stringify(result)}`);
 		}
 		if (result.overlap) {
