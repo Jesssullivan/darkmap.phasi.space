@@ -2059,19 +2059,9 @@
 				onexpand={() => setRailExpanded(true)}
 			/>
 		</div>
-		<!-- W2 — the persistent TOOLS launcher cluster: all four deep tools, always one
-		     click away, full opacity in every lens; the lens only re-orders + accents. -->
-		<ToolsCluster
-			lens={lensStore.lens}
-			hasPoint={!!readout}
-			{ephemerisOpen}
-			onlaunch={(tool) => {
-				if (tool === 'transmission') openTransmissionForPoint();
-				else if (tool === 'passplan') openPassPlanForPoint();
-				else if (tool === 'aq') openAqDashboardForPoint();
-				else ephemerisOpen = !ephemerisOpen;
-			}}
-		/>
+		<!-- idea ① — the persistent TOOLS launcher cluster moved OUT of the rail to the
+		     map's right corner (rendered in fieldFloats as compact pills), freeing the
+		     LayerRail's full scrollable height. Same launchers, same lens order/accent. -->
 	</aside>
 
 	<!-- STAGE region: the MapLibre canvas as grid-area:stage — NO position:fixed,
@@ -2195,6 +2185,25 @@
 	     keep it rendered (breakpoint-exclusive, never removed). De-dup, not deletion. -->
 	{#if ephemerisOpen}
 		<SkyCompass location={viewCenter} time={ephemerisTime} />
+	{/if}
+
+	<!-- idea ① — the deep-tool launchers as compact pills on the map's RIGHT corner
+	     (mirrors the top-left MapToolbar). WIDE/MEDIUM only — COMPACT reaches the tools
+	     via the ResponsiveDock's Tools tab, so no second launcher there. The launch
+	     handlers + the inspector master-detail dock are unchanged from the rail mount. -->
+	{#if !dockActive}
+		<ToolsCluster
+			variant="overlay"
+			lens={lensStore.lens}
+			hasPoint={!!readout}
+			{ephemerisOpen}
+			onlaunch={(tool) => {
+				if (tool === 'transmission') openTransmissionForPoint();
+				else if (tool === 'passplan') openPassPlanForPoint();
+				else if (tool === 'aq') openAqDashboardForPoint();
+				else ephemerisOpen = !ephemerisOpen;
+			}}
+		/>
 	{/if}
 
 	<MapToolbar
@@ -2650,6 +2659,20 @@
 			flex-wrap: wrap;
 			gap: 0.4rem;
 			max-width: calc(100% - 1.5rem);
+		}
+		/* idea ① — the deep-tool launcher pills hug the stage's RIGHT edge, vertically
+		   centered: clear of the top-left MapToolbar, the top .sky dome (MEDIUM), and the
+		   bottom-right attribution. Inside the stage cell (position:relative;
+		   overflow:hidden) so they can never touch the header / inspector / dock regions. */
+		.stage :global(.tools-cluster.overlay) {
+			position: absolute;
+			right: 0.75rem;
+			top: 50%;
+			transform: translateY(-50%);
+			left: auto;
+			bottom: auto;
+			z-index: 8;
+			max-height: calc(100% - 1.5rem);
 		}
 		/* De-dup: the RAIL instrument column owns the embedded sky dome. The standalone
 		   float is hidden ONLY when that embedded dome is actually visible — i.e. at

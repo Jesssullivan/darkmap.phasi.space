@@ -14,9 +14,12 @@
 		ephemerisOpen: boolean;
 		/** Launch the chosen tool (the page wires this to the open*ForPoint handlers). */
 		onlaunch: (tool: ToolId) => void;
+		/** 'rail' = labelled tiles in the rail; 'overlay' = compact pills on the map's
+		 * right-edge corner (idea ①). Same TOOLS + lens order/accent in both. */
+		variant?: 'rail' | 'overlay';
 	}
 
-	let { lens, hasPoint, ephemerisOpen, onlaunch }: Props = $props();
+	let { lens, hasPoint, ephemerisOpen, onlaunch, variant = 'rail' }: Props = $props();
 
 	// The four deep tools, each as an ALWAYS-PRESENT, full-opacity launcher. `lens`
 	// is the persona this tool leads for — used ONLY to sort it first + accent it
@@ -34,8 +37,8 @@
 	const orderFor = (toolLens: Lens): number => (toolLens === lens ? -1 : 0);
 </script>
 
-<section class="tools-cluster" aria-label="Deep tools">
-	<h2 class="cluster-title">Tools</h2>
+<section class="tools-cluster" class:overlay={variant === 'overlay'} aria-label="Deep tools">
+	{#if variant === 'rail'}<h2 class="cluster-title">Tools</h2>{/if}
 	<div class="cluster-grid">
 		{#each TOOLS as t (t.id)}
 			{@const Icon = t.icon}
@@ -54,9 +57,11 @@
 						{t.label}
 						{#if t.id === 'twilight' && ephemerisOpen}<span class="on-dot" aria-label="open" title="open"></span>{/if}
 					</span>
-					<span class="tool-sub">{t.sub}</span>
+					{#if variant === 'rail'}<span class="tool-sub">{t.sub}</span>{/if}
 				</span>
-				<span class="tool-go" aria-hidden="true">{hasPoint || t.id === 'twilight' ? 'Open' : 'Pin →'}</span>
+				{#if variant === 'rail'}<span class="tool-go" aria-hidden="true"
+						>{hasPoint || t.id === 'twilight' ? 'Open' : 'Pin →'}</span
+					>{/if}
 			</button>
 		{/each}
 	</div>
@@ -167,5 +172,42 @@
 		border-radius: 50%;
 		background: var(--accent-amber);
 		box-shadow: 0 0 4px var(--accent-amber);
+	}
+
+	/* OVERLAY variant (idea ①) — compact rounded pills hugging the map's right edge.
+	   +page positions the cluster absolute in the stage cell; these pills echo the
+	   top-left MapToolbar's pill vocabulary so both stage corners speak one control
+	   language. Pulling the cluster out of the rail frees the LayerRail's full height. */
+	.tools-cluster.overlay {
+		border-top: 0;
+		padding-top: 0;
+		margin-top: 0;
+		gap: 0.4rem;
+	}
+	.tools-cluster.overlay .cluster-grid {
+		gap: 0.4rem;
+	}
+	.tools-cluster.overlay .tool-tile {
+		width: auto;
+		min-height: 2.5rem;
+		gap: 0.45rem;
+		padding: 0.4rem 0.7rem;
+		border-radius: 999px;
+		background: rgba(8, 10, 16, 0.85);
+		backdrop-filter: blur(6px);
+		border-color: rgba(255, 255, 255, 0.14);
+	}
+	.tools-cluster.overlay .tool-label {
+		font-size: 0.72rem;
+		white-space: nowrap;
+	}
+	.tools-cluster.overlay .tool-tile.lead {
+		border-color: rgba(var(--accent-amber-rgb), 0.7);
+		background: rgba(var(--accent-amber-rgb), 0.12);
+	}
+	@media (pointer: coarse) {
+		.tools-cluster.overlay .tool-tile {
+			min-height: 3rem;
+		}
 	}
 </style>
