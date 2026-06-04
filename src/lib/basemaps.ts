@@ -1,9 +1,10 @@
 /**
  * Basemap definitions. All sources are anonymous, no API key.
  *
- * "dark" matches the project's aesthetic AND keeps the basemap quiet so
- * the radiance overlay reads cleanly — it's the default. "osm" is the
- * familiar reference. "satellite" is for ground-truthing dark sky claims.
+ * "osm" is the familiar reference AND the default — the out-of-box display is
+ * OSM + a faint (25%) VIIRS + Falchi radiance wash so streets stay legible under
+ * the light-pollution layers. "dark" keeps the basemap quiet for a stronger
+ * radiance read. "satellite" is for ground-truthing dark sky claims.
  */
 
 export interface BasemapDef {
@@ -52,6 +53,6 @@ export const BASEMAPS: ReadonlyArray<BasemapDef> = [
 	},
 ];
 
-export const DEFAULT_BASEMAP_ID = 'dark';
+export const DEFAULT_BASEMAP_ID = 'osm';
 
 export const basemapById = (id: string): BasemapDef => BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];

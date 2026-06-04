@@ -652,9 +652,9 @@ async function runLensReweightSmoke(page) {
 	expect(tierOf(s, 'worldAtlas') === '2', `Orbit worldAtlas should be Tier-2, got ${tierOf(s, 'worldAtlas')}`);
 	assertNeverGated(s, 'orbit');
 
-	// PR5: an explicit &b= must survive the Dark-preferring per-lens nudge.
-	// lens=links is Dark-preferring (would nudge to Dark if the basemap were
-	// unpinned), so it exercises the nudge-skip; a hash-only goto won't reload
+	// PR5: an explicit &b= must survive the per-lens basemap nudge.
+	// lens=links nudges toward the default basemap (now OSM) if unpinned, so it
+	// exercises the nudge-skip; a hash-only goto won't reload
 	// (the module lens store would keep its value), so set the hash then reload.
 	await page.evaluate(() => {
 		window.location.hash = '#m=42.44,-76.5,9&b=satellite&lens=links';
