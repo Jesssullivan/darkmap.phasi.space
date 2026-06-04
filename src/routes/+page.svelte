@@ -2674,7 +2674,11 @@
 	   overlays) is inherited from the ≥640px block. */
 	@media (min-width: 1024px) and (min-height: 501px) {
 		.command-deck {
-			grid-template-columns: 20rem minmax(0, 1fr) 26rem;
+			/* W5b — laptop band (1024–1365px): trim the side columns so the 1fr stage
+			   clears ~320px (≥300) at 1024 instead of §9's 240px bare remainder. The
+			   roomy band (≥1366px, below) restores the full 22rem/30rem bay + 380px
+			   stage floor. Docked deep-tools at the 22rem inspector scroll (W3). */
+			grid-template-columns: 19rem minmax(0, 1fr) 22rem;
 		}
 		/* WIDE — the rail's instrument column always shows the embedded dome, so the
 		   standalone float is hidden unconditionally (the data-rail-expanded attribute

@@ -116,12 +116,11 @@ try {
 			const cr = canvas?.getBoundingClientRect();
 			return { tier, canvas: cr ? { w: Math.round(cr.width), h: Math.round(cr.height) } : null };
 		});
-		// §9 floors: compact/medium use the smoke's min(300, 0.9*vp). WIDE applies the
-		// hard 380px STAGE floor only in the roomy band (>=1366px); the laptop band
-		// (1024-1365px) is an intentional 1fr remainder (a deliberately smaller map, no
-		// hard floor per command-deck.md §9), so only a "still-usable" 180px sanity
-		// bound applies there — catches a truly-crushed stage without fighting §9.
-		const floorW = vp.tier === 'wide' ? (vp.w >= 1366 ? 380 : 180) : Math.min(300, Math.floor(vp.w * 0.9));
+		// Stage-width floors: compact/medium use the smoke's min(300, 0.9*vp). WIDE
+		// applies the §9 hard 380px floor in the roomy band (>=1366px); the laptop band
+		// (1024-1365px) now enforces 300px — W5b trimmed the side columns (19rem/22rem)
+		// so the 1fr stage clears ~320px at 1024 instead of the prior 240px remainder.
+		const floorW = vp.tier === 'wide' ? (vp.w >= 1366 ? 380 : 300) : Math.min(300, Math.floor(vp.w * 0.9));
 		const floorH = Math.min(300, Math.floor(vp.h * 0.9));
 		const tierOk = m.tier === vp.tier;
 		const canvasOk = m.canvas && m.canvas.w >= floorW && m.canvas.h >= floorH;
