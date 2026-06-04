@@ -396,15 +396,38 @@ re-derives only framing and the map stays put by construction. Add `lens?: Lens`
 - **Acceptance gate:** switching lens *reorders* the same readout sections + swaps the CTA — it never
   adds/removes a capability. No per-lens forked components.
 
-### 11.3 Re-weight rules (dim + reorder, never hide/disable)
+### 11.3 Re-weight rules (promote + reorder — NEVER dim/hide/disable)
 
-3-tier opacity: **Tier-1** (active headline value + single CTA) full amber/cyan; **Tier-2**
-(active-lens layers/tools) full opacity, no accent; **Tier-3** (off-lens rows/chips/toolbar items)
-~0.55 opacity + lighter weight, **still keyboard-focusable + clickable**. Forbidden: `aria-disabled`,
-`display:none`, removal. The MapLibre canvas always outranks chrome in contrast. Animate **only the
-diff** (~150–250ms rail reorder + CTA label cross-fade), behind the shipped `prefers-reduced-motion`
-guard; **never animate the map viewport**. Per-lens basemap change is a **subtle default-only nudge**
-— never overrides an explicit user choice, never alters an active overlay's apparent meaning.
+> **Superseded the opacity model (redesign W0+, 2026-06).** The original 3-tier
+> *opacity* scheme (Tier-3 ~0.55) read as **disabled** and was rejected by the
+> operator; W0 (#380) deleted the `--*-tier3-opacity` tokens and every dim usage.
+> The shipped model — the **Command Deck** (`docs/ux/command-deck.md §4`) — re-weights
+> with **exactly four non-destructive mechanisms** and may never touch
+> opacity / weight-down / colour-to-grey / `aria-disabled` / `pointer-events` / `display`:
+>
+> 1. **Order** — lead sections sort to the top; off-lens stay **full strength** and sort below.
+> 2. **Grouping** — each region splits into an expanded "[Lens] — your tools" group + ONE
+>    collapsed-but-obvious "More — Air quality, Pollen, History (3) ▾" accordion (full-contrast,
+>    one click). Progressive disclosure (reachable + legible) — the opposite of dimming.
+> 3. **Size / typography** — the lead value renders **larger** (the Bortle headline, extended per
+>    lens); others use the shared body size. Emphasis = lead bigger, never others smaller/fainter.
+> 4. **Colour-coded + labelled headers** — ONE per-lens accent (Sky amber / Air AQI-band /
+>    Links signal-blue / Orbit violet) on the **active region header + lens chip + lead value only**,
+>    **always paired with a text label** (ColorVision-Assist). Off-lens headers stay neutral ink at
+>    full opacity. *(per-lens accents land in W5c; amber-only ships today.)*
+>
+> **CI-enforced:** the browser-RBE `lens-reweight` smoke asserts `opacity===1` for every readout
+> section in every lens — a re-grey fails CI. Forbidden: opacity-dim, `aria-disabled`, `display:none`,
+> removal, weight-down-as-disabled-signal. Animate **only the diff** (~150–250ms reorder + label
+> cross-fade) behind `prefers-reduced-motion`; **never animate the map viewport**. Per-lens basemap
+> change is a **subtle default-only nudge** — never overrides an explicit choice or an active overlay's
+> meaning.
+>
+> **§11.4–11.6 below predate the Command Deck** and describe the old float-rail placement
+> (bottom-right toolbar/readout, ~22rem cap). The shipped spatial model is the CSS-grid Command Deck
+> (HEADER / RAIL / STAGE / INSPECTOR / DOCK at WIDE; icon-nav-rail + collapsible inspector at MEDIUM;
+> one non-modal `ResponsiveDock` bottom-sheet at COMPACT) — see `docs/ux/command-deck.md` for the
+> authoritative regions, responsive cascade, and the never-overlap-by-construction invariant.
 
 ### 11.4 The rails
 
