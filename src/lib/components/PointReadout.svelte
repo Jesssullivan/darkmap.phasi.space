@@ -88,9 +88,11 @@
 		 */
 		onTransmissionForPoint?: () => void;
 		/**
-		 * Open the dedicated AQ-analysis dashboard (`/aq`) seeded from THIS point
-		 * + time. The dashboard pulls the full time-series + multi-pollutant +
-		 * source cross-validation for the location (V6-4).
+		 * Open the AQ-analysis dashboard seeded from THIS point + time. As of
+		 * TIN-1871 (idea ③) this is an in-SPA modal-popout (a focus-trapped
+		 * transient surface), not the old `/aq` route navigation — but it pulls the
+		 * same full time-series + multi-pollutant + source cross-validation for the
+		 * location (V6-4).
 		 */
 		onAqDashboardForPoint?: () => void;
 		/** Open the Orbit "Plan a pass" deep tool seeded from THIS point (S3). */

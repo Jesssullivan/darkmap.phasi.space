@@ -2,7 +2,6 @@
 	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import {
 		classifyPositionFreshness,
@@ -65,6 +64,8 @@
 	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
+	import AqModal from '$lib/components/AqModal.svelte';
+	import type { AqSeed } from '$lib/components/AqDashboard.svelte';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
 	// minimal Feature/FeatureCollection structure that MapLibre consumes.
@@ -276,6 +277,13 @@
 	let transmissionOpen = $state(false);
 	let passPlanOpen = $state(false);
 
+	// TIN-1871 idea ③ — the AQ dashboard is an in-SPA modal-popout, not a route.
+	// Opened from the Air-quality launcher + the readout CTA (and auto-opened from
+	// the thin `/aq` redirect's `aq=1` hash flag). Viewport/pin-driven: the seed is
+	// the pinned point / shared hash; the modal's AqDashboard reuses getSensors(bbox).
+	let aqModalOpen = $state(false);
+	let aqModalSeed = $state<AqSeed | null>(null);
+
 	// W4c (TIN-1866) — the COMPACT ResponsiveDock's ONE-sheet swap view. Derived from
 	// the existing point/tool state so the smoke's canvas-pin → Readout view and
 	// "open transmission" → Tools view flows fall out for free. A manual segment tap
@@ -462,18 +470,26 @@
 		dockViewPinned = null;
 	}
 
-	// Hand off to the dedicated AQ-analysis dashboard (/aq, V6-4), seeded from the
-	// selected point + ephemeris time via the shared URL-hash codec. The map zoom
-	// rides along so a "View on map" return lands where we left.
+	// TIN-1871 idea ③ — open the AQ dashboard as an in-SPA modal-popout (no longer
+	// `goto('/aq')`). Seeded from the selected point + ephemeris time; the modal's
+	// AqDashboard pulls stations via the same getSensors(bbox) ±0.75° fetch. Both
+	// the overlay TOOLS pill and the readout CTA route here.
 	function openAqDashboardForPoint(): void {
-		// Never gate on a pinned point (command-deck.md §5): with no pin, seed the
-		// dashboard from the viewport center so the TOOLS launcher always works.
+		// Never gate on a pinned point (command-deck.md §5): with no pin, seed from
+		// the viewport center so the TOOLS launcher always works (carry-the-query,
+		// zero re-entry).
 		const at = readout ?? { lat: viewCenter.lat, lon: viewCenter.lon };
-		const hash = encodeHash({
-			view: { lat: at.lat, lon: at.lon, zoom: mapInstance?.getZoom() ?? 8 },
-			time: ephemerisTime,
-		});
-		void goto(`/aq${hash}`);
+		aqModalSeed = { lat: at.lat, lon: at.lon, time: ephemerisTime };
+		aqModalOpen = true;
+	}
+	function closeAqModal(): void {
+		aqModalOpen = false;
+	}
+	// "View on map" from inside the modal: close + recentre on the analysed point
+	// (the route's old `/<hash>` link became a same-SPA recentre).
+	function aqViewOnMap(at: { lat: number; lon: number }): void {
+		aqModalOpen = false;
+		mapInstance?.easeTo({ center: [at.lon, at.lat], duration: 600 });
 	}
 
 	// Load the per-pin ephemeris (sun/moon alt-az + DEM horizon) for the selected
@@ -1203,6 +1219,9 @@
 	// chips land in S1/PR2; this is the keyboard path.)
 	function onLensKey(e: KeyboardEvent): void {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		// While the AQ modal-popout is open it owns the keyboard (focus-trapped); the
+		// lens number-key shortcut must not switch lenses behind it.
+		if (aqModalOpen) return;
 		const t = e.target as HTMLElement | null;
 		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
 			return;
@@ -1910,6 +1929,29 @@
 		return () => clearTimeout(t);
 	});
 
+	// TIN-1871 idea ③ — auto-open the AQ modal from the thin `/aq` redirect. That
+	// route bounces to `/<hash>&aq=1` (the hash can't reach the server), so we read
+	// the raw `aq=1` flag here on init, seed the modal from the decoded view (or the
+	// viewport centre), then strip the flag so a refresh/back doesn't re-pop and the
+	// shareable URL stays the clean `/<hash>`. Preserves `/aq#m=…` deep-links + the
+	// aq-dashboard smoke's path.
+	onMount(() => {
+		if (!browser) return;
+		const raw = window.location.hash.replace(/^#/, '');
+		const hasAqFlag = raw.split('&').some((seg) => seg === 'aq=1' || seg === 'aq');
+		if (!hasAqFlag) return;
+		const parsed = decodeHash(window.location.hash);
+		const at = parsed.view ?? { lat: viewCenter.lat, lon: viewCenter.lon };
+		aqModalSeed = { lat: at.lat, lon: at.lon, time: parsed.time ?? ephemerisTime };
+		aqModalOpen = true;
+		// Strip the transient flag, keeping the rest of the hash (m=/et=/lens=…).
+		const kept = raw
+			.split('&')
+			.filter((seg) => seg !== 'aq=1' && seg !== 'aq')
+			.join('&');
+		window.history.replaceState(window.history.state, '', `${window.location.pathname}${kept ? `#${kept}` : ''}`);
+	});
+
 	// W4a (TIN-1864) — publish the responsive layout tier as a DOM signal on
 	// <html> so the browser-RBE smoke can select the right non-overlap contract
 	// per breakpoint (and W4b/W4c read the same boundaries). Pure signal: it sets
@@ -2173,6 +2215,11 @@
 {/if}
 
 <Tour bind:open={tourOpen} steps={tourSteps} />
+
+<!-- TIN-1871 idea ③ — the AQ dashboard modal-popout (transient surface). Portals to
+     <body>, so it sits above the Command Deck grid without joining it; the map +
+     deck stay live behind a faint (non-opaque) backdrop. Self-gates on `open`. -->
+<AqModal open={aqModalOpen} seed={aqModalSeed} onClose={closeAqModal} onViewOnMap={aqViewOnMap} />
 
 {#snippet fieldFloats()}
 	<!-- W3 moved the deep tools (TransmissionSheet / PassPlanPanel) OUT of here into
