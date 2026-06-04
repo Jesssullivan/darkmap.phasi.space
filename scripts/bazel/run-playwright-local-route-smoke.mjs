@@ -997,23 +997,33 @@ async function runSmogSmoke(page) {
 }
 
 async function runAqDashboardSmoke(page) {
-	// TIN-1815: the /aq dashboard populates from the mocked OpenAQ stations +
-	// history. Navigate straight to the dashboard with a point in the hash (NYC,
-	// where the canned stations sit) — `m=lat,lon,zoom` → applyHash → loadPoint.
+	// TIN-1815 / TIN-1871: the /aq dashboard populates from the mocked OpenAQ
+	// stations + history. As of TIN-1871 idea ③ the dashboard is an in-SPA
+	// modal-popout, not a route — `/aq` is now a thin redirect that bounces the
+	// deep-link into the SPA (`/#m=…&aq=1`), where the map page auto-opens the AQ
+	// modal seeded from the hash. So navigating to `/aq#m=…` (NYC, where the canned
+	// stations sit) still drives: redirect → modal opens → loadPoint → OpenAQ fetch.
 	// The proof cell has no WebGL AND no system fonts, so we assert the DASHBOARD
 	// behaviour + DOM presence/text — never visibility/bbox (text-only nodes
 	// collapse to zero size without fonts and read as "hidden"). The OpenAQ fetch
-	// fires, the AQI badge computes a number, the Area overview reports stations
-	// (not the empty state). Remove the data path ⇒ this fails.
+	// fires, the modal renders (role=dialog), the AQI badge computes a number, the
+	// Area overview reports stations (not the empty state). Remove the data path or
+	// the redirect/auto-open ⇒ this fails.
 	const openaqRequest = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/atmospheric/openaq', {
 		timeout: 20_000,
 	});
 	await page.goto(`${baseURL}/aq#m=40.75,-73.95,9`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-	await openaqRequest; // the dashboard pulled stations for the seeded point
+	await openaqRequest; // the modal's dashboard pulled stations for the seeded point
+
+	// The AQ modal-popout mounted (the redirect's `aq=1` flag auto-opened it). Wait
+	// for the dialog ATTACHED — same font-less-cell caveat as the badge below.
+	const dialog = page.locator('[data-aq-modal="open"]');
+	await dialog.waitFor({ state: 'attached', timeout: 20_000 });
 
 	// AQI badge computes from the mocked stations (estimate → US-EPA AQI). Wait
 	// for it ATTACHED (not visible) — the font-less cell renders text nodes at
-	// zero size; the value is in textContent regardless.
+	// zero size; the value is in textContent regardless. The selector is unchanged
+	// — the dashboard body moved into the modal but kept its data/aria hooks.
 	const aqiNum = page.locator('.aqi-badge .aqi-num');
 	await aqiNum.waitFor({ state: 'attached', timeout: 20_000 });
 	const aqiText = ((await aqiNum.textContent()) ?? '').trim();
@@ -1025,7 +1035,7 @@ async function runAqDashboardSmoke(page) {
 		throw new Error('aq-dashboard: Area overview shows the no-stations empty state despite mocked stations');
 	}
 
-	console.log(`darkmap aq-dashboard smoke: /aq populated — AQI=${aqiText}, stations present (no empty state)`);
+	console.log(`darkmap aq-dashboard smoke: /aq → modal opened — AQI=${aqiText}, stations present (no empty state)`);
 }
 
 async function installNetworkGuards(page, baseURL) {
