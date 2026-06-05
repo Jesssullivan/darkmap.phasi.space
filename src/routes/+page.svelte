@@ -2234,28 +2234,11 @@
 	data-inspector-open={inspectorOpen}
 	data-dock-active={dockActive}
 >
-	<!-- HEADER region: lens chips (left) + geocoder (right), out of the float-soup
-	     into a reserved top row. ≤1023px display:contents → both keep their own
-	     fixed placement. -->
-	<header class="deck-header" aria-label="Lens + search">
-		<LensSwitcher
-			active={lensStore.lens}
-			onselect={(lens) => {
-				lensStore.set(lens);
-				scheduleHashWrite();
-			}}
-		/>
-		<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
-		<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
-
-		<GeocoderSearch
-			bias={viewCenter}
-			onSelect={(sel) => {
-				if (!mapInstance) return;
-				mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
-			}}
-		/>
-	</header>
+	<!-- X2 — the HEADER region is gone: its lens chips + search are now map overlays
+	     (in fieldFloats, inside .stage), reclaiming the ~4rem band for a taller map.
+	     The lens switcher sits top-right, the compact search top-left above the toolbar;
+	     at COMPACT the deck is display:contents so both keep their own fixed placement
+	     (byte-identical fallback). -->
 
 	<!-- RAIL region: the per-lens instrument row on top + the LayerRail below. At
 	     WIDE this is the left grid track (20rem) — it PUSHES the stage, never
@@ -2505,6 +2488,28 @@
 		onchange={onRouteFileChange}
 	/>
 
+	<!-- X2 — lens switcher + search, re-homed from the deleted HEADER region onto the
+	     stage. At WIDE/MEDIUM the deck pins the lens chips top-right + the compact search
+	     top-left (above the toolbar); at COMPACT (.stage display:contents) each keeps its
+	     own position:fixed placement = the byte-identical fallback. -->
+	<LensSwitcher
+		active={lensStore.lens}
+		onselect={(lens) => {
+			lensStore.set(lens);
+			scheduleHashWrite();
+		}}
+	/>
+	<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
+	<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
+	<GeocoderSearch
+		compact
+		bias={viewCenter}
+		onSelect={(sel) => {
+			if (!mapInstance) return;
+			mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
+		}}
+	/>
+
 	<footer class="attribution">
 		<a href="/docs">credits + sources</a>
 	</footer>
@@ -2658,7 +2663,6 @@
 	   depend on. MEDIUM (≥640px) + WIDE (≥1024px) override it with the real grid
 	   below — a strict min-width cascade (no paired max/min brackets). */
 	.command-deck,
-	.deck-header,
 	.stage,
 	.deck-inspector,
 	.deck-dock {
@@ -2704,9 +2708,10 @@
 			   with the fontless CI cell's zero-metric text — can enter a grid
 			   track-sizing CYCLE that pegs the main thread before DCL (the page
 			   never loads; no console). Capping the min at 0 breaks the cycle. */
-			grid-template-rows: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+			/* X2 — the HEADER row is gone (its lens chips + search are stage overlays now);
+			   the rail/stage/inspector row is the top row → the map reclaims ~4rem of height. */
+			grid-template-rows: minmax(0, 1fr) minmax(0, auto);
 			grid-template-areas:
-				'header header header'
 				'rail stage inspector'
 				'dock dock dock';
 			gap: 0.75rem;
@@ -2724,16 +2729,6 @@
 		/* contain:layout isolates each region's internal layout so a child's
 		   intrinsic sizing can't propagate back into the grid track computation
 		   (belt-and-suspenders with minmax(0,…) against the fontless layout cycle). */
-		.deck-header {
-			grid-area: header;
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 1rem;
-			min-width: 0;
-			min-height: 0;
-			contain: layout;
-		}
 		.stage {
 			grid-area: stage;
 			display: block;
@@ -2840,35 +2835,6 @@
 		   own <640px float positioning is untouched (the COMPACT fallback). The stage
 		   overlays (toolbar, sky, sheets) stay fixed at COMPACT; here they clip to the
 		   stage. */
-		/* min-width:0 on BOTH flex children drops the default `min-width:auto`
-		   min-content floor. In the fontless CI RBE cell, degenerate text metrics
-		   leave the chips'/input's min-content inline-size unresolvable, which can
-		   stall the .deck-header flex row's inline-axis sizing and peg layout before
-		   DCL. The prior W1 fix only capped the block axis (minmax(0,…) rows); this
-		   is the inline-axis counterpart. */
-		.deck-header :global(.lens-switcher) {
-			position: static;
-			inset: auto;
-			z-index: auto;
-			min-width: 0;
-		}
-		.deck-header :global(.geocoder) {
-			position: relative;
-			top: auto;
-			left: auto;
-			transform: none;
-			z-index: auto;
-			width: min(28rem, 100%);
-			min-width: 0;
-		}
-		/* The geocoder's results dropdown overlays following content (anchored to
-		   the input), not the viewport. */
-		.deck-header :global(.geocoder .dropdown) {
-			position: absolute;
-			left: 0;
-			right: 0;
-			z-index: 20;
-		}
 		/* INSPECTOR: the readout is the persistent right column — fills the cell, no
 		   fixed anchor, scrolls within the cell. Covers the base readout AND the
 		   deep-tool overview states. */
@@ -2919,13 +2885,36 @@
 		   (which is position:relative) instead of the viewport — keeping them off the
 		   HEADER / INSPECTOR / DOCK regions by construction. MapErrorToast + drop-hint
 		   already live in the stage. */
-		/* Map controls live on the map's OWN top-left corner (the conventional
-		   map-control home — Cesium/Palantir/Google Maps), a horizontal cluster.
-		   This clears the lower-right (where it crowded the inspector + the twilight
-		   gantt) — the operator's "buttons piled in the lower right" complaint. */
-		.stage :global(.toolbar) {
+		/* X2 — the re-homed HEADER controls join the stage overlays. Search owns the
+		   top-LEFT (the universal map-search slot) as a compact pill; the lens switcher
+		   owns the top-RIGHT (the "mode-picker" slot, clear of the right-edge tools); the
+		   MapToolbar stacks just below the search. All position:absolute → they clip to
+		   the stage cell, off the inspector/dock by construction. At COMPACT the deck is
+		   display:contents so these rules don't apply and each keeps its own fixed float. */
+		.stage :global(.geocoder) {
 			position: absolute;
 			top: 0.75rem;
+			left: 0.75rem;
+			right: auto;
+			transform: none;
+			z-index: 10;
+			max-width: calc(100% - 1.5rem);
+		}
+		.stage :global(.lens-switcher) {
+			position: absolute;
+			top: 0.75rem;
+			right: 0.75rem;
+			left: auto;
+			transform: none;
+			z-index: 9;
+		}
+		/* Map controls live on the map's OWN top-left corner (the conventional
+		   map-control home — Cesium/Palantir/Google Maps), a horizontal cluster — now
+		   stacked just BELOW the search pill (X2). Clears the lower-right (the operator's
+		   "buttons piled in the lower right" complaint). */
+		.stage :global(.toolbar) {
+			position: absolute;
+			top: 3.9rem;
 			left: 0.75rem;
 			right: auto;
 			bottom: auto;
@@ -2960,6 +2949,16 @@
 		}
 		.stage :global(.maplibregl-ctrl-bottom-right) {
 			z-index: 2;
+		}
+	}
+	/* X2 — below 1200px the WIDE/MEDIUM stage is too narrow (~320px at 1024) for four
+	   LABELLED lens chips (~326px) at the top-right; they'd overflow and collide with the
+	   top-left search. Go icon-only there (the chip aria-label keeps each named for AT);
+	   labels return at ≥1200px where the stage is roomy. Pairs with the ≤820px icon mode
+	   the component already has — this just extends it up through the WIDE-narrow band. */
+	@media (min-width: 640px) and (max-width: 1199.98px) and (min-height: 501px) {
+		.stage :global(.lens-switcher .chip-label) {
+			display: none;
 		}
 	}
 	/* ===== WIDE-only column tracks (≥1024px) =====

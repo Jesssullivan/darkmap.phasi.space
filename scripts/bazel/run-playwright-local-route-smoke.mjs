@@ -805,6 +805,20 @@ async function runClickBudgetSmoke(page) {
 	// link-budget smoke's proven-on-cell CTA click.
 	await runMapCanvasSmoke(page);
 
+	// X2 — the re-homed HEADER controls (lens switcher → stage top-right, compact
+	// search → stage top-left above the toolbar) are now position:absolute stage
+	// overlays. The mobile-hud-matrix overlap smoke is COMPACT-only and never included
+	// the geocoder/lens-switcher, so this is the only gate covering the new WIDE overlap
+	// risk. Asserted at the click-budget WIDE viewport (1280x800) where all four
+	// overlays are present.
+	await page.locator('.lens-switcher').first().waitFor({ state: 'visible', timeout: 20_000 });
+	await assertHudBoxesDoNotOverlap(page, 'x2-header-reclaim', [
+		['.geocoder', '.toolbar'],
+		['.geocoder', '.lens-switcher'],
+		['.lens-switcher', '.tools-cluster.overlay'],
+		['.lens-switcher', '.toolbar'],
+	]);
+
 	const fail = (msg) => {
 		throw new Error(`click-budget: ${msg}`);
 	};
