@@ -2677,7 +2677,13 @@
 			min-width: 0;
 			min-height: 0;
 			overflow: hidden;
-			contain: layout;
+			/* W5g — establish the INSPECTOR as a query container so the docked readout
+			   adapts to the inspector's OWN width (22rem laptop vs 30rem roomy), not the
+			   viewport. container-type:inline-size subsumes the prior contain:layout.
+			   At COMPACT the region is display:contents (no box) → no container, so the
+			   PointReadout @container rules simply don't match there. */
+			container-type: inline-size;
+			container-name: inspector;
 		}
 		/* W4b — the MEDIUM inspector tab: a thin, full-opacity vertical handle. Collapsed
 		   the column is 2.5rem (--insp-w) and the "Inspector" label reads bottom-to-top;
@@ -3012,7 +3018,14 @@
 			padding: 0.6rem 0.55rem;
 			box-sizing: border-box;
 			overflow: hidden;
-			contain: layout;
+			/* W5g — establish the RAIL as a query container so its instrument row reveals
+			   based on the rail's OWN width (collapsed 4.5rem icon column vs expanded 16rem
+			   vs WIDE 19rem), not the viewport tier + disclosure attribute. container-type
+			   subsumes the prior contain:layout. (The LayerRail's icon-vs-panel swap stays
+			   on the `railCompact` rune — it's a structural {#if} render-branch a container
+			   query can't replace.) */
+			container-type: inline-size;
+			container-name: rail;
 		}
 		.left-dock :global(.instrument-column) {
 			flex: 0 0 auto;
@@ -3055,50 +3068,22 @@
 		.rail-expand-label {
 			display: none;
 		}
-		/* Collapsed (icon column): hide the instrument tiles (too wide for 4.5rem) and
-		   the deep-tool labels — the LayerRail's own `compact` prop renders icon-only.
-		   Everything stays full-opacity + reachable: expanding reveals it (progressive
-		   disclosure), NOT display:none-as-disable. */
-		:global(html[data-layout-tier='medium'])
-			.command-deck:not([data-rail-expanded='true'])
-			.left-dock
-			:global(.instrument-column) {
-			display: none;
-		}
-		/* Expanded: show the "Layers" label + the instrument tiles. */
+		/* Expanded: show the "Layers" label on the rail-expand toggle. (Disclosure-driven,
+		   not density — stays an attribute selector.) */
 		.command-deck[data-rail-expanded='true'] .rail-expand-label {
 			display: inline;
 		}
-		:global(html[data-layout-tier='medium'])
-			.command-deck[data-rail-expanded='true']
-			.left-dock
-			:global(.instrument-column) {
+	}
+	/* W5g — the instrument row reveals on the RAIL's own width, not the viewport tier +
+	   disclosure attribute. Collapsed (4.5rem icon column) the InstrumentColumn is below
+	   its own 1024px display:none floor and the rail container is far under 8rem, so it
+	   stays hidden; expanding the rail to 16rem (or WIDE's 19rem) crosses 8rem and reveals
+	   it. Full-opacity + reachable — progressive disclosure, NOT display:none-as-disable.
+	   The old MEDIUM-collapse ToolsCluster rules were dead (idea ① re-homed the cluster to
+	   the map's right-edge overlay, out of .left-dock) and are removed. */
+	@container rail (min-width: 8rem) {
+		.left-dock :global(.instrument-column) {
 			display: flex;
-		}
-		/* Collapsed — the ToolsCluster renders icon-only: drop the section title + each
-		   tile's text + the Open/Pin hint, center the icon, square the tile to the 4.5rem
-		   column. Full opacity + clickable (still launches the tool); expanding restores
-		   the labelled tiles. NOT a disable — the icon is the launcher. */
-		:global(html[data-layout-tier='medium'])
-			.command-deck:not([data-rail-expanded='true'])
-			.left-dock
-			:global(.cluster-title),
-		:global(html[data-layout-tier='medium'])
-			.command-deck:not([data-rail-expanded='true'])
-			.left-dock
-			:global(.tool-text),
-		:global(html[data-layout-tier='medium'])
-			.command-deck:not([data-rail-expanded='true'])
-			.left-dock
-			:global(.tool-go) {
-			display: none;
-		}
-		:global(html[data-layout-tier='medium'])
-			.command-deck:not([data-rail-expanded='true'])
-			.left-dock
-			:global(.tool-tile) {
-			justify-content: center;
-			padding: 0.4rem;
 		}
 	}
 	/* WIDE-only: the rail is the permanent 20rem column — roomier padding, no MEDIUM

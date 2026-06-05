@@ -1135,6 +1135,25 @@
 		font-size: 0.8rem;
 		opacity: 0.85;
 	}
+
+	/* W5g — at the roomy inspector band (30rem cell, ≥1366px) the readout fills a
+	   wider column, so the lead VALUE scales up to match (adapting to the inspector's
+	   OWN width via container queries, not the viewport). At the laptop 22rem band the
+	   query doesn't match and the lead reverts to its base size; at COMPACT the inspector
+	   region is display:contents (no container) so this never fires. 27rem threshold
+	   sits between the 22rem laptop and 30rem roomy inspector tracks. */
+	@container inspector (min-width: 27rem) {
+		.bortle-class {
+			font-size: 1.9rem;
+		}
+		.bortle-label {
+			font-size: 0.85rem;
+		}
+		.links-lead-line {
+			font-size: 1.12rem;
+		}
+	}
+
 	@keyframes slide-up {
 		from {
 			opacity: 0;
