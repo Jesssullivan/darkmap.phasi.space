@@ -147,40 +147,26 @@ engine (`docs/ux/personas-and-lenses.md` §11.6).
 
 ---
 
-## Shipped UI — live captures
+## Shipped UI — live captures (regenerate on demand)
 
-Captures of the shipped product, to pair against the Phase-0 design frames above.
+Captures of the shipped product pair against the Phase-0 design frames above, but
+they are **not tracked in git** — they're build artifacts that go stale (and grow
+unbounded) with every UI change, so we regenerate them on demand rather than commit
+them.
 
-### Per-lens, full render (`just capture-shipped-ui`)
+`scripts/capture-shipped-ui.mjs` is the camera: the CI proof cell and gstack
+`/browse` lack WebGL, so the MapLibre canvas is blank in every automated capture.
+This script serves the local adapter-node build and drives system Chrome with
+**SwiftShader** (software WebGL) + real fonts, so the map actually paints. It
+switches lenses through the reactive switcher and captures the full shipped chrome
+(map + Layers rail + dossier + toolbar) per lens, plus the `/docs` launchpad.
 
-The CI proof cell and gstack `/browse` both lack WebGL *and* system fonts, so the
-MapLibre canvas is blank in every automated capture. `scripts/capture-shipped-ui.mjs`
-closes that gap: it serves the local adapter-node build and drives the system
-Chrome with **SwiftShader** (software WebGL) + real fonts, so the map actually
-paints. It switches lenses through the reactive switcher and captures the full
-shipped chrome (map + Layers rail + dossier + toolbar) per lens. Regenerate with
-`just capture-shipped-ui` (builds first; override Chrome via `CHROME_BIN`).
+```
+just capture-shipped-ui      # per-lens full renders → assets/shipped/lens-*.png (gitignored)
+just capture-breakpoints     # boundary tiers + canvas-floor gate
+```
 
-- [`assets/shipped/lens-sky.png`](assets/shipped/lens-sky.png) — Sky: rail leads
-  **Light Pollution** (VIIRS night-lights painted on the map), Bortle/SQM dossier.
-- [`assets/shipped/lens-air.png`](assets/shipped/lens-air.png) — Air: rail promotes
-  **Atmosphere**, dossier asks the air-quality question.
-- [`assets/shipped/lens-links.png`](assets/shipped/lens-links.png) — Links.
-- [`assets/shipped/lens-orbit.png`](assets/shipped/lens-orbit.png) — Orbit.
-- [`assets/shipped/docs-launchpad-full.png`](assets/shipped/docs-launchpad-full.png)
-  — the `/docs` launchpad page.
-
-### DOM detail (`/browse`, real fonts, no WebGL)
-
-Crisp DOM-only captures where the map isn't needed:
-
-- [`assets/shipped/docs-launchpad-cards.png`](assets/shipped/docs-launchpad-cards.png)
-  — the four launchpad cards: persona, the operator's question, promoted tools,
-  and a `/#lens=…` deep-link into the map.
-- [`assets/shipped/dossier-mean-links.png`](assets/shipped/dossier-mean-links.png)
-  — the persistent dossier in **mean scope**: "Viewport / no point selected" + the
-  active lens's question + a click-the-map hint (the "floating data when nothing
-  is selected" surface from the portal-IA vision).
+(Override Chrome via `CHROME_BIN`. The `assets/shipped/` output is gitignored.)
 
 ---
 
