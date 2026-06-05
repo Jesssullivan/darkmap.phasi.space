@@ -1214,13 +1214,18 @@
 		}, 250);
 	}
 
-	// Number-key lens accelerator: 1→Sky, 2→Air, 3→Links, 4→Orbit. Guarded so it
-	// never hijacks typing in the geocoder / any input. (The visible switcher
-	// chips land in S1/PR2; this is the keyboard path.)
-	function onLensKey(e: KeyboardEvent): void {
+	// Command-Deck keyboard accelerators (W5d). Two unmodified-key families, both
+	// guarded so they never hijack typing in the geocoder / any input:
+	//   1–4   → lens switch (1→Sky, 2→Air, 3→Links, 4→Orbit).
+	//   T/P/A → the three deep-tool launchers (Transmission / Pass plan / Air quality),
+	//           a keyboard mirror of the always-present TOOLS cluster — identical
+	//           semantics to clicking the pill (no new pin-gating). Twilight has no
+	//           chord (V was dropped) — it stays a click/disclosure toggle.
+	// Cmd/Ctrl-K (the palette, W5e) is handled separately ABOVE this guard.
+	function onDeckKey(e: KeyboardEvent): void {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		// While the AQ modal-popout is open it owns the keyboard (focus-trapped); the
-		// lens number-key shortcut must not switch lenses behind it.
+		// deck accelerators must not fire behind it.
 		if (aqModalOpen) return;
 		const t = e.target as HTMLElement | null;
 		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
@@ -1230,6 +1235,18 @@
 		if (Number.isInteger(idx) && idx >= 0 && idx < LENSES.length) {
 			lensStore.set(LENSES[idx]);
 			scheduleHashWrite();
+			return;
+		}
+		switch (e.key.toLowerCase()) {
+			case 't':
+				openTransmissionForPoint();
+				break;
+			case 'p':
+				openPassPlanForPoint();
+				break;
+			case 'a':
+				openAqDashboardForPoint();
+				break;
 		}
 	}
 
@@ -2010,7 +2027,7 @@
 	});
 </script>
 
-<svelte:window onkeydown={onLensKey} />
+<svelte:window onkeydown={onDeckKey} />
 
 <svelte:head>
 	<title>darkmap</title>
