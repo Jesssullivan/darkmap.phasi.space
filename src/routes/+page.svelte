@@ -50,6 +50,8 @@
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import { buildAqiField } from '$lib/atmospheric/aqi-field';
+	import { computeAqi, type AqiPollutant } from '$lib/atmospheric/aqi';
+	import { fmtAge } from '$lib/cache/badge';
 	import {
 		DEFAULT_DIFFUSION,
 		estimatePm25At,
@@ -1774,6 +1776,19 @@
 					],
 				},
 			});
+			// TIN-1889 Phase 3 — click a station marker → a transient popup with its
+			// reading (lazy-fetched), separate from the diffusion readout. preventDefault
+			// suppresses the catch-all map-click (which pins a point) for marker clicks.
+			map.on('click', STATION_MARKERS_LAYER, (ev) => {
+				ev.preventDefault();
+				void openStationPopup(ev);
+			});
+			map.on('mouseenter', STATION_MARKERS_LAYER, () => {
+				map.getCanvas().style.cursor = 'pointer';
+			});
+			map.on('mouseleave', STATION_MARKERS_LAYER, () => {
+				map.getCanvas().style.cursor = '';
+			});
 		}
 		await refreshStationMarkers();
 	}
@@ -1810,6 +1825,120 @@
 	function scheduleStationMarkersRefresh(): void {
 		clearTimeout(stationMarkersDebounce);
 		stationMarkersDebounce = setTimeout(() => void refreshStationMarkers(), 500);
+	}
+
+	// TIN-1889 Phase 3 — the transient station popup (one at a time). NOT a focus-trap:
+	// it's a lightweight readout, so the lens/tool keyboard chords keep working behind it.
+	let stationPopup: import('maplibre-gl').Popup | undefined;
+	const POLLUTANT_LABEL: Record<string, string> = {
+		pm25: 'PM2.5',
+		pm10: 'PM10',
+		o3: 'O₃',
+		no2: 'NO₂',
+		so2: 'SO₂',
+		co: 'CO',
+	};
+
+	type StationProps = { locationId?: number; locationName?: string; status?: string; lastSeen?: string };
+	type StationProperties = {
+		value: number | null;
+		pollutants: Record<string, { value: number; units?: string }>;
+		status: string;
+		lastSeen?: string;
+	};
+
+	// AQI category (color + name + index) from a station's pollutant readings, or null.
+	function stationAqi(pollutants: Record<string, { value: number; units?: string }>) {
+		const readings = Object.entries(pollutants).map(([p, r]) => ({
+			pollutant: p as AqiPollutant,
+			value: r.value,
+			units: r.units,
+		}));
+		const res = computeAqi(readings);
+		return res ? { color: res.category.color, name: res.category.name, aqi: res.aqi } : null;
+	}
+
+	async function openStationPopup(ev: {
+		features?: Array<{ properties?: unknown; geometry?: unknown }>;
+	}): Promise<void> {
+		const f = ev.features?.[0];
+		if (!f || !mapInstance || !maplibreLib) return;
+		const props = (f.properties ?? {}) as StationProps;
+		const geom = f.geometry as { type?: string; coordinates?: [number, number] };
+		if (geom?.type !== 'Point' || !geom.coordinates) return;
+		const [lon, lat] = geom.coordinates;
+		const name = typeof props.locationName === 'string' ? props.locationName : 'Station';
+
+		const root = document.createElement('div');
+		root.className = 'aq-popup';
+		const h = document.createElement('strong');
+		h.className = 'aq-popup-name';
+		h.textContent = name; // textContent → XSS-safe against OpenAQ-supplied names
+		root.appendChild(h);
+		const body = document.createElement('div');
+		body.className = 'aq-popup-body muted';
+		body.textContent = props.status === 'stale' ? '' : 'Loading…';
+		root.appendChild(body);
+		const cta = document.createElement('button');
+		cta.type = 'button';
+		cta.className = 'aq-popup-cta';
+		cta.textContent = 'Open full readout →';
+		cta.addEventListener('click', () => {
+			stationPopup?.remove();
+			void queryAt(lat, lon);
+		});
+		root.appendChild(cta);
+
+		stationPopup?.remove();
+		stationPopup = new maplibreLib.Popup({ closeButton: true, closeOnClick: true, maxWidth: '260px', offset: 10 })
+			.setLngLat([lon, lat])
+			.setDOMContent(root)
+			.addTo(mapInstance);
+
+		const staleLine = (lastSeen?: string): string => {
+			const age = lastSeen ? fmtAge(Date.parse(lastSeen), Date.now()) : null;
+			return age ? `No recent reading — last reported ${age} ago.` : 'No recent reading.';
+		};
+
+		if (props.status === 'stale') {
+			body.textContent = staleLine(props.lastSeen);
+			return;
+		}
+
+		try {
+			const res = await fetch(
+				`/api/atmospheric/openaq?locationId=${encodeURIComponent(String(props.locationId ?? ''))}`,
+			);
+			if (!res.ok) throw new Error(String(res.status));
+			const fc = (await res.json()) as { features?: Array<{ properties: StationProperties }> };
+			const sp = fc.features?.[0]?.properties;
+			body.replaceChildren();
+			if (!sp || sp.status === 'stale' || (sp.value === null && Object.keys(sp.pollutants).length === 0)) {
+				body.className = 'aq-popup-body muted';
+				body.textContent = staleLine(sp?.lastSeen ?? props.lastSeen);
+				return;
+			}
+			body.className = 'aq-popup-body';
+			const aqi = stationAqi(sp.pollutants);
+			if (aqi) {
+				const chip = document.createElement('span');
+				chip.className = 'aq-popup-chip';
+				chip.style.setProperty('--chip', aqi.color);
+				chip.textContent = `AQI ${aqi.aqi} · ${aqi.name}`;
+				body.appendChild(chip);
+			}
+			const ul = document.createElement('ul');
+			ul.className = 'aq-popup-pollutants';
+			for (const [p, r] of Object.entries(sp.pollutants)) {
+				const li = document.createElement('li');
+				li.textContent = `${POLLUTANT_LABEL[p] ?? p.toUpperCase()} ${r.value}${r.units ? ` ${r.units}` : ''}`;
+				ul.appendChild(li);
+			}
+			body.appendChild(ul);
+		} catch {
+			body.className = 'aq-popup-body muted';
+			body.textContent = 'Reading unavailable.';
+		}
 	}
 
 	// AQ-3 — rendered AQI density field. A coarse viewport grid of composite-AQI
@@ -2113,6 +2242,9 @@
 		ephemerisOpen = true;
 
 		mapInstance.on('click', (ev) => {
+			// A station-marker click handles itself (preventDefault) → don't also pin a
+			// diffusion-readout point under it (TIN-1889 Phase 3).
+			if (ev.defaultPrevented) return;
 			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
 		});
 
@@ -2284,6 +2416,8 @@
 		} catch {
 			// not registered (SSR / early teardown) — ignore.
 		}
+		stationPopup?.remove();
+		stationPopup = undefined;
 		mapInstance?.remove();
 		mapInstance = undefined;
 		controllerLayer = undefined;
@@ -3503,5 +3637,82 @@
 		.command-deck {
 			grid-template-columns: 22rem minmax(380px, 1fr) 30rem;
 		}
+	}
+
+	/* TIN-1889 Phase 3 — the station-marker click popup. Built imperatively (maplibre
+	   Popup), so styled via :global. Matches the deck's dark + mono vocabulary. */
+	:global(.maplibregl-popup.maplibregl-popup .maplibregl-popup-content) {
+		background: rgba(8, 10, 16, 0.94);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 9px;
+		padding: 0.6rem 0.7rem;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+		font-family: var(--font-mono, ui-monospace, monospace);
+		backdrop-filter: blur(6px);
+	}
+	:global(.maplibregl-popup .maplibregl-popup-tip) {
+		border-top-color: rgba(8, 10, 16, 0.94);
+		border-bottom-color: rgba(8, 10, 16, 0.94);
+	}
+	:global(.maplibregl-popup .maplibregl-popup-close-button) {
+		color: #aeb6c6;
+		font-size: 1.1rem;
+		padding: 0 0.3rem;
+	}
+	:global(.aq-popup) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		min-width: 9rem;
+	}
+	:global(.aq-popup-name) {
+		font-size: 0.82rem;
+		font-weight: 700;
+		padding-right: 1rem;
+	}
+	:global(.aq-popup-body) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.74rem;
+	}
+	:global(.aq-popup-body.muted) {
+		opacity: 0.7;
+	}
+	:global(.aq-popup-chip) {
+		align-self: flex-start;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.15rem 0.45rem;
+		border-radius: 999px;
+		font-size: 0.68rem;
+		font-weight: 600;
+		color: #0a0a0a;
+		background: var(--chip, #aeb6c6);
+	}
+	:global(.aq-popup-pollutants) {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		font-variant-numeric: tabular-nums;
+	}
+	:global(.aq-popup-cta) {
+		align-self: flex-start;
+		margin-top: 0.1rem;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--accent-amber);
+		font: inherit;
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+	:global(.aq-popup-cta:hover) {
+		text-decoration: underline;
 	}
 </style>
