@@ -65,3 +65,6 @@ infra/tofu/.terraform/
 infra/tofu/.terraform.lock.hcl
 **/*.tfstate
 **/*.tfstate.backup
+
+# Regenerable UI captures (just capture-shipped-ui / capture-breakpoints)
+docs/ux/public-readiness/assets/shipped/
