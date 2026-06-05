@@ -65,6 +65,7 @@
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 	import AqModal from '$lib/components/AqModal.svelte';
+	import CommandPalette, { type PaletteCommand } from '$lib/components/CommandPalette.svelte';
 	import type { AqSeed } from '$lib/components/AqDashboard.svelte';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
@@ -283,6 +284,95 @@
 	// the pinned point / shared hash; the modal's AqDashboard reuses getSensors(bbox).
 	let aqModalOpen = $state(false);
 	let aqModalSeed = $state<AqSeed | null>(null);
+
+	// W5e — the Cmd/Ctrl-K command palette. A focus-trapped transient surface
+	// (CommandPalette.svelte) exposing every deck action by fuzzy search. Opened from
+	// onDeckKey ABOVE the modifier guard so the chord isn't swallowed.
+	let paletteOpen = $state(false);
+
+	// The palette's command list — every deck action that has a keyboard/clickable
+	// home, reachable by fuzzy search. The run() closures read current state at call
+	// time; the referenced handlers are hoisted function declarations below. Labels
+	// stay static, so a plain const (not a rune) is correct.
+	const setLens = (l: Lens) => {
+		lensStore.set(l);
+		scheduleHashWrite();
+	};
+	const paletteCommands: PaletteCommand[] = [
+		{
+			id: 'lens-sky',
+			label: 'Switch to Sky lens',
+			hint: '1',
+			keywords: 'dark-sky astro bortle ephemeris',
+			run: () => setLens('sky'),
+		},
+		{
+			id: 'lens-air',
+			label: 'Switch to Air lens',
+			hint: '2',
+			keywords: 'weather smog air quality aqi',
+			run: () => setLens('air'),
+		},
+		{
+			id: 'lens-links',
+			label: 'Switch to Links lens',
+			hint: '3',
+			keywords: 'rf laser link budget transmission',
+			run: () => setLens('links'),
+		},
+		{
+			id: 'lens-orbit',
+			label: 'Switch to Orbit lens',
+			hint: '4',
+			keywords: 'leo passes ground station satellite',
+			run: () => setLens('orbit'),
+		},
+		{
+			id: 'tool-transmission',
+			label: 'Open Transmission',
+			hint: 'T',
+			keywords: 'spectral link budget path aod',
+			run: () => openTransmissionForPoint(),
+		},
+		{
+			id: 'tool-passplan',
+			label: 'Open Pass Plan',
+			hint: 'P',
+			keywords: 'satellite passes polar track orbit',
+			run: () => openPassPlanForPoint(),
+		},
+		{
+			id: 'tool-aq',
+			label: 'Open Air Quality',
+			hint: 'A',
+			keywords: 'pollutants nowcast aqi smog pm2.5',
+			run: () => openAqDashboardForPoint(),
+		},
+		{
+			id: 'tool-twilight',
+			label: 'Toggle Twilight strip',
+			keywords: 'sun moon timing dark window ephemeris gantt',
+			run: () => (ephemerisOpen = !ephemerisOpen),
+		},
+		{
+			id: 'open-layers',
+			label: 'Open layers',
+			keywords: 'rail drawer overlays viirs falchi basemap',
+			run: () => openLayersFromDock(),
+		},
+		{
+			id: 'open-tour',
+			label: 'Take the guided tour',
+			keywords: 'help onboarding walkthrough',
+			run: () => (tourOpen = true),
+		},
+		...BASEMAPS.map((b) => ({
+			id: `basemap-${b.id}`,
+			label: `Basemap: ${b.label}`,
+			keywords: 'map background tiles',
+			run: () => onBasemapChange(b.id),
+		})),
+	];
 
 	// W4c (TIN-1866) — the COMPACT ResponsiveDock's ONE-sheet swap view. Derived from
 	// the existing point/tool state so the smoke's canvas-pin → Readout view and
@@ -1223,6 +1313,16 @@
 	//           chord (V was dropped) — it stays a click/disclosure toggle.
 	// Cmd/Ctrl-K (the palette, W5e) is handled separately ABOVE this guard.
 	function onDeckKey(e: KeyboardEvent): void {
+		// Cmd/Ctrl-K toggles the command palette (W5e) — handled FIRST, above the
+		// modifier guard below, and works even from inside an input (the palette is a
+		// global accelerator, like the browser's own Find). The palette owns the
+		// keyboard while open (its own Esc/arrows/Enter), so we early-return after.
+		if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			paletteOpen = !paletteOpen;
+			return;
+		}
+		if (paletteOpen) return; // palette is focus-trapped; deck chords stay inert behind it
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		// While the AQ modal-popout is open it owns the keyboard (focus-trapped); the
 		// deck accelerators must not fire behind it.
@@ -2238,6 +2338,9 @@
      <body>, so it sits above the Command Deck grid without joining it; the map +
      deck stay live behind a faint (non-opaque) backdrop. Self-gates on `open`. -->
 <AqModal open={aqModalOpen} seed={aqModalSeed} onClose={closeAqModal} onViewOnMap={aqViewOnMap} />
+
+<!-- W5e — Cmd/Ctrl-K command palette (focus-trapped transient surface). -->
+<CommandPalette open={paletteOpen} commands={paletteCommands} onClose={() => (paletteOpen = false)} />
 
 {#snippet fieldFloats()}
 	<!-- W3 moved the deep tools (TransmissionSheet / PassPlanPanel) OUT of here into
