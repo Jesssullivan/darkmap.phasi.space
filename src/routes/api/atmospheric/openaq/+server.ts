@@ -1,6 +1,7 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import {
+	buildAllMarkers,
 	buildStationFeature,
 	selectFreshLocations,
 	type StationFeature,
@@ -105,9 +106,24 @@ export const GET: RequestHandler = async ({ url }) => {
 		error(502, `openaq response not JSON: ${e instanceof Error ? e.message : 'unknown'}`);
 	}
 
-	// 2. Pre-filter to fresh criteria-pollutant locations and cap the /latest fan-out.
 	const nowMs = Date.now();
-	const fresh = selectFreshLocations(locBody.results ?? [], nowMs, STALE_AFTER_MS, MAX_LATEST_FETCHES);
+	const locations = locBody.results ?? [];
+
+	// TIN-1889 — station-parity marker mode (`?…&markers=1`): return EVERY in-view
+	// location as a marker straight from the cheap bbox-native `/locations` metadata,
+	// with NO per-location `/latest` fan-out. This is what the always-on station
+	// markers layer uses to match other AQ maps' station coverage; values load on
+	// demand (the readout / the smog density field still use the valued path below).
+	if (url.searchParams.get('markers') === '1') {
+		const markers = buildAllMarkers(locations, nowMs, STALE_AFTER_MS);
+		return new Response(JSON.stringify({ type: 'FeatureCollection', features: markers, degraded: false }), {
+			status: 200,
+			headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300, s-maxage=300' },
+		});
+	}
+
+	// 2. Pre-filter to fresh criteria-pollutant locations and cap the /latest fan-out.
+	const fresh = selectFreshLocations(locations, nowMs, STALE_AFTER_MS, MAX_LATEST_FETCHES);
 
 	// 3. Fetch each location's latest values (bounded concurrency) + 4. join/staleness.
 	const features = (

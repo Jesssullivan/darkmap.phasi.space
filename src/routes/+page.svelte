@@ -1466,6 +1466,18 @@
 	let viewportAqController: AbortController | undefined;
 	let viewportAqGen = 0;
 	let viewportAqDebounce: ReturnType<typeof setTimeout> | undefined;
+
+	// TIN-1889 — always-on OpenAQ station markers, decoupled from the smog toggle.
+	// The cheap `markers=1` parity call returns EVERY in-view station (other AQ maps
+	// show hundreds; the valued path is bound by a 50-cap). Markers are baseline map
+	// furniture — present under every lens, regardless of the smog layer — while the
+	// smog toggle still controls the heavy interpolated AQI density field. Values load
+	// on demand via the point readout. Own source/layer + abort/gen/debounce.
+	const STATION_MARKERS_SRC = 'darkmap-aq-stations-src';
+	const STATION_MARKERS_LAYER = 'darkmap-aq-stations-circ';
+	let stationMarkersController: AbortController | undefined;
+	let stationMarkersGen = 0;
+	let stationMarkersDebounce: ReturnType<typeof setTimeout> | undefined;
 	// The instrument prefers the smog layer's already-fetched stations when that layer
 	// is on (no double fetch); otherwise it uses the independent viewport fetch.
 	const instrumentStations = $derived(
@@ -1729,6 +1741,77 @@
 		scheduleViewportAqRefresh();
 	});
 
+	// TIN-1889 — mount the always-on station-markers source + circle layer once. It
+	// sits BELOW the smog layer's valued circles (which mount later on toggle), so
+	// when smog is on the AQI-coloured circles draw on top of these baseline dots at
+	// the same coordinates — progressive enhancement, never a double-draw. Pending
+	// (recently reporting) markers are solid; stale (>24 h) markers are hollow.
+	async function mountStationMarkers(): Promise<void> {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		if (!map.isStyleLoaded()) {
+			await new Promise<void>((resolve) => map.once('style.load', () => resolve()));
+		}
+		if (!map.getSource(STATION_MARKERS_SRC)) {
+			map.addSource(STATION_MARKERS_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+		}
+		if (!map.getLayer(STATION_MARKERS_LAYER)) {
+			map.addLayer({
+				id: STATION_MARKERS_LAYER,
+				type: 'circle',
+				source: STATION_MARKERS_SRC,
+				paint: {
+					'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2, 11, 4.5],
+					// pending = a solid station dot; stale = transparent fill (hollow ring).
+					'circle-color': ['match', ['get', 'status'], 'stale', 'rgba(120, 140, 160, 0)', 'rgba(110, 182, 255, 0.85)'],
+					'circle-stroke-width': 1,
+					'circle-stroke-color': [
+						'match',
+						['get', 'status'],
+						'stale',
+						'rgba(150, 170, 190, 0.5)',
+						'rgba(8, 10, 16, 0.85)',
+					],
+				},
+			});
+		}
+		await refreshStationMarkers();
+	}
+
+	// Fetch every in-view station marker (parity mode — no /latest fan-out) + setData.
+	// Abort/generation-guarded so fast pans can't write stale markers; soft-fails to
+	// the prior markers on a network error.
+	async function refreshStationMarkers(): Promise<void> {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const b = map.getBounds();
+		const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+		stationMarkersController?.abort();
+		const controller = new AbortController();
+		stationMarkersController = controller;
+		const myGen = ++stationMarkersGen;
+		try {
+			const res = await fetch(`/api/atmospheric/openaq?bbox=${encodeURIComponent(bbox)}&markers=1`, {
+				signal: controller.signal,
+			});
+			if (controller.signal.aborted || stationMarkersGen !== myGen || !res.ok) return;
+			const fc = (await res.json()) as { type: string; features: unknown[] };
+			const src = map.getSource(STATION_MARKERS_SRC);
+			if (src && 'setData' in src && typeof (src as { setData?: unknown }).setData === 'function') {
+				(src as { setData: (data: unknown) => void }).setData(fc);
+			}
+		} catch {
+			/* abort or transient network — keep the prior markers (never a fabricated set) */
+		} finally {
+			if (stationMarkersController === controller) stationMarkersController = undefined;
+		}
+	}
+
+	function scheduleStationMarkersRefresh(): void {
+		clearTimeout(stationMarkersDebounce);
+		stationMarkersDebounce = setTimeout(() => void refreshStationMarkers(), 500);
+	}
+
 	// AQ-3 — rendered AQI density field. A coarse viewport grid of composite-AQI
 	// cells (from the same kernel diffusion as the readout) rasterized to a
 	// MapLibre `image` source, replacing the heatmap-blur-over-points. Rebuilt
@@ -1991,6 +2074,9 @@
 		for (const layer of LAYERS) {
 			if (layerState[layer.id]?.on) mountLayer(layer);
 		}
+		// TIN-1889 — the OpenAQ station markers are baseline furniture, mounted once
+		// regardless of any layer toggle or lens.
+		void mountStationMarkers();
 
 		const syncCenter = (): void => {
 			if (!mapInstance) return;
@@ -2012,12 +2098,14 @@
 			scheduleHashWrite();
 			schedulePointRefresh();
 			scheduleViewportAqRefresh();
+			scheduleStationMarkersRefresh();
 		});
 		mapInstance.on('zoomend', () => {
 			syncCenter();
 			scheduleHashWrite();
 			schedulePointRefresh();
 			scheduleViewportAqRefresh();
+			scheduleStationMarkersRefresh();
 		});
 
 		// Default the twilight strip open in the browser, while keeping SSR
