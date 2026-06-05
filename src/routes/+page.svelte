@@ -1455,6 +1455,23 @@
 	const pointFetchGen = new Map<string, number>();
 	let pointMoveendDebounce: ReturnType<typeof setTimeout> | undefined;
 
+	// X1 — viewport-AQ for the RAIL's Air instrument, DECOUPLED from the smog layer.
+	// The smog fetch (refreshPointLayer) only runs while the layer is mounted, so with
+	// smog off (the default + every non-Air lens) pm25Stations stays [] and the always-
+	// visible Air tile reads "no stations in view" forever. This independent fetch keeps
+	// the instrument live — gated to the air|links lenses where the tile leads, with its
+	// own abort/gen/debounce; it shares the OpenAQ proxy's 5-min HTTP cache with the
+	// click-AQ + smog paths (same getSensors → same /api/atmospheric/openaq URL).
+	let viewportAqStations = $state<Pm25Station[]>([]);
+	let viewportAqController: AbortController | undefined;
+	let viewportAqGen = 0;
+	let viewportAqDebounce: ReturnType<typeof setTimeout> | undefined;
+	// The instrument prefers the smog layer's already-fetched stations when that layer
+	// is on (no double fetch); otherwise it uses the independent viewport fetch.
+	const instrumentStations = $derived(
+		layerState[SMOG_LAYER_ID]?.on && pm25Stations.length > 0 ? pm25Stations : viewportAqStations,
+	);
+
 	const pointSourceId = (id: string) => `darkmap-${id}-pt-src`;
 	const pointHeatmapId = (id: string) => `darkmap-${id}-pt-heat`;
 	const pointCircleId = (id: string) => `darkmap-${id}-pt-circ`;
@@ -1655,6 +1672,62 @@
 			}
 		}, 500);
 	}
+
+	// X1 — fetch stations for the CURRENT viewport for the rail Air instrument,
+	// independent of whether the smog layer is mounted. Mirrors refreshPointLayer's
+	// abort + generation discipline (fast pans/lens-flips can't write stale data) but
+	// writes viewportAqStations instead of a MapLibre source. Honest: a non-Success
+	// exit keeps the prior list; an empty Success yields [] → buildViewportSummary
+	// renders the truthful "no stations in view" / null-AQI, never a fabricated 0.
+	async function refreshViewportAq(): Promise<void> {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const b = map.getBounds();
+		const bbox = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+		viewportAqController?.abort();
+		const controller = new AbortController();
+		viewportAqController = controller;
+		const myGen = ++viewportAqGen;
+		const stillCurrent = (): boolean => !controller.signal.aborted && viewportAqGen === myGen;
+		try {
+			const exit = await Effect.runPromiseExit(
+				Effect.gen(function* () {
+					const svc = yield* OpenAQService;
+					return yield* svc.getSensors(bbox, { signal: controller.signal });
+				}).pipe(Effect.provide(OpenAQServiceLive)),
+			);
+			if (!stillCurrent() || exit._tag !== 'Success') return;
+			const fc: OpenAQSensorCollection = exit.value;
+			viewportAqStations = fc.features.map((f) => ({
+				lon: f.geometry.coordinates[0],
+				lat: f.geometry.coordinates[1],
+				value: f.properties.value,
+				pollutants: Object.fromEntries(
+					Object.entries(f.properties.pollutants ?? {}).map(([name, r]) => [name, r?.value ?? null]),
+				),
+			}));
+		} finally {
+			if (viewportAqController === controller) viewportAqController = undefined;
+		}
+	}
+
+	// X1 — debounced viewport-AQ refresh, gated to the lenses where the Air tile leads
+	// (air|links). Under Sky/Orbit we skip the fetch (cheaper) and the tile shows its
+	// last-known or truthful-empty state. Called from moveend/zoomend + on lens-enter.
+	function scheduleViewportAqRefresh(): void {
+		const l = lensStore.lens;
+		if (l !== 'air' && l !== 'links') return;
+		clearTimeout(viewportAqDebounce);
+		viewportAqDebounce = setTimeout(() => void refreshViewportAq(), 500);
+	}
+
+	// X1 — entering the air|links lens refreshes the instrument even without a pan
+	// (the moveend/zoomend hooks cover subsequent moves). Reads lensStore.lens so it
+	// re-runs on every lens change; the schedule fn no-ops for Sky/Orbit.
+	$effect(() => {
+		void lensStore.lens;
+		scheduleViewportAqRefresh();
+	});
 
 	// AQ-3 — rendered AQI density field. A coarse viewport grid of composite-AQI
 	// cells (from the same kernel diffusion as the readout) rasterized to a
@@ -1933,15 +2006,18 @@
 			};
 		};
 		syncCenter();
+		scheduleViewportAqRefresh(); // X1 — first paint (e.g. a #lens=air deep-link)
 		mapInstance.on('moveend', () => {
 			syncCenter();
 			scheduleHashWrite();
 			schedulePointRefresh();
+			scheduleViewportAqRefresh();
 		});
 		mapInstance.on('zoomend', () => {
 			syncCenter();
 			scheduleHashWrite();
 			schedulePointRefresh();
+			scheduleViewportAqRefresh();
 		});
 
 		// Default the twilight strip open in the browser, while keeping SSR
@@ -2205,7 +2281,7 @@
 			{/if}
 			<span class="rail-expand-label">Layers</span>
 		</button>
-		<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
+		<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 		<div class="left-dock-scroll">
 			<LayerRail
 				lens={lensStore.lens}
