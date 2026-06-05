@@ -31,3 +31,22 @@ export const LENS_ANNOUNCE: Record<Lens, string> = {
 	links: 'Links lens — leading with atmospheric transmission',
 	orbit: 'Orbit lens — leading with ephemeris and terrain',
 };
+
+/**
+ * Per-lens accent (W5c) — the one warm-highlight colour each lens claims for its
+ * three identity surfaces: the active LensSwitcher chip, the inspector lead value,
+ * and the leading TOOLS launcher. Sky keeps the historical amber (= --accent-amber);
+ * Air/Links/Orbit each get a distinct hue so a colour-vision-typical eye can tell
+ * the active lens at a glance — never colour ALONE (the chip also fills + bolds).
+ *
+ * All four clear WCAG AA both as text on the near-black deck (amber 14.0 : 1,
+ * green 11.7, blue 9.4, violet 9.9) and as a fill behind #0a0a0a chip text.
+ * CSS mirrors these as `--lens-accent` on `.command-deck[data-lens]`
+ * (src/app.css + +page.svelte) — keep the two in lockstep.
+ */
+export const LENS_ACCENT: Record<Lens, string> = {
+	sky: '#FFD166',
+	air: '#4ADE80',
+	links: '#6BB6FF',
+	orbit: '#C4A6FF',
+};

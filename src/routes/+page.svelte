@@ -2032,6 +2032,7 @@
      TEMPORARY fallback until W4's full responsive reflow. -->
 <div
 	class="command-deck"
+	data-lens={lensStore.lens}
 	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
 	data-readout={readout ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
@@ -2427,6 +2428,31 @@
 	.map {
 		position: fixed;
 		inset: 0;
+	}
+	/* ===== W5c — per-lens accent (docs/ux/command-deck.md §4 re-weight: accent) =====
+	   The active lens publishes one `--lens-accent` (+ its -rgb triple for tints) onto
+	   the deck; descendants (the active chip, the inspector lead value, the leading
+	   TOOLS launcher) swap `--accent-amber → var(--lens-accent)` so the active lens is
+	   legible at a glance. `--lens-accent` is declared here on `.command-deck` so each
+	   `[data-lens]` block (same element, higher specificity) recomputes the solid form
+	   from its own triple. Custom-prop inheritance survives the COMPACT display:contents,
+	   so this works at every breakpoint. Sky == amber (no visible change). Mirrors
+	   LENS_ACCENT in src/lib/lens.ts — keep in lockstep. */
+	.command-deck {
+		--lens-accent-rgb: var(--accent-amber-rgb);
+		--lens-accent: rgb(var(--lens-accent-rgb));
+	}
+	.command-deck[data-lens='sky'] {
+		--lens-accent-rgb: 255, 209, 102;
+	}
+	.command-deck[data-lens='air'] {
+		--lens-accent-rgb: 74, 222, 128;
+	}
+	.command-deck[data-lens='links'] {
+		--lens-accent-rgb: 107, 182, 255;
+	}
+	.command-deck[data-lens='orbit'] {
+		--lens-accent-rgb: 196, 166, 255;
 	}
 	/* ===== W1/W4b — the Command Deck grid shell (docs/ux/command-deck.md §2/§3) =====
 	   COMPACT (<640px): the deck is `display:contents` (inert) — every region wrapper

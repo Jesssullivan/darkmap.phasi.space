@@ -40,7 +40,7 @@
 </script>
 
 <aside class="instrument-column" aria-label="Lens overview instruments">
-	<section class="tile" data-tier={airTier} aria-label="Air — viewport air quality">
+	<section class="tile" class:lead={airTier === 2} data-tier={airTier} aria-label="Air — viewport air quality">
 		<div class="tile-label">
 			Air · viewport
 			<HelpTooltip
@@ -64,7 +64,7 @@
 		{/if}
 	</section>
 
-	<section class="tile sky-tile" data-tier={skyTier} aria-label="Sky — local dome">
+	<section class="tile sky-tile" class:lead={skyTier === 2} data-tier={skyTier} aria-label="Sky — local dome">
 		<p class="tile-label">Sky · local dome</p>
 		{#if mounted}
 			<SkyCompass {location} {time} embedded />
@@ -125,6 +125,12 @@
 		opacity: 0.6;
 		margin: 0 0 0.1rem;
 		text-align: center;
+	}
+	/* The lens-leading tile's header carries the active lens accent (W5c) — promote
+	   by accent, never dim the other (it stays opacity:1, full contrast). */
+	.tile.lead .tile-label {
+		color: var(--lens-accent, var(--accent-amber));
+		opacity: 0.95;
 	}
 	.tile-info {
 		cursor: help;

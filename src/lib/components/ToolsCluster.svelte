@@ -118,19 +118,20 @@
 		outline: none;
 	}
 	.tool-tile:focus-visible {
-		outline: 2px solid var(--accent-amber);
+		outline: 2px solid var(--lens-accent, var(--accent-amber));
 		outline-offset: 1px;
 	}
-	/* LEAD = the active lens's tool. Accent + slightly heavier — never at the expense
-	   of the others' legibility (they stay opacity:1, full contrast). */
+	/* LEAD = the active lens's tool. Carries the active lens accent (W5c) + slightly
+	   heavier — never at the expense of the others' legibility (they stay opacity:1,
+	   full contrast). */
 	.tool-tile.lead {
-		border-color: rgba(var(--accent-amber-rgb), 0.6);
-		background: rgba(var(--accent-amber-rgb), 0.08);
+		border-color: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.6);
+		background: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.08);
 	}
 	.tool-icon {
 		display: flex;
 		flex: 0 0 auto;
-		color: var(--accent-amber);
+		color: var(--lens-accent, var(--accent-amber));
 	}
 	.tool-tile:not(.lead) .tool-icon {
 		color: #aeb6c6;
@@ -151,7 +152,7 @@
 		line-height: 1.1;
 	}
 	.tool-tile.lead .tool-label {
-		color: var(--accent-amber);
+		color: var(--lens-accent, var(--accent-amber));
 	}
 	.tool-sub {
 		font-size: 0.6rem;
@@ -170,8 +171,8 @@
 		width: 0.4rem;
 		height: 0.4rem;
 		border-radius: 50%;
-		background: var(--accent-amber);
-		box-shadow: 0 0 4px var(--accent-amber);
+		background: var(--lens-accent, var(--accent-amber));
+		box-shadow: 0 0 4px var(--lens-accent, var(--accent-amber));
 	}
 
 	/* OVERLAY variant (idea ①) — compact rounded pills hugging the map's right edge.
@@ -202,8 +203,8 @@
 		white-space: nowrap;
 	}
 	.tools-cluster.overlay .tool-tile.lead {
-		border-color: rgba(var(--accent-amber-rgb), 0.7);
-		background: rgba(var(--accent-amber-rgb), 0.12);
+		border-color: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.7);
+		background: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.12);
 	}
 	@media (pointer: coarse) {
 		.tools-cluster.overlay .tool-tile {
