@@ -1,92 +1,75 @@
 # darkmap
 
-Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and
-low-light logistics: <https://darkmap.phasi.space>.
+An ad-free dark-sky and atmosphere planning map for the work that happens above the
+horizon — astronomy, air quality, atmospheric optics, and satellite passes. Live at
+<https://darkmap.phasi.space>.
 
-The map combines VIIRS DNB radiance, Falchi 2016 World Atlas, NASA GIBS
-atmospheric overlays (clouds, aerosol optical depth, water vapor), an OpenAQ
-PM2.5 layer with a kernel-diffusion estimate, a spectral transmission widget
-(T(λ) with band guidance), point readout, OSM search, terrain horizon
-raycasting, sun/moon ephemeris, and shareable map state.
+darkmap re-presents open public datasets on one shared map, re-weighted for four
+kinds of user — and it never hides a feature behind a mode you have to discover.
 
-## Launch Status
+## One map, four lenses
 
-The public cutover is complete; [issue #97](https://github.com/Jesssullivan/darkmap.phasi.space/issues/97)
-has the closing evidence. `darkmap.tinyland.dev` remains an intentional legacy
-Tinyland path for current infrastructure and should not be renamed casually.
+Pick a **lens** and the same map re-orders and re-emphasizes itself for your work;
+nothing is greyed out or removed.
 
-See [`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md) for DNS, TLS,
-Cloudflare Tunnel, legacy tailnet path, and public-repo readiness notes.
+- **◐ Sky** — dark-sky & astrophotography planning: Bortle/SQM from VIIRS + Falchi
+  2016, sun/moon ephemeris, and tonight's dark window.
+- **☁ Air** — air quality & atmosphere: multi-pollutant NowCast AQI, an OpenAQ
+  ground-station layer, and cloud / aerosol / water-vapor overlays.
+- **📡 Links** — RF / laser link planning: atmospheric transmission T(λ) computed
+  along the actual beam, with a go / no-go link-budget margin.
+- **🛰 Orbit** — LEO ground-station ops: satellite passes gated by the _real_ terrain
+  horizon (not a flat one), with az/el track, Doppler, and keyhole notes.
 
-## Privacy
+Every derived value carries an honesty label — measured / modeled / predicted — and
+its coverage caveats; the map never fabricates a reading it doesn't have.
 
-This repo should be safe to make public:
+## Built on open data and prior art
 
-- no user accounts, payments, runtime database, or write APIs
-- no checked-in `.env` files or plaintext credentials
-- no repo-owned analytics or ad-tech scripts
-- map APIs are proxied only to normalize responses and caching
+darkmap stands on the shoulders of open datasets and earlier work. The idea was
+inspired by lightpollutionmap.info — an inspiration and comparison point, not an
+affiliation or primary attribution.
 
-Operational secrets live outside the repo in the operator SOPS store and in
-GitHub Actions secrets. This repo should only document secret boundaries, not
-copy secret values or operator-only material.
+- **Light pollution** — NASA/NOAA VIIRS Day/Night Band + Falchi et al. 2016, _The new
+  world atlas of artificial night sky brightness_
+- **Atmosphere** — NASA GIBS (clouds, aerosol optical depth, water vapor) + Open-Meteo
+  point forecast & CAMS air quality (CC-BY 4.0)
+- **Ground air quality** — OpenAQ v3 (CC-BY 4.0)
+- **Orbital elements** — Celestrak TLEs (SGP4 via satellite.js)
+- **Spectral bands** — a curated HITRAN2020 line subset
+- **Geocoding & elevation** — OpenStreetMap via Photon + AWS Terrarium terrain tiles
 
-Before release-sensitive changes, run the public-readiness checks in
-[`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md). The latest local audit
-summary is in [`docs/PUBLIC_READINESS_AUDIT.md`](./docs/PUBLIC_READINESS_AUDIT.md).
+See [`/docs`](https://darkmap.phasi.space/docs) for the full, canonical attribution.
 
-## Stack
+## Run it
 
-- SvelteKit + adapter-node
-- Svelte 5, TypeScript, Skeleton 4.15.2 (pinned), Tailwind v4 (v4-compat shim)
-- MapLibre GL JS
-- Effect.ts service layers for raster, geocoder, elevation, and ephemeris work
-- astronomy-engine for sun/moon calculations
-- Just + Nix for local development
-- Bazel/Bzlmod for module graph and unit-test proofs
-- OpenTofu + Kustomize for the current deployment path
-
-## Development
-
-Use the Justfile. It is the authoritative entrypoint for local and CI commands.
+The Justfile is the authoritative entrypoint for every local and CI command.
 
 ```bash
 direnv allow
-just setup
-just check
+just setup     # pnpm install
+just check     # lint + typecheck + unit tests
 just build
 just dev
 ```
 
-Useful targeted checks:
+## Stack
 
-```bash
-just test-local
-just test-unit
-just format-check
-```
+SvelteKit (adapter-node) · Svelte 5 + TypeScript · MapLibre GL · Skeleton 4.15.2
+(pinned) + Tailwind v4 · Effect.ts service layers · astronomy-engine + satellite.js.
+Just + Nix for local dev; Bazel/Bzlmod for the module graph and unit-test proofs.
 
-## Project Work
+## Privacy
 
-GitHub issues are the public work tracker for this repo. Linear may still hold
-Tinyland-wide planning records, but repo-local implementation work lives in
-GitHub first. The launch/follow-up issue map lives in
-[`docs/PUBLIC_LAUNCH.md`](./docs/PUBLIC_LAUNCH.md#tracker-gate).
+- No user accounts, payments, runtime database, or write APIs.
+- No analytics or ad-tech.
+- Upstream data APIs are proxied only to normalize responses and add caching; the one
+  runtime secret (an OpenAQ key) lives outside the repo, never in git.
 
-Current public-readiness follow-up: [#122](https://github.com/Jesssullivan/darkmap.phasi.space/issues/122).
+## Contributing
 
-## Data Sources
+Issues and PRs are welcome — there are a few [good first issues][gfi] to start with
+(a logo, contributor docs, a perf pass). Agents and operators should read
+[`AGENTS.md`](./AGENTS.md) first.
 
-- NASA/NOAA VIIRS Day/Night Band composites
-- Falchi et al. 2016, *The new world atlas of artificial night sky brightness*
-- NASA GIBS WMTS (MODIS Terra / VIIRS NOAA-20 true-color, MODIS Combined AOD, MODIS Terra water vapor)
-- Open-Meteo point forecast (RH, cloud cover, visibility, PWV), CC-BY 4.0
-- OpenAQ v3 ground-station PM2.5, CC-BY 4.0
-- HITRAN2020 line data (curated subset) for the spectral transmission bands
-- OpenStreetMap data through Photon
-- AWS Mapzen Terrarium elevation tiles
-- Current public WMS transport for selected light-pollution rasters
-
-lightpollutionmap.info is an inspiration and comparison point, not an
-affiliation or primary attribution. See [`/docs`](./src/routes/docs/+page.svelte)
-for source notes.
+[gfi]: https://github.com/Jesssullivan/darkmap.phasi.space/labels/good%20first%20issue
