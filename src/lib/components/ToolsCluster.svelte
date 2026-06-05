@@ -25,10 +25,27 @@
 	// is the persona this tool leads for — used ONLY to sort it first + accent it
 	// when that lens is active. Every tile stays opacity:1 + clickable in every lens
 	// (command-deck.md §4 — promote by order/accent, never dim/disable/hide).
-	const TOOLS: { id: ToolId; label: string; sub: string; icon: typeof Radio; lens: Lens }[] = [
-		{ id: 'transmission', label: 'Transmission', sub: 'T(λ) · path-AOD · link budget', icon: Radio, lens: 'links' },
-		{ id: 'passplan', label: 'Pass Plan', sub: 'satellite passes · polar track', icon: Satellite, lens: 'orbit' },
-		{ id: 'aq', label: 'Air Quality', sub: 'pollutants · NowCast AQI', icon: Wind, lens: 'air' },
+	// `key` is the keyboard accelerator (W5d) that mirrors this launcher — surfaced in
+	// the button title for discoverability. Twilight has none (V was dropped); it stays
+	// a click/disclosure toggle. The chords themselves live in +page.svelte's onDeckKey.
+	const TOOLS: { id: ToolId; label: string; sub: string; icon: typeof Radio; lens: Lens; key?: string }[] = [
+		{
+			id: 'transmission',
+			label: 'Transmission',
+			sub: 'T(λ) · path-AOD · link budget',
+			icon: Radio,
+			lens: 'links',
+			key: 'T',
+		},
+		{
+			id: 'passplan',
+			label: 'Pass Plan',
+			sub: 'satellite passes · polar track',
+			icon: Satellite,
+			lens: 'orbit',
+			key: 'P',
+		},
+		{ id: 'aq', label: 'Air Quality', sub: 'pollutants · NowCast AQI', icon: Wind, lens: 'air', key: 'A' },
 		{ id: 'twilight', label: 'Twilight', sub: 'sun/moon timing · dark window', icon: SunMoon, lens: 'sky' },
 	];
 
@@ -48,7 +65,8 @@
 				class="tool-tile"
 				class:lead
 				style:order={orderFor(t.lens)}
-				aria-label={`Open ${t.label}${lead ? ' — leads the active lens' : ''}`}
+				aria-label={`Open ${t.label}${t.key ? ` (key ${t.key})` : ''}${lead ? ' — leads the active lens' : ''}`}
+				title={t.key ? `Open ${t.label} (key ${t.key})` : `Open ${t.label}`}
 				onclick={() => onlaunch(t.id)}
 			>
 				<span class="tool-icon"><Icon size={16} aria-hidden="true" /></span>
