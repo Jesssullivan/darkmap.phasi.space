@@ -2,12 +2,14 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import {
 	buildAllMarkers,
+	buildMarkerFeature,
 	buildStationFeature,
 	selectFreshLocations,
 	type StationFeature,
 	type V3Latest,
 	type V3Location,
 } from '$lib/atmospheric/openaq-shape';
+import { TtlCache } from '$lib/server/geocoder/cache';
 
 /**
  * OpenAQ v3 multi-pollutant proxy (TIN-1757). Holds `OPENAQ_API_KEY` server-side;
@@ -29,6 +31,15 @@ const LOCATIONS_LIMIT = 1000;
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // drop stations/readings older than 24h
 const MAX_LATEST_FETCHES = 50; // cap the per-location /latest fan-out (no bbox-wide latest exists)
 const LATEST_CONCURRENCY = 6;
+
+// TIN-1889 Phase 3 — a per-process latest-index keyed by location id. The per-location
+// `/latest` fan-out (for the density field) and the single-station click path share it,
+// so a station fetched for one viewport is warm for the next pan and for a click. We
+// cache the RAW readings (not the joined feature): buildStationFeature re-derives
+// staleness against the CURRENT time, so a reading aging past STALE_AFTER_MS still drops
+// even from a warm entry — never paint a now-stale value as fresh. No DB (in-process
+// Map + TTL, per the adapter-node contract); each replica warms independently.
+const latestCache = new TtlCache<readonly V3Latest[]>({ maxEntries: 512, ttlMs: 5 * 60 * 1000 });
 
 const emptyDegraded = (): Response =>
 	new Response(JSON.stringify({ type: 'FeatureCollection', features: [], degraded: true }), {
@@ -69,7 +80,45 @@ const mapWithConcurrency = async <T, R>(
 	return out;
 };
 
+/** Cached `/locations/{id}/latest`. Transient failures return [] and are NOT memoized. */
+const fetchLatestCached = async (id: number, apiKey: string, nowMs: number): Promise<readonly V3Latest[]> => {
+	const key = String(id);
+	const hit = latestCache.get(key, nowMs);
+	if (hit !== undefined) return hit;
+	const body = (await authedJson(`${OPENAQ}/locations/${id}/latest`, apiKey)) as { results?: V3Latest[] } | null;
+	if (body === null) return []; // upstream error — empty this pass, not cached
+	const results = body.results ?? [];
+	latestCache.set(key, results, nowMs);
+	return results;
+};
+
 export const GET: RequestHandler = async ({ url }) => {
+	const apiKey = env.OPENAQ_API_KEY;
+	if (!apiKey) return emptyDegraded();
+
+	// TIN-1889 Phase 3 — single-station value on demand (`?locationId=<id>`): the client
+	// clicks a station marker and asks for that one station's latest reading. No bbox.
+	// Shares the latestCache with the density-field fan-out, so a clicked station that
+	// was just fetched for the field is a pure cache hit (zero upstream calls). Honest:
+	// if no fresh value resolves, return the marker (status:stale + lastSeen) — never a
+	// fabricated reading.
+	const locationIdStr = url.searchParams.get('locationId');
+	if (locationIdStr) {
+		const id = Number.parseInt(locationIdStr, 10);
+		if (!Number.isInteger(id) || id <= 0) error(400, 'locationId must be a positive integer');
+		const nowMs = Date.now();
+		const meta = (await authedJson(`${OPENAQ}/locations/${id}`, apiKey)) as { results?: V3Location[] } | null;
+		const loc = meta?.results?.[0];
+		const feature = loc
+			? (buildStationFeature(loc, await fetchLatestCached(id, apiKey, nowMs), nowMs, STALE_AFTER_MS) ??
+				buildMarkerFeature(loc, nowMs, STALE_AFTER_MS))
+			: null;
+		return new Response(
+			JSON.stringify({ type: 'FeatureCollection', features: feature ? [feature] : [], degraded: false }),
+			{ status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=120' } },
+		);
+	}
+
 	const bboxStr = url.searchParams.get('bbox');
 	if (!bboxStr) error(400, 'missing required param: bbox');
 	const parts = bboxStr.split(',').map((s) => Number.parseFloat(s));
@@ -80,9 +129,6 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (west >= east || south >= north) {
 		error(400, 'bbox must have west<east and south<north');
 	}
-
-	const apiKey = env.OPENAQ_API_KEY;
-	if (!apiKey) return emptyDegraded();
 
 	// 1. Locations in the viewport (metadata + sensors + datetimeLast; no values).
 	const locParams = new URLSearchParams({ bbox: `${west},${south},${east},${north}`, limit: String(LOCATIONS_LIMIT) });
@@ -125,13 +171,12 @@ export const GET: RequestHandler = async ({ url }) => {
 	// 2. Pre-filter to fresh criteria-pollutant locations and cap the /latest fan-out.
 	const fresh = selectFreshLocations(locations, nowMs, STALE_AFTER_MS, MAX_LATEST_FETCHES);
 
-	// 3. Fetch each location's latest values (bounded concurrency) + 4. join/staleness.
+	// 3. Fetch each location's latest values (bounded concurrency, TTL-cached per id so a
+	//    re-pan over the same metro is warm) + 4. join/staleness.
 	const features = (
 		await mapWithConcurrency(fresh, LATEST_CONCURRENCY, async (loc): Promise<StationFeature | null> => {
-			const body = (await authedJson(`${OPENAQ}/locations/${loc.id}/latest`, apiKey)) as {
-				results?: V3Latest[];
-			} | null;
-			return buildStationFeature(loc, body?.results ?? [], nowMs, STALE_AFTER_MS);
+			const latest = await fetchLatestCached(loc.id as number, apiKey, nowMs);
+			return buildStationFeature(loc, latest, nowMs, STALE_AFTER_MS);
 		})
 	).filter((f): f is StationFeature => f !== null);
 
