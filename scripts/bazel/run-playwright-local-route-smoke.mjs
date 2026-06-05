@@ -186,6 +186,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'aq-dashboard':
 			await runAqDashboardSmoke(page);
 			return;
+		case 'click-budget':
+			await runClickBudgetSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -780,6 +783,86 @@ async function runOrbitSmoke(page) {
 	console.log(
 		`darkmap orbit smoke: Orbit lens active + pass CTA promoted (data-cta=${info.ctaKind}, tier=${info.ctaTier}); ` +
 			'panel internals (picker / gradient track / per-pass T / keyhole) verified locally + via orbit.ts unit tests',
+	);
+}
+
+async function runClickBudgetSmoke(page) {
+	// W5f — the reachable-in-N click-budget contract (command-deck.md §9). From a
+	// COLD load, each lens's signature answer must be reachable within its budget:
+	//   Sky → Bortle   ≤1 (pin)
+	//   Air → AQI      ≤1 (pin; AQI is data-gated, shown in every lens)
+	//   Links → margin ≤2 (pin + the readout's transmission CTA)
+	//   Orbit → pass   ≤2 (pin + the readout's pass CTA)
+	// This is the SOFTER check (TIN-1870 fork): we prove REACHABILITY within the
+	// budget — the lead element is present/clickable at the right step — not exact
+	// click counts or exact values. One pin is reused across all four lenses (the
+	// later answers are "N clicks from cold", counting the shared pin). Order matters:
+	// the readout-level answers (Sky/Air/Orbit CTAs) are checked BEFORE Links opens
+	// the transmission deep tool, which docks INTO the inspector at WIDE (W3) and
+	// swaps the readout out. Per TIN-1770 the slow cell's reflow makes a panel-OPEN
+	// click unreliable for Orbit, so Orbit asserts its CTA is present + enabled at
+	// Tier-1 (the 2nd click's target), mirroring the orbit smoke; Links reuses the
+	// link-budget smoke's proven-on-cell CTA click.
+	await runMapCanvasSmoke(page);
+
+	const fail = (msg) => {
+		throw new Error(`click-budget: ${msg}`);
+	};
+	const setLens = async (key, name) => {
+		await page.keyboard.press(key);
+		await page.waitForFunction(
+			(n) => document.querySelector('.lens-switcher .chip[aria-pressed="true"]')?.getAttribute('aria-label') === n,
+			name,
+			{ timeout: 10_000 },
+		);
+	};
+
+	// ── Sky ≤1 ────────────────────────────────────────────────────────────────
+	await setLens('1', 'Sky');
+	await page.locator(MAP_CANVAS_SELECTOR).first().click(); // click 1 of the budget: pin a point
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ timeout: 20_000 });
+	const bortle = page.locator('.bortle-class').first();
+	await bortle.waitFor({ state: 'attached', timeout: 20_000 });
+	const skyText = ((await bortle.textContent()) ?? '').trim();
+	if (!/Bortle/i.test(skyText)) fail(`Sky answer (Bortle) not reachable in ≤1 click: "${skyText}"`);
+
+	// ── Air ≤1 ────────────────────────────────────────────────────────────────
+	// Same pin (no extra map click). AQI is data-gated, not lens-gated.
+	await setLens('2', 'Air');
+	const aqiVal = page.locator('.aqi-value').first();
+	await aqiVal.waitFor({ state: 'attached', timeout: 20_000 });
+	const airText = ((await aqiVal.textContent()) ?? '').trim();
+	if (!/\d/.test(airText)) fail(`Air answer (AQI) not reachable in ≤1 click: "${airText}"`);
+
+	// ── Orbit ≤2 ──────────────────────────────────────────────────────────────
+	// Checked BEFORE Links opens the transmission deep tool (which swaps the readout
+	// out at WIDE). The pass CTA is the 2nd click's target; we assert it is present,
+	// enabled, and promoted to Tier-1 under the Orbit lens (panel-open is unreliable
+	// on the slow cell — TIN-1770).
+	await setLens('4', 'Orbit');
+	const passCta = readout.getByRole('button', { name: /plan a satellite pass/i });
+	await passCta.waitFor({ state: 'attached', timeout: 20_000 });
+	if (!(await passCta.isEnabled())) fail('Orbit pass CTA is disabled (not reachable in ≤2)');
+	const passMeta = await page.evaluate(() => {
+		const cta = document.querySelector('.pass-plan-link');
+		return { kind: cta?.getAttribute('data-cta') ?? null, tier: cta?.getAttribute('data-tier') ?? null };
+	});
+	if (passMeta.kind !== 'pass') fail(`Orbit CTA is not the pass tool (data-cta=${passMeta.kind})`);
+	if (passMeta.tier !== '1') fail(`Orbit pass CTA not promoted to Tier-1 (data-tier=${passMeta.tier})`);
+
+	// ── Links ≤2 ──────────────────────────────────────────────────────────────
+	// pin (1, shared) + the transmission CTA (2) → the link margin in the sheet.
+	await setLens('3', 'Links');
+	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click(); // click 2
+	const margin = page.locator('.lb-margin-val').first();
+	await margin.waitFor({ state: 'attached', timeout: 20_000 });
+	const linksText = ((await margin.textContent()) ?? '').trim();
+	if (!/[+-]?\d/.test(linksText)) fail(`Links answer (margin) not reachable in ≤2 clicks: "${linksText}"`);
+
+	console.log(
+		`darkmap click-budget smoke: Sky Bortle ≤1 ("${skyText}") · Air AQI ≤1 ("${airText}") · ` +
+			`Orbit pass CTA Tier-1 ≤2 · Links margin ≤2 ("${linksText}")`,
 	);
 }
 
