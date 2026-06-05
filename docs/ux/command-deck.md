@@ -5,11 +5,11 @@
 > accent-label** — **never** opacity/disable. Every deep tool has a persistent
 > in-layout launcher and inherits the click as its query.
 
-Status: **building**. Wave 0 (de-dim) shipped in #380; **Wave 1 (the grid shell)
-shipped in #382** — the float-soup (14 `position:fixed` surfaces + the z4→z13
-ladder) is replaced by the 5-region grid at WIDE, camera-verified zero-overlap
-across all four lenses. Waves 2–5 (relocate the map toolbar + deep tools into the
-rail/inspector; responsive reflow; polish) are next.
+Status: **shipped and live**. The redesign landed in waves — de-dim, the grid shell,
+the Instrument Bay (toolbar + deep-tools relocation), the full responsive reflow, and
+the polish pass (per-lens accents, Cmd-K, container queries) — replacing the old
+float-soup (14 `position:fixed` surfaces + the z4→z13 ladder) with the named-region
+grid. This doc is now the reference for the as-built design contract, not a plan.
 
 ## 1. Why (the problem this fixes)
 
