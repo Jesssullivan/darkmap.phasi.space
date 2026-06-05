@@ -1104,7 +1104,9 @@
 		font-size: 0.95rem;
 		font-weight: 600;
 		line-height: 1.2;
-		color: var(--accent-amber);
+		/* Links lead value carries the active lens accent (W5c — Links blue). Only
+		   renders under the Links lens, so this resolves to the Links accent. */
+		color: var(--lens-accent, var(--accent-amber));
 		font-variant-numeric: tabular-nums;
 		display: flex;
 		flex-wrap: wrap;
@@ -1116,7 +1118,9 @@
 		font-size: 1.5rem;
 		font-weight: 700;
 		line-height: 1.05;
-		color: var(--accent-amber);
+		/* Sky lead value carries the active lens accent (W5c — Sky == amber, unchanged).
+		   Only renders under the Sky lens, so this resolves to the Sky accent. */
+		color: var(--lens-accent, var(--accent-amber));
 	}
 	.bortle-label {
 		display: block;

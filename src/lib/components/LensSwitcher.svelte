@@ -96,18 +96,20 @@
 		white-space: nowrap;
 	}
 	.chip:hover:not(.active) {
-		border-color: rgba(var(--accent-amber-rgb), 0.65);
-		color: var(--accent-amber);
+		border-color: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.65);
+		color: var(--lens-accent, var(--accent-amber));
 	}
-	/* Active state — fill + weight, not colour alone (ColorVision-Assist). */
+	/* Active state — fill + weight, not colour alone (ColorVision-Assist). The fill is
+	   the active lens's accent (W5c); the dark bold label keeps the active chip legible
+	   without relying on hue. */
 	.chip.active {
-		background: var(--accent-amber);
-		border-color: var(--accent-amber);
+		background: var(--lens-accent, var(--accent-amber));
+		border-color: var(--lens-accent, var(--accent-amber));
 		color: #0a0a0a;
 		font-weight: 700;
 	}
 	.chip:focus-visible {
-		outline: 2px solid var(--accent-amber);
+		outline: 2px solid var(--lens-accent, var(--accent-amber));
 		outline-offset: 2px;
 	}
 	@media (pointer: coarse) {

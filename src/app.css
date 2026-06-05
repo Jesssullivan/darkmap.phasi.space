@@ -45,6 +45,12 @@
 :root {
 	--accent-amber-rgb: 255, 209, 102;
 	--accent-amber: rgb(var(--accent-amber-rgb));
+	/* Per-lens accent (W5c) — defaults to amber (Sky) for any surface rendered
+	   outside the Command Deck; `.command-deck[data-lens]` (+page.svelte) overrides
+	   the -rgb triple per active lens and the solid form recomputes from it. Mirrors
+	   LENS_ACCENT in src/lib/lens.ts. */
+	--lens-accent-rgb: var(--accent-amber-rgb);
+	--lens-accent: rgb(var(--lens-accent-rgb));
 }
 
 [data-mode='light'] {
