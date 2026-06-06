@@ -272,6 +272,12 @@
 				and used to drive the transmission widget's aerosol input. Requires an <code>OPENAQ_API_KEY</code> env on the server;
 				absent that, the proxy returns an empty FeatureCollection so the overlay renders nothing instead of throwing.
 			</li>
+			<li>
+				<strong>Celestrak GP / TLE</strong> — two-line element sets for the Orbit lens, proxied through
+				<code>/api/orbit/tle</code> (no auth; the ~2-hour update cadence is respected via a server-side cache). Pass
+				prediction runs <strong>satellite.js</strong> SGP4 in the browser, gated by the DEM horizon; the TLE-epoch age is
+				surfaced on every pass so stale elements are never presented as fresh.
+			</li>
 		</ul>
 
 		<h3 class="mt-5 font-mono text-sm font-bold uppercase tracking-wide opacity-70">Transmission methodology</h3>
@@ -365,7 +371,7 @@
 			<li>SvelteKit (adapter-node), Svelte 5 runes, Skeleton 4.15.2, Tailwind v4</li>
 			<li>MapLibre GL JS 5 for the map surface</li>
 			<li>Effect.ts service layers — RasterClient, EphemerisClient, HorizonProvider, GeocoderClient</li>
-			<li>astronomy-engine (cosinekitty) for sun / moon math</li>
+			<li>astronomy-engine (cosinekitty) for sun / moon math; satellite.js (SGP4) for LEO orbit propagation</li>
 			<li>
 				Bazel 8 + Bzlmod via tinyland-inc/bazel-registry, with the MassageIthaca cache-attachment-contract pattern for
 				RBE

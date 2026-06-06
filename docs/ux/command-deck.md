@@ -46,9 +46,12 @@ never occluded, at every breakpoint.
 
 ### Regions
 
-- **HEADER** (top, full width): the lens chips (left) + geocoder (right), out of
-  the float-soup into a reserved row. The active chip takes the lens accent (filled
-  pill + bold label, ColorVision-Assist — never color-alone). Number-keys 1–4 stay.
+- **Lens switcher + search** (stage overlays — the HEADER row was reclaimed): originally
+  a reserved HEADER row; **X2 (#405) deleted that row** and re-homed both onto the STAGE
+  as map overlays — the LensSwitcher pinned top-**right**, the compact GeocoderSearch
+  top-**left** (P6 #413 height-normalizes the search and, at COMPACT, docks the switcher
+  into the bottom sheet as a full-width lens strip). The active chip takes the lens accent
+  (filled pill + bold label, ColorVision-Assist — never color-alone). Number-keys 1–4 stay.
 - **RAIL** (left, ~20rem): the layer accordions by data family (Night-lights /
   Atmosphere / Terrain / Ephemeris, multi-expand, provenance chip on every header
   even collapsed) + the instrument tiles + the persistent **TOOLS** cluster (all
@@ -77,9 +80,9 @@ Never reposition, never `display:none` a feature. Container queries drive each
 region's own density (roomy vs icon-compact). Three coordinated layouts replace the
 five fighting families:
 
-- **WIDE (≥1024px):** `'header header header' / 'rail stage inspector' / 'dock dock dock'` — `[20rem][1fr][22rem]`. Persistent rail + inspector; deep tools dock in the inspector (stage shrinks, never covered).
-- **MEDIUM (640–1023px):** `'header header' / 'rail stage' / 'dock dock'`. Rail → icon nav-rail that pushes the stage on expand; inspector is a collapsible that re-adds its column when opened (stage shrinks, never floats).
-- **COMPACT (<640px):** single column `'header' / 'stage' / 'dock'`. Rail + inspector + tools collapse into **one** non-modal bottom-sheet (Material 3 standard, co-exists with the map) with PEEK / HALF / FULL(~88%, never 100% — a map strip always shows) detents. Switching layers→readout→tool **swaps the sheet content**, never spawns a second panel — killing the "390px Tour-over-fullscreen-rail-over-hidden-map" bug. The gantt is a thin always-present row *above* the sheet's peek.
+- **WIDE (≥1024px):** `'rail stage inspector' / 'dock dock dock'` (the HEADER row was reclaimed in X2 — lens + search are stage overlays). Two sub-bands: laptop 1024–1365px `[19rem][1fr][22rem]`, roomy ≥1366px `[22rem][minmax(380px,1fr)][30rem]`. Persistent rail + inspector; deep tools dock in the inspector (stage shrinks, never covered).
+- **MEDIUM (640–1023px):** `'rail stage' / 'dock dock'`. Rail → icon nav-rail that pushes the stage on expand; inspector is a collapsible that re-adds its column when opened (stage shrinks, never floats).
+- **COMPACT (<640px):** single column `'stage' / 'dock'` (the deck falls back to `display:contents`; lens + search + toolbar are stage overlays). Rail + inspector + tools collapse into **one** non-modal bottom-sheet (Material 3 standard, co-exists with the map) with PEEK / HALF / FULL(~88%, never 100% — a map strip always shows) detents. Switching layers→readout→tool **swaps the sheet content**, never spawns a second panel — killing the "390px Tour-over-fullscreen-rail-over-hidden-map" bug. The gantt is a thin always-present row *above* the sheet's peek.
 
 Verify the non-overlap invariant with the SwiftShader camera at 390/640/768/1024/1440: no region's box intersects the map's except by shrinking it; the gantt's box never intersects any other region.
 
@@ -112,17 +115,18 @@ value + its one CTA share one large target (Fitts).
 - 📡 **Links** "link margin" — **≤2 clicks**: click → path-AOD→T→dB line; "Design a link" → boresight + Tx/Rx + loss breakdown expand *into* the inspector.
 - 🛰 **Orbit** "next pass" — **≤2 clicks**: next DEM-gated pass on pin regardless of lens; "Plan a pass" → polar az/el track + pass list expand in-inspector.
 
-`closeReadout()` must not force-close a deep tool. Cmd-K deferred (audience of four);
-number-keys 1–4 + inline shortcut hints stay.
+`closeReadout()` must not force-close a deep tool. Cmd-K **shipped in W5** (#401 — a fuzzy
+command palette); number-keys 1–4 + the T/P/A accelerators + inline shortcut hints stay.
 
 ## 6. Rebuild waves
 
 - **W0 — de-dim** ✅ (#380): delete the Tier-3 tokens + every dim usage; `Relevance` → `{lead,support,more}`; smoke enforces `opacity===1`. No layout change.
 - **W1 — grid shell** ✅ (#382): `.command-deck` 5-region grid at WIDE; `.map`→`grid-area:stage`; lens+geocoder→HEADER, gantt→DOCK (one gantt, not two); de-duped the standalone SkyCompass float (the dome now lives only in the rail). Camera-verified WIDE zero-overlap, all four lenses. **Fontless-cell peg fix:** the grid pegged the RBE cell's main thread before DCL until `min-width:0` on the header flex children (+ `minmax(0,…)` rows) made layout metric-independent — see [[reference_darkmap_ci_testing]].
-- **W2 — inspector + two-group readout + always-on TOOLS**: dock PointReadout; "[Lens] — your tools" + "More (N) ▾"; large lead per lens; kill the data-guarded CTA gating.
-- **W3 — deep tools dock in-region**: TransmissionSheet/PassPlan/AQ render inside the inspector (master-detail / stage-shrink); wire carry-the-query; delete the `bottom:0 z12` sheet.
-- **W4 — responsive reflow + container queries**: MEDIUM + COMPACT; re-anchor the Tour to grid cells; delete the `!important` block + every `display:none` feature drop. Camera-verify 390/640/768/1024/1440.
-- **W5 — polish**: per-lens accents (label-paired), shortcut hints, update personas §11.3 to "promote/group/size/label — never dim".
+- **W2 — inspector + two-group readout + always-on TOOLS** ✅ (#383 map-shrink + ToolsCluster, #384 two-group readout, #385 toolbar re-home): dock PointReadout; "[Lens] — your tools" + "More (N) ▾"; large lead per lens; kill the data-guarded CTA gating.
+- **W3 — deep tools dock in-region** ✅ (#386): TransmissionSheet/PassPlan/AQ render inside the inspector (master-detail / stage-shrink); wire carry-the-query; delete the `bottom:0 z12` sheet.
+- **W4 — responsive reflow + container queries** ✅ (#389–393): MEDIUM + COMPACT; re-anchor the Tour to grid cells; delete the `!important` block + every `display:none` feature drop. Camera-verify 390/640/768/1024/1440.
+- **W5 — polish** ✅ (#399–403): per-lens accents (label-paired), shortcut hints, update personas §11.3 to "promote/group/size/label — never dim".
+- **X1/X2 — Air viewport-instrument live-fetch + HEADER reclaim** ✅ (#404/#405); **P6 — iPhone-SE / mobile top-band declutter** ✅ (#413).
 
 ## 7. SOTA backing
 
@@ -167,7 +171,7 @@ The lens still re-weights by **order + grouping + size + accent-label only** (§
 every launcher tile and readout section stays `opacity:1` and clickable in every lens.
 
 ### Waves
-- **W2 — Instrument-bay ratio + carry-the-query + TOOLS cluster + two-group readout.**
+- **W2 — Instrument-bay ratio + carry-the-query + TOOLS cluster + two-group readout** ✅ (#383–385).
   Make the room before the tools move in: re-size the WIDE grid (RAIL 20→22rem,
   INSPECTOR 22→26/30rem, STAGE a fractional remainder); a persistent **TOOLS launcher
   cluster** (4 full-opacity, lens-ordered tiles) at the bottom of the RAIL; the
@@ -175,15 +179,18 @@ every launcher tile and readout section stays `opacity:1` and clickable in every
   `{lat,lon,et,lens,layers,boresight,horizon}` rune so one map-click feeds everything.
   _(Shipping in slices: ratio + cluster first, readout hierarchy + clickable
   instruments next.)_
-- **W3 — Deep tools dock IN the INSPECTOR (master-detail).** `TransmissionSheet` /
+- **W3 — Deep tools dock IN the INSPECTOR (master-detail)** ✅ (#386). `TransmissionSheet` /
   `PassPlanPanel` / AQ render inside `.deck-inspector` yoked to the pinned point; tools
   become non-mutually-exclusive ordered sections; seeded (ghosted/"sample") empty
   states; finish carry-the-query (Links/Orbit hit ≤2 clicks). **WIDE-only**; the
   ≤1023px float fallback stays until W4.
 - **W4 — Re-home the MapToolbar onto the stage's top edge + DOCK peek + responsive
-  reflow (MEDIUM/COMPACT)** + delete the `--field-panel-*` / bottom-sheet CSS.
-- **W5 — Per-lens accents (label-paired) + accelerators (Cmd-K + T/P/A/V) + per-lens
-  splitter defaults + maximize-stage + click-budget enforced in the smoke suite + docs.**
+  reflow (MEDIUM/COMPACT)** ✅ (#389–393). The MapToolbar re-home actually landed early
+  in #385; the `--field-panel-*` math was **kept** (it is the live short-landscape float
+  fallback — W4d/TIN-1867 was cancelled as obsolete, not executed).
+- **W5 — Per-lens accents (label-paired) + accelerators (Cmd-K + T/P/A) + click-budget
+  enforced in the smoke suite + docs** ✅ (#399–403). _(The V-chord + per-lens splitter
+  defaults + maximize-stage were dropped/deferred — no clean target; tracked on TIN-1870.)_
 
 ### Click budgets (enforced as a smoke-suite invariant in W5)
 Sky hover=0 / ≤1 · Air ≤1 · Links ≤2 · Orbit ≤2 — a tested, non-regressing property.

@@ -34,7 +34,7 @@ dev-open:
 # Build
 # ─────────────────────────────────────────────
 
-# Production static build (adapter-static -> build/)
+# Production build (adapter-node -> build/)
 build:
     cd {{ root }} && pnpm run build
 
