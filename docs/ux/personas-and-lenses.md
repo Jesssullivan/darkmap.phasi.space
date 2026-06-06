@@ -1,8 +1,11 @@
 # darkmap — personas & the power-tool lens model
 
-**Status:** Phase 0 (discovery + design). Source of truth for the "power-tool exposure" epic.
-This document is design intent + research, not shipped behavior. Implementation is sequenced as
-sprints S1–S4 at the end. Companion Figma file linked in §8.
+**Status:** **Shipped** (was Phase 0 discovery + design). All four lenses — including the net-new
+LEO **Orbit** build (Celestrak TLE proxy + satellite.js SGP4 + DEM-gated pass planner) — and the
+S1 lens-nav engine are live. This document is retained as the design-intent + research record behind
+the "power-tool exposure" epic; the §9 roadmap below is now **as-built history**, not pending work.
+The as-shipped UI contract lives in [command-deck.md](./command-deck.md) (see also
+`docs/ux/public-readiness/`). Companion Figma file linked in §8.
 
 ---
 
@@ -213,7 +216,8 @@ honest uncertainty**; defer rotator/radio control + footprint maps to v2.
 
 ## 5. LEO Orbit lens — net-new build scope (specced; built in S3)
 
-Confirmed: no orbit/TLE/SGP4 code or deps exist. The geometry leans on strong reuse.
+_(Specced in Phase 0; now **SHIPPED** — `src/lib/orbit.ts` (satellite.js SGP4), `/api/orbit/tle`
+(Celestrak proxy), and `PassPlanPanel.svelte` are live.)_ The geometry leans on strong reuse.
 
 - **New:** `/api/orbit/tle` proxy → **Celestrak** GP data (no auth; respect the ~2-h update cadence,
   cache, record epoch + fetch time). Space-Track later (auth + rate limits: <30/min, <300/hr).
@@ -334,7 +338,7 @@ build-ready specs.
 
 ---
 
-## 9. Implementation roadmap (later sprints — specced, not built in Phase 0)
+## 9. Implementation roadmap (S1–S4 — **all shipped**; retained as as-built history)
 
 - **S1 — Lens nav engine.** `url-hash` `lens`; the switcher UI; the re-weighting wiring across
   `LayerRail` / `PointReadout` / `MapToolbar` (lens-aware ordering + primary CTA). No new data.
