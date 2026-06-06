@@ -270,6 +270,18 @@
 		min-width: min(22rem, 60vw);
 		z-index: 20;
 	}
+	/* COMPACT (P6): the search owns the top-LEFT, left-anchored (the MapToolbar moved
+	   to a top-right column), so the resting pill no longer overlaps the toolbar and the
+	   dropdown no longer re-centers/jumps as the field expands. The expanded width stays
+	   min(22rem,60vw) which at 375px = 225px from left 0.75rem → right ~237px, clear of
+	   the top-right toolbar column. */
+	@media (max-width: 639.98px) {
+		.geocoder.compact {
+			left: max(0.75rem, env(safe-area-inset-left));
+			right: auto;
+			transform: none;
+		}
+	}
 	@media (prefers-reduced-motion: reduce) {
 		.geocoder.compact .search-input {
 			transition: none;
@@ -282,6 +294,10 @@
 		   RBE cell) can leave the input's intrinsic min-width unresolvable and stall
 		   inline-axis sizing of the .deck-header flex row it lives in (W1 peg). */
 		min-width: 0;
+		/* P6 — match the MapToolbar pill height (2.5rem) so the stacked top-left column
+		   (search above toolbar) reads as one deliberate cluster, not a thin caption. */
+		box-sizing: border-box;
+		min-height: 2.5rem;
 		background: rgba(8, 10, 16, 0.85);
 		color: #e9ecf3;
 		border: 1px solid rgba(255, 255, 255, 0.18);

@@ -360,6 +360,19 @@ async function runMobileHudSmoke(page) {
 	await page.locator('.gantt').waitFor({ state: 'visible', timeout: 20_000 });
 	await page.locator('.toolbar').waitFor({ state: 'visible', timeout: 20_000 });
 
+	// P6 — the top-band map overlays must not collide on the smallest screens (the
+	// pre-P6 bug: the centered search pill overlapped the top-left toolbar, and the lens
+	// chips piled into the same corner). Search now owns top-left, the toolbar is a
+	// top-right column, and the lens switcher is docked (COMPACT-tall) or floats
+	// (short-landscape) — none may overlap. Asserted BEFORE the pin, in the resting
+	// top-band state, across all matrix viewports.
+	await page.locator('.geocoder').first().waitFor({ state: 'visible', timeout: 20_000 });
+	await assertHudBoxesDoNotOverlap(page, 'mobile-top-band', [
+		['.geocoder', '.toolbar'],
+		['.geocoder', '.lens-switcher'],
+		['.toolbar', '.lens-switcher'],
+	]);
+
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
 	await canvas.click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 
