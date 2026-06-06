@@ -41,6 +41,7 @@ const CHROME =
 // boundary at deviceScaleFactor 2 (sub-pixel CSS px). 390-tall short-landscape
 // (844x390) is compact by the min-height gate.
 const VIEWPORTS = [
+	{ w: 375, h: 667, tier: 'compact' }, // iPhone SE — the smallest supported screen (P6)
 	{ w: 390, h: 844, tier: 'compact' },
 	{ w: 639, h: 900, tier: 'compact' },
 	{ w: 640, h: 900, tier: 'medium' },

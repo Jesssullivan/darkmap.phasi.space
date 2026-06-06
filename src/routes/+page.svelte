@@ -2604,6 +2604,16 @@
 		{#snippet ganttRow()}
 			{@render ganttBlock()}
 		{/snippet}
+		{#snippet lensStrip()}
+			<LensSwitcher
+				docked
+				active={lensStore.lens}
+				onselect={(lens) => {
+					lensStore.set(lens);
+					scheduleHashWrite();
+				}}
+			/>
+		{/snippet}
 		{#snippet readoutView()}
 			{@render readoutBlock()}
 		{/snippet}
@@ -2714,13 +2724,18 @@
 	     stage. At WIDE/MEDIUM the deck pins the lens chips top-right + the compact search
 	     top-left (above the toolbar); at COMPACT (.stage display:contents) each keeps its
 	     own position:fixed placement = the byte-identical fallback. -->
-	<LensSwitcher
-		active={lensStore.lens}
-		onselect={(lens) => {
-			lensStore.set(lens);
-			scheduleHashWrite();
-		}}
-	/>
+	<!-- P6 — on the smallest screens (COMPACT-tall, dockActive) the lens switcher docks
+	     into the ResponsiveDock as a strip instead of floating over the crowded top band;
+	     it still floats at WIDE/MEDIUM and short-landscape. -->
+	{#if !dockActive}
+		<LensSwitcher
+			active={lensStore.lens}
+			onselect={(lens) => {
+				lensStore.set(lens);
+				scheduleHashWrite();
+			}}
+		/>
+	{/if}
 	<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
 	<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
 	<GeocoderSearch
@@ -3566,8 +3581,9 @@
 	/* ===== W4c (TIN-1866) — COMPACT-tall ResponsiveDock band (<640px, height≥501) =====
 	   The dock is a fixed bottom-sheet covering up to ~88dvh, so the bottom-right
 	   float home for the MapToolbar would sit UNDER the sheet (overlap). Re-home the
-	   toolbar to the map strip's top-left — on the always-visible map above the sheet
-	   — clear of the gantt/readout/sheet by construction. Gated on
+	   toolbar to the map strip's top-RIGHT as a VERTICAL icon column (P6 — the
+	   map-control convention; clears the top-left for the search pill + the rail toggle,
+	   and clears the gantt/readout/sheet below by construction). Gated on
 	   [data-dock-active='true'] so it engages only when the dock is actually live
 	   (post-hydration); the COMPACT-short / landscape-short float fallback + the
 	   pre-hydration paint keep their byte-identical placement. The !important matches
@@ -3575,13 +3591,12 @@
 	@media (max-width: 639.98px) and (min-height: 501px) {
 		.command-deck[data-dock-active='true'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
-			left: max(0.75rem, env(safe-area-inset-left, 0px)) !important;
-			right: auto !important;
+			right: max(0.75rem, env(safe-area-inset-right, 0px)) !important;
+			left: auto !important;
 			bottom: auto !important;
-			flex-direction: row !important;
-			flex-wrap: wrap !important;
+			flex-direction: column !important;
+			flex-wrap: nowrap !important;
 			width: auto !important;
-			max-width: calc(100vw - 1.5rem) !important;
 			z-index: 8 !important;
 		}
 		/* The attribution's bottom-left float would also dip under the sheet — hide it

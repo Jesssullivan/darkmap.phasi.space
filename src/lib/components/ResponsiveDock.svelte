@@ -22,13 +22,17 @@
 		toolsActive: boolean;
 		/** The thin twilight-gantt row — ALWAYS present above the sheet peek. */
 		ganttRow?: Snippet;
+		/** The lens-switcher strip (P6) — the 4-segment lens picker, docked here on the
+		 * smallest screens instead of floating over the map. Sits above the gantt row. */
+		lensStrip?: Snippet;
 		/** The Readout view content (the PointReadout). */
 		readoutView: Snippet;
 		/** The Tools view content (the deep-tool sheets). */
 		toolsView: Snippet;
 	}
 
-	let { view, onViewChange, onOpenLayers, hasPoint, toolsActive, ganttRow, readoutView, toolsView }: Props = $props();
+	let { view, onViewChange, onOpenLayers, hasPoint, toolsActive, ganttRow, lensStrip, readoutView, toolsView }: Props =
+		$props();
 
 	// The scroll-snap rail + the HALF detent target, for the auto-raise below.
 	let railEl = $state<HTMLDivElement | undefined>();
@@ -103,6 +107,12 @@
 		<section class="dock-sheet" aria-label="Map dock">
 			<!-- Grab handle — the drag affordance + the visual peek cap. -->
 			<div class="dock-grip" aria-hidden="true"></div>
+
+			<!-- P6 — the lens strip, docked here on the smallest screens (it floats over
+			     the map at larger tiers). Topmost in the sheet so it's visible at PEEK. -->
+			{#if lensStrip}
+				<div class="dock-lens-row">{@render lensStrip()}</div>
+			{/if}
 
 			<!-- The twilight gantt: its OWN thin row, always present above everything
 			     else in the sheet, at every detent. -->
@@ -280,6 +290,13 @@
 		box-shadow: none;
 	}
 
+	/* P6 — the docked lens strip, above the gantt row. The LensSwitcher's own
+	   .docked rules make it a static full-width 4-segment row; this just spaces it. */
+	.dock-lens-row {
+		flex: 0 0 auto;
+		margin-bottom: 0.4rem;
+	}
+
 	/* The segmented swap control — full-opacity, always reachable, never disabled. */
 	.dock-tabs {
 		flex: 0 0 auto;
@@ -308,6 +325,12 @@
 		font-size: 0.78rem;
 		letter-spacing: 0.03em;
 		cursor: pointer;
+	}
+	@media (pointer: coarse) {
+		/* P6 — meet the 44px touch-target floor on phones (was 2.5rem = 40px). */
+		.dock-tab {
+			min-height: 2.75rem;
+		}
 	}
 	.dock-tab:hover {
 		background: rgba(255, 255, 255, 0.08);

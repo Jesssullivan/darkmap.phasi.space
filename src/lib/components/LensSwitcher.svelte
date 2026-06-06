@@ -24,9 +24,13 @@
 		active: Lens;
 		/** Fired on chip click; the parent calls `lensStore.set` + `scheduleHashWrite`. */
 		onselect: (lens: Lens) => void;
+		/** Docked mode (P6): render as a static, full-width 4-segment strip inside the
+		 * COMPACT ResponsiveDock instead of a fixed map overlay. Same chips + accent +
+		 * number-key parity; just in-flow + edge-to-edge. */
+		docked?: boolean;
 	}
 
-	let { active, onselect }: Props = $props();
+	let { active, onselect, docked = false }: Props = $props();
 
 	interface Chip {
 		readonly id: Lens;
@@ -50,7 +54,7 @@
 	}
 </script>
 
-<nav class="lens-switcher" aria-label="Map lens" data-tour="lens-switcher">
+<nav class="lens-switcher" class:docked aria-label="Map lens" data-tour="lens-switcher">
 	{#each CHIPS as chip (chip.id)}
 		{@const Icon = chip.icon}
 		<button
@@ -143,5 +147,33 @@
 			white-space: nowrap;
 			border: 0;
 		}
+	}
+	/* Docked (P6) — a static, full-width 4-segment lens strip inside the COMPACT
+	   ResponsiveDock. Higher specificity than the ≤820 float rules above, so it wins:
+	   in-flow, edge-to-edge, equal segments, labels SHOWN (room in the dock). */
+	.lens-switcher.docked {
+		position: static;
+		inset: auto;
+		transform: none;
+		z-index: auto;
+		width: 100%;
+		display: flex;
+		gap: 0.4rem;
+		backdrop-filter: none;
+	}
+	.lens-switcher.docked .chip {
+		flex: 1 1 0;
+		min-width: 0;
+		justify-content: center;
+		padding: 0.5rem 0.4rem;
+	}
+	.lens-switcher.docked .chip-label {
+		/* Un-hide the labels the ≤820 float rule clipped — the dock strip has room. */
+		position: static;
+		width: auto;
+		height: auto;
+		margin: 0;
+		clip: auto;
+		overflow: visible;
 	}
 </style>
