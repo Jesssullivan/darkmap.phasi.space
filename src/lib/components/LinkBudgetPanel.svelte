@@ -76,6 +76,11 @@
 	<header class="lb-head">
 		<h4>Design a link</h4>
 		<span class="lb-sub">FSO margin from this beam's atmosphere</span>
+		<p class="lb-units">
+			<abbr title="decibel-milliwatts — power referenced to 1 mW">dBm</abbr> = power ·
+			<abbr title="decibels-isotropic — antenna gain vs an isotropic radiator">dBi</abbr> = gain ·
+			<abbr title="decibels — a power ratio; +3 dB ≈ 2×, +10 dB = 10×">dB</abbr> = ratio
+		</p>
 	</header>
 
 	<div class="lb-inputs">
@@ -193,6 +198,18 @@
 	.lb-sub {
 		font-size: 0.66rem;
 		opacity: 0.6;
+	}
+	/* Persona gloss: spell out the dB-family units a Links tech reads in the ledger. */
+	.lb-units {
+		margin: 0.3rem 0 0;
+		font-size: 0.62rem;
+		opacity: 0.55;
+		line-height: 1.4;
+	}
+	.lb-units abbr {
+		font-weight: 600;
+		text-decoration-style: dotted;
+		cursor: help;
 	}
 	.lb-inputs {
 		display: grid;

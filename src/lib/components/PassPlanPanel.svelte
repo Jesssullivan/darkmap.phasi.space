@@ -405,11 +405,11 @@
 
 		{#if selected}
 			<dl class="pp-detail">
-				<dt>AOS</dt>
+				<dt><abbr title="Acquisition of Signal — the satellite rises clear of your terrain horizon">AOS</abbr></dt>
 				<dd>{fmtClock(selected.aos)}Z · {compass(selected.aosAzDeg)}</dd>
 				<dt>Max el</dt>
 				<dd>{selected.maxElevationDeg.toFixed(1)}° @ {fmtClock(selected.culmination)}Z</dd>
-				<dt>LOS</dt>
+				<dt><abbr title="Loss of Signal — the satellite drops back below your terrain horizon">LOS</abbr></dt>
 				<dd>{fmtClock(selected.los)}Z · {compass(selected.losAzDeg)}</dd>
 				<dt>
 					T at culmination
