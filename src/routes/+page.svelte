@@ -122,7 +122,7 @@
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 	import { lensStore } from '$lib/lens.svelte';
-	import { LENSES, LENS_ANNOUNCE, type Lens } from '$lib/lens';
+	import { LENSES, LENS_ANNOUNCE, LENS_ACCENT, type Lens } from '$lib/lens';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
@@ -192,6 +192,15 @@
 	// first paint matches the desktop default before hydration.
 	let viewportTall = $state(true);
 	const dockActive = $derived(layoutTier === 'compact' && viewportTall);
+	// The COMPACT dock's Tools-view launcher needs the lens accent, but .responsive-dock
+	// is a position:fixed SIBLING of .command-deck so it does NOT inherit --lens-accent*.
+	// Republish both (derived from LENS_ACCENT, the single source) on the dock launcher.
+	const hexToRgbTriplet = (hex: string): string => {
+		const h = hex.replace('#', '');
+		return `${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}`;
+	};
+	const dockAccent = $derived(LENS_ACCENT[lensStore.lens]);
+	const dockAccentRgb = $derived(hexToRgbTriplet(LENS_ACCENT[lensStore.lens]));
 	// (The ONE bottom-sheet's swap-view state is declared below, after the
 	// transmission/pass-plan state it derives from — W4c, see `dockView`.)
 
@@ -2966,11 +2975,34 @@
 {/snippet}
 
 {#snippet toolsBlock()}
+	<!-- COMPACT-tall: the Tools view IS the launcher when no tool is open. The overlay
+	     ToolsCluster is {#if !dockActive} (hidden on mobile), so without this the Tools
+	     tab would be EMPTY until a tool was opened from the readout CTA — a dead end.
+	     Once a tool opens it takes over the pane (one-at-a-time, like the readout CTA
+	     path) — NOT stacked above the sheet, which rode the raised dock up into the
+	     floating toolbar. Lens-ordered, full-opacity (re-weight-never-gate). Accent
+	     republished here (the fixed dock can't inherit --lens-accent* from the deck). -->
+	{#if dockActive && !transmissionOpen && !passPlanOpen}
+		<div class="dock-tools-launcher" style:--lens-accent={dockAccent} style:--lens-accent-rgb={dockAccentRgb}>
+			<ToolsCluster
+				variant="rail"
+				lens={lensStore.lens}
+				hasPoint={!!readout}
+				{ephemerisOpen}
+				onlaunch={(tool) => {
+					if (tool === 'transmission') openTransmissionForPoint();
+					else if (tool === 'passplan') openPassPlanForPoint();
+					else if (tool === 'aq') openAqDashboardForPoint();
+					else ephemerisOpen = !ephemerisOpen;
+				}}
+			/>
+		</div>
+	{/if}
 	<!-- W3/W4c — the deep tools (master-detail), yoked to the pinned point. One tool
 	     at a time (open*ForPoint mutually exclude). At WIDE/MEDIUM they flow in the
-	     inspector column; at COMPACT-tall they are the dock's Tools view; at
-	     COMPACT-short each component's own position:fixed float is the byte-identical
-	     fallback. -->
+	     inspector column; at COMPACT-tall they render below the launcher in the dock's
+	     Tools view; at COMPACT-short each component's own position:fixed float is the
+	     byte-identical fallback. -->
 	{#if transmissionOpen}
 		<TransmissionSheet
 			pointLat={readout?.lat}
@@ -3021,6 +3053,10 @@
 			onclose={closePassPlan}
 			onFootprint={(fc) => (orbitFootprintFC = fc)}
 		/>
+	{:else if passPlanOpen}
+		<!-- Pass-plan launched with no pin yet — PassPlanPanel needs a location, so show
+		     a prompt instead of a blank pane with a lit Tools dot (no disabled state). -->
+		<p class="dock-tool-hint">Tap the map to pin your ground station, then plan a pass.</p>
 	{/if}
 {/snippet}
 
@@ -3919,5 +3955,22 @@
 	}
 	:global(.aq-popup-cta:hover) {
 		text-decoration: underline;
+	}
+	/* COMPACT dock Tools-view launcher (mobile) — the ToolsCluster brings its own
+	   tile styling; the wrapper just separates it from the open tool that renders
+	   below it when one is launched. */
+	.dock-tools-launcher {
+		margin-bottom: 0.6rem;
+	}
+	.dock-tools-launcher:last-child {
+		margin-bottom: 0;
+	}
+	/* Pass-plan launched with no pin yet — a prompt, never a blank pane. */
+	.dock-tool-hint {
+		margin: 0.4rem 0 0;
+		padding: 0.75rem 0.5rem;
+		font-size: 0.78rem;
+		opacity: 0.7;
+		text-align: center;
 	}
 </style>
