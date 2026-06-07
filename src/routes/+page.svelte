@@ -211,8 +211,9 @@
 		if (next) railExpanded = false;
 	}
 
-	// Guided tour — custom, no-dep. Spotlights the rail, the atmospheric overlays
-	// + spectral widget, the click-to-readout map, and the twilight tools.
+	// Guided tour — custom, no-dep. Per-lens: each persona gets onboarding steps
+	// that spotlight the Command-Deck cells that matter for its audience, always
+	// opening on the lens-switcher (every tool stays reachable from every lens).
 	// First-run auto-start (localStorage flag) + a replay button in the toolbar.
 	let tourOpen = $state(false);
 	const TOUR_FLAG = 'darkmap-tour-v1';
@@ -227,33 +228,93 @@
 		const header = document.querySelector<HTMLButtonElement>('[data-tour="atmosphere-header"]');
 		if (header && header.getAttribute('aria-expanded') !== 'true') header.click();
 	};
-	const tourSteps: readonly TourStep[] = [
-		{
-			anchor: '[data-tour="rail"]',
-			title: 'Layers live here',
-			body: 'Toggle the data layers — VIIRS night-lights and the Falchi World Atlas for light pollution, plus live atmospheric overlays. Pick a basemap up top.',
-			prepare: ensureRailOpen,
-		},
-		{
-			anchor: '[data-tour="atmosphere"]',
-			title: 'Atmosphere overlays',
-			body: 'Clouds, aerosol (AOD) and water-vapor overlays. To analyze spectral transmission T(λ) for a spot, click the map and open it from the point readout.',
-			prepare: () => {
-				ensureRailOpen();
-				expandAtmosphere();
+	// Display labels (lockstep with LensSwitcher's chips) for the shared opener copy.
+	const LENS_LABEL: Record<Lens, string> = { sky: 'Sky', air: 'Air', links: 'Links', orbit: 'Orbit' };
+	// First step is identical in shape for every lens: anchor the switcher and name
+	// the persona so the re-weight (never a gate) is legible from frame one.
+	const lensSwitcherStep = (lens: Lens): TourStep => ({
+		anchor: '[data-tour="lens-switcher"]',
+		title: `You're in the ${LENS_LABEL[lens]} lens`,
+		body: 'Switch personas here — every tool stays reachable from every lens; the lens just re-weights what leads.',
+	});
+	// Per-lens onboarding. Each array walks the cells that matter for that audience;
+	// rail/atmosphere steps reuse the prepare hooks so the target exists + is visible.
+	const tourStepsByLens: Record<Lens, readonly TourStep[]> = {
+		// Sky (astro): VIIRS + Falchi → Bortle/SQM, click-to-pin dark window, twilight tools.
+		sky: [
+			lensSwitcherStep('sky'),
+			{
+				anchor: '[data-tour="rail"]',
+				title: 'Brightness layers',
+				body: 'VIIRS night-lights + the Falchi World Atlas, surfaced as Bortle / SQM. Stack the dark-sky layers and pick a basemap up top.',
+				prepare: ensureRailOpen,
 			},
-		},
-		{
-			anchor: '[data-tour="map"]',
-			title: 'Click anywhere for a readout',
-			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, modeled PM2.5 — and a directable spectral-transmission T(λ) analysis for that exact spot.',
-		},
-		{
-			anchor: '[data-tour="toolbar"]',
-			title: 'Sun, moon & sharing',
-			body: 'Open the twilight strip for sun/moon timing and the sky compass, follow your GPS, import a route, or copy a shareable link to this exact view.',
-		},
-	];
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Click to pin a site',
+				body: "Tap the map for a readout: Bortle class up front, tonight's dark window, and the DEM horizon for that exact spot.",
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Twilight & ephemeris',
+				body: 'Open the twilight gantt for sun/moon timing and the sky compass — plan the session around the dark hours.',
+			},
+		],
+		// Air (weather/smog): atmosphere overlays + PM2.5 field, NowCast vs 24-h, AQ tools.
+		air: [
+			lensSwitcherStep('air'),
+			{
+				anchor: '[data-tour="atmosphere"]',
+				title: 'Atmosphere & the PM2.5 field',
+				body: 'Clouds, aerosol (AOD) and water-vapor overlays plus the modeled PM2.5 field. Readouts report NowCast vs the 24-h AQI so you see both.',
+				prepare: () => {
+					ensureRailOpen();
+					expandAtmosphere();
+				},
+			},
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Click to pin air quality',
+				body: 'Tap the map to pin a point: the driving pollutant, its AQI, and cross-validated sources for that location.',
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Air Quality dashboard',
+				body: 'Open the Air Quality dashboard for the full station picture, and switch the AQI palette to the color-vision-assist ramp.',
+			},
+		],
+		// Links (laser/RF): path-AOD → T(λ) → link budget, Transmission tool.
+		links: [
+			lensSwitcherStep('links'),
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Click to pin a path',
+				body: 'Tap the map to pin an endpoint: path-AOD feeds the spectral transmission T(λ), which feeds the link budget.',
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Transmission & link budget',
+				body: 'Open Transmission to point the boresight, read the dB / dBm / dBi budget, and get a go / no-go for the link.',
+			},
+		],
+		// Orbit (LEO ground-station): pin the station, plan a pass over the real horizon.
+		orbit: [
+			lensSwitcherStep('orbit'),
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Pin your ground station',
+				body: 'Tap the map to drop your ground station — every pass is computed against the real DEM horizon at that point.',
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Plan a pass',
+				body: 'Open Pass Plan for AOS/LOS over the terrain horizon, the az/el track, Doppler, and the sub-satellite ground footprint.',
+			},
+		],
+	};
+	// The tour presents the CURRENT lens's steps; flipping lenses while it's open
+	// re-points it (Tour re-measures on `steps`/`index` change).
+	const tourSteps = $derived<readonly TourStep[]>(tourStepsByLens[lensStore.lens]);
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- mounted tile date bookkeeping, not reactive UI state
 	const atmosphericTileDays = new Map<string, string>();
 	let viewCenter: { lat: number; lon: number } = $state({
