@@ -457,13 +457,11 @@
 	let dockViewPinned = $state<DockView | null>(null);
 	const dockView = $derived<DockView>(dockViewPinned ?? (transmissionOpen || passPlanOpen ? 'tools' : 'readout'));
 	function setDockView(next: DockView): void {
-		// Layers swaps to the (tall) rail drawer; keep the sheet's pin null so closing
-		// the drawer lands back on the state-driven view (the point), not a blank sheet.
-		dockViewPinned = next === 'layers' ? null : next;
+		dockViewPinned = next;
 	}
-	// Opening the layers drawer from the dock = the existing rail-toggle path (the
-	// tall, detach-on-close drawer the mobile-layers smoke contracts on). Reusing it
-	// keeps the layers list at height≥500 without a second layers implementation.
+	// Opening the layers drawer = the rail-toggle path (the tall, detach-on-close
+	// drawer the mobile-layers smoke contracts on). The COMPACT floating "≡ Layers"
+	// chip is the sole trigger; the command palette's "Open layers" entry reuses this.
 	function openLayersFromDock(): void {
 		const toggle = document.querySelector<HTMLButtonElement>('[data-tour="rail-toggle"]');
 		if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click();
@@ -2771,7 +2769,6 @@
 	<ResponsiveDock
 		view={dockView}
 		onViewChange={setDockView}
-		onOpenLayers={openLayersFromDock}
 		hasPoint={!!readout}
 		toolsActive={transmissionOpen || passPlanOpen}
 	>

@@ -2,20 +2,18 @@
 	import type { Snippet } from 'svelte';
 
 	/** The ONE bottom-sheet's swap views (content-SWAP, never a 2nd panel). */
-	export type DockView = 'layers' | 'readout' | 'tools';
+	export type DockView = 'readout' | 'tools';
 </script>
 
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Layers, MapPin, Sliders } from '@lucide/svelte';
+	import { MapPin, Sliders } from '@lucide/svelte';
 
 	interface Props {
 		/** The active swap view. Drives which content the ONE sheet shows. */
 		view: DockView;
 		/** Switch the sheet's content (NEVER spawns a 2nd panel). */
 		onViewChange: (next: DockView) => void;
-		/** Open the layers drawer (the rail's tall layers list — the Layers view). */
-		onOpenLayers: () => void;
 		/** True when a point is pinned (badges the Readout tab + its accessible name). */
 		hasPoint: boolean;
 		/** True when a deep tool (transmission / pass-plan) is open (badges Tools). */
@@ -31,8 +29,7 @@
 		toolsView: Snippet;
 	}
 
-	let { view, onViewChange, onOpenLayers, hasPoint, toolsActive, ganttRow, lensStrip, readoutView, toolsView }: Props =
-		$props();
+	let { view, onViewChange, hasPoint, toolsActive, ganttRow, lensStrip, readoutView, toolsView }: Props = $props();
 
 	// The scroll-snap rail + the HALF detent target, for the auto-raise below.
 	let railEl = $state<HTMLDivElement | undefined>();
@@ -76,13 +73,13 @@
 
 	// The segmented control. Tapping a segment swaps the ONE sheet's content; the
 	// Layers segment additionally opens the (tall) rail drawer — its own height≥500
-	// detent — so the layers list never crams into a HALF sheet. All three segments
-	// stay full-opacity + reachable in every state (progressive disclosure, never
-	// disabled). aria-pressed marks the active view for assistive tech. A Readout /
-	// Tools tap also raises the sheet so the swapped-in content is on-screen.
+	// Both segments stay full-opacity + reachable in every state (progressive
+	// disclosure, never disabled). aria-pressed marks the active view for assistive
+	// tech. A Readout / Tools tap raises the sheet so the swapped-in content is
+	// on-screen. (Layers is NOT a dock segment — the floating "≡ Layers" chip owns
+	// the rail drawer, which needs a height≥500 detent the HALF sheet can't give.)
 	function pick(next: DockView): void {
-		if (next === 'layers') onOpenLayers();
-		else void tick().then(raiseSoon);
+		void tick().then(raiseSoon);
 		onViewChange(next);
 	}
 </script>
@@ -120,19 +117,10 @@
 				<div class="dock-gantt-row">{@render ganttRow()}</div>
 			{/if}
 
-			<!-- The segmented swap control: full-opacity, always reachable. -->
+			<!-- The segmented swap control: full-opacity, always reachable. Two segments
+			     (Readout · Tools) — both swap the ONE sheet's content. Layers is reached
+			     via the floating "≡ Layers" chip (its own tall drawer), not a segment. -->
 			<div class="dock-tabs" role="group" aria-label="Dock view">
-				<button
-					type="button"
-					class="dock-tab"
-					class:active={view === 'layers'}
-					aria-pressed={view === 'layers'}
-					aria-label="Show layers"
-					onclick={() => pick('layers')}
-				>
-					<Layers size={16} aria-hidden="true" />
-					<span>Layers</span>
-				</button>
 				<button
 					type="button"
 					class="dock-tab"
@@ -301,7 +289,7 @@
 	.dock-tabs {
 		flex: 0 0 auto;
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(2, 1fr);
 		gap: 0.3rem;
 		padding: 0.2rem;
 		background: rgba(255, 255, 255, 0.05);
