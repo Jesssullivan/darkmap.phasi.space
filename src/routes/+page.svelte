@@ -44,6 +44,7 @@
 	import type { LookTarget } from '$lib/transmission/look-angle';
 	import { computePinEphemeris, type PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 	import { beamCenterline, beamSamplePoints, beamSectorPolygon } from '$lib/map/beam-footprint';
+	import type { FootprintFeatureCollection } from '$lib/map/orbit-footprint';
 	import { aggregatePath, type PathProfile } from '$lib/atmospheric/path-constituents';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
@@ -560,6 +561,10 @@
 	function closePassPlan(): void {
 		passPlanOpen = false;
 		dockViewPinned = null;
+		// Defensive teardown of the orbit footprint overlay (the data-gate on
+		// passPlanOpen already clears it; this mirrors closeTransmission's beam cleanup).
+		orbitFootprintFC = null;
+		removeFootprintOverlay();
 	}
 
 	// TIN-1871 idea ③ — open the AQ dashboard as an in-SPA modal-popout (no longer
@@ -820,6 +825,82 @@
 	// hidden it only tracks beamShow/transmissionOpen and stays cheap.
 	$effect(() => {
 		syncBeamOverlay();
+	});
+
+	// PR2b — orbit sub-satellite ground-footprint overlay (MapLibre GeoJSON),
+	// mirroring the BEAM overlay above. A cool cyan/teal coverage ring + nadir dot,
+	// visibly distinct from the amber beam. The pure GeoJSON is computed in the
+	// PassPlanPanel (which owns the satrec + selected pass); we just render what it
+	// emits via onFootprint, gated to while the pass panel is open.
+	const FOOTPRINT_SRC = 'darkmap-orbit-footprint-src';
+	const FOOTPRINT_FILL = 'darkmap-orbit-footprint-fill-lyr';
+	const FOOTPRINT_LINE = 'darkmap-orbit-footprint-line-lyr';
+	const FOOTPRINT_NADIR = 'darkmap-orbit-footprint-nadir-lyr';
+	const FOOTPRINT_CYAN = '#5ee2d0';
+	let orbitFootprintFC = $state<FootprintFeatureCollection | null>(null);
+
+	function removeFootprintOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		if (map.getLayer(FOOTPRINT_NADIR)) map.removeLayer(FOOTPRINT_NADIR);
+		if (map.getLayer(FOOTPRINT_LINE)) map.removeLayer(FOOTPRINT_LINE);
+		if (map.getLayer(FOOTPRINT_FILL)) map.removeLayer(FOOTPRINT_FILL);
+		if (map.getSource(FOOTPRINT_SRC)) map.removeSource(FOOTPRINT_SRC);
+	}
+
+	function syncFootprintOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		// Gate the render to while the pass panel is open (the data-clear in
+		// closePassPlan already covers this; the gate is belt-and-suspenders).
+		const data = passPlanOpen ? orbitFootprintFC : null;
+		if (!data) {
+			removeFootprintOverlay();
+			return;
+		}
+		if (!map.isStyleLoaded()) {
+			map.once('styledata', syncFootprintOverlay);
+			return;
+		}
+		const existing = map.getSource(FOOTPRINT_SRC) as import('maplibre-gl').GeoJSONSource | undefined;
+		if (existing) {
+			existing.setData(data);
+			return;
+		}
+		map.addSource(FOOTPRINT_SRC, { type: 'geojson', data });
+		map.addLayer({
+			id: FOOTPRINT_FILL,
+			type: 'fill',
+			source: FOOTPRINT_SRC,
+			filter: ['==', ['get', 'kind'], 'footprint'],
+			paint: { 'fill-color': FOOTPRINT_CYAN, 'fill-opacity': 0.09 },
+		});
+		map.addLayer({
+			id: FOOTPRINT_LINE,
+			type: 'line',
+			source: FOOTPRINT_SRC,
+			filter: ['==', ['get', 'kind'], 'footprint'],
+			paint: { 'line-color': FOOTPRINT_CYAN, 'line-width': 2, 'line-opacity': 0.9 },
+		});
+		map.addLayer({
+			id: FOOTPRINT_NADIR,
+			type: 'circle',
+			source: FOOTPRINT_SRC,
+			filter: ['==', ['get', 'kind'], 'nadir'],
+			paint: {
+				'circle-radius': 4,
+				'circle-color': FOOTPRINT_CYAN,
+				'circle-opacity': 0.9,
+				'circle-stroke-color': '#0a0e16',
+				'circle-stroke-width': 1,
+			},
+		});
+	}
+
+	// Render the orbit footprint from the FC the PassPlanPanel emits, gated to the
+	// open pass panel. Reading orbitFootprintFC/passPlanOpen registers the deps.
+	$effect(() => {
+		syncFootprintOverlay();
 	});
 
 	// V3-10 — AOD variation along the beam centerline, sampled from the cached
@@ -2830,7 +2911,11 @@
 		/>
 	{/if}
 	{#if passPlanOpen && readout}
-		<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
+		<PassPlanPanel
+			location={{ lat: readout.lat, lon: readout.lon }}
+			onclose={closePassPlan}
+			onFootprint={(fc) => (orbitFootprintFC = fc)}
+		/>
 	{/if}
 {/snippet}
 
