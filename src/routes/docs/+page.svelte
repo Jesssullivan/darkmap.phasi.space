@@ -74,7 +74,7 @@
 	<title>darkmap — docs</title>
 	<meta
 		name="description"
-		content="darkmap — a dark-sky, field-sensing, and astronomy planning tool. Sources, science notes, tech stack."
+		content="darkmap — one map, four lenses: dark-sky / astronomy, air-quality, optical-RF link, and satellite-pass planning. Sources, science notes, tech stack."
 	/>
 </svelte:head>
 
@@ -116,14 +116,31 @@
 	<section id="mission" class="mt-12">
 		<h2 class="mb-3 font-mono text-lg font-bold">What this tool is for</h2>
 		<p class="mb-3">
-			darkmap is a planning + readout surface for night-dependent measurement work — instrumentation and sensor
-			calibration, ground-based astronomy and astrophotography, satellite-overhead windows, temperature- and
-			night-dependent radar campaigns, and dark-sky-site logistics.
+			darkmap is one map with four <strong>lenses</strong>, one per audience. Pick the lens that matches your question;
+			every tool stays reachable from every lens — the lens only re-weights what leads, it never hides anything:
 		</p>
+		<ul class="mb-3 list-disc space-y-1 pl-6">
+			<li>
+				<strong>◐ Sky</strong> — astronomers &amp; astrophotographers: VIIRS + Falchi radiance → Bortle / SQM, the twilight
+				gantt + sky compass, and the real DEM horizon for a dark-sky site.
+			</li>
+			<li>
+				<strong>☁ Air</strong> — weather, pollen &amp; smog analysts: GIBS cloud / aerosol / water-vapor overlays plus a modeled
+				PM2.5 field with NowCast-vs-24h AQI and OpenAQ ↔ CAMS cross-validation.
+			</li>
+			<li>
+				<strong>📡 Links</strong> — laser / RF link technicians: a directable boresight, path-integrated AOD → spectral transmission
+				T(λ), and a term-by-term link budget with a go / no-go margin.
+			</li>
+			<li>
+				<strong>🛰 Orbit</strong> — LEO ground-station operators: SGP4 pass prediction gated by the real terrain horizon,
+				the az / el track, Doppler, and the sub-satellite ground footprint.
+			</li>
+		</ul>
 		<p>
 			The original problem statement was inspired by lightpollutionmap.info: a faster, calmer dark-sky planning surface
-			without ad-tech or tracking. The current surface is tuned for dark-sky, spectroscopy, photography, and field
-			logistics work.
+			without ad-tech or tracking. darkmap keeps that calm, ad-free spirit and widens it from dark-sky planning to the
+			four jobs above.
 		</p>
 	</section>
 
@@ -231,10 +248,17 @@
 			altitude where atmospheric curvature dominates.
 		</p>
 		<h3 class="mt-4 mb-2 font-mono text-base font-semibold">Horizon raycaster</h3>
-		<p>
+		<p class="mb-3">
 			Default 36 rays × 10 distance samples (250 m → 25 km). Each sample uses a refraction-adjusted earth-curvature drop
 			(R_eff = 7/6 · R) when computing angular elevation. Polygon results are cached per (lat, lon) rounded to ~0.001° +
 			options key; revisit is instant.
+		</p>
+		<h3 class="mt-4 mb-2 font-mono text-base font-semibold">Orbit pass prediction</h3>
+		<p>
+			The Orbit lens propagates Celestrak two-line elements with SGP4 (satellite.js) and reports a pass only where the
+			satellite clears the <em>real DEM horizon</em> at your site — the same raycaster above, not the flat 0° math horizon
+			— so AOS / LOS, the az / el track, and the keyhole + Doppler readouts reflect the terrain. Predicted (SGP4), with the
+			TLE epoch age surfaced so stale elements are never presented as fresh.
 		</p>
 	</section>
 
