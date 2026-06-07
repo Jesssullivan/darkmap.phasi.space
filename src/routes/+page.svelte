@@ -52,6 +52,7 @@
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import { buildAqiField } from '$lib/atmospheric/aqi-field';
 	import { computeAqi, type AqiPollutant } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
 	import { fmtAge } from '$lib/cache/badge';
 	import {
 		DEFAULT_DIFFUSION,
@@ -82,7 +83,17 @@
 		geometry: RouteGeoJsonGeometry;
 	};
 	type RouteGeoJsonFC = { type: 'FeatureCollection'; features: RouteGeoJsonFeature[] };
-	import { ChevronLeft, ChevronRight, Compass, LocateFixed, PanelLeftOpen, SunMoon, Upload, X } from '@lucide/svelte';
+	import {
+		ChevronLeft,
+		ChevronRight,
+		Compass,
+		Contrast,
+		LocateFixed,
+		PanelLeftOpen,
+		SunMoon,
+		Upload,
+		X,
+	} from '@lucide/svelte';
 	import Tour, { type TourStep } from '$lib/components/Tour.svelte';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
@@ -1627,7 +1638,7 @@
 				source: srcId,
 				paint: {
 					'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 3, 12, 7],
-					'circle-color': pm25CircleColorExpression(),
+					'circle-color': pm25CircleColorExpression(aqiPalette.mode),
 					'circle-opacity': opacity,
 					'circle-stroke-width': 1,
 					'circle-stroke-color': 'rgba(8, 10, 16, 0.85)',
@@ -1822,6 +1833,24 @@
 	$effect(() => {
 		void lensStore.lens;
 		scheduleViewportAqRefresh();
+	});
+
+	// TIN-1771 — re-paint the valued PM2.5 dot ramp when the AQI palette flips
+	// (airnow ↔ colorvision). A DISPLAY swap only: same breakpoints, recoloured
+	// from `aqiPalette.mode`. Mirrors how `setPointLayerOpacity` re-applies a
+	// single paint property to every mounted point-circle layer in place.
+	$effect(() => {
+		const mode = aqiPalette.mode;
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const color = pm25CircleColorExpression(mode);
+		for (const id of POINT_SOURCE_IDS) {
+			const circId = pointCircleId(id);
+			if (map.getLayer(circId)) map.setPaintProperty(circId, 'circle-color', color);
+		}
+		// The dominant interpolated AQI density field bakes the palette into its
+		// raster, so recolour it on flip too (self-guarded: no-ops when smog is off).
+		renderAqiField();
 	});
 
 	// TIN-1889 — mount the always-on station-markers source + circle layer once. It
@@ -2072,6 +2101,7 @@
 			units: pollutantUnits,
 			alpha: 150,
 			params: fieldParams,
+			mode: aqiPalette.mode,
 		});
 
 		const heatId = pointHeatmapId(SMOG_LAYER_ID);
@@ -2237,6 +2267,8 @@
 		// Resolve the active lens before the map mounts: hash (shareable) wins,
 		// else the remembered choice, else Sky. Map state stays orthogonal.
 		lensStore.init(decodeHash(window.location.hash).lens);
+		// TIN-1771 — resolve the remembered AQI palette (display option only).
+		aqiPalette.init();
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
 		maplibreLib = maplibre;
@@ -2789,6 +2821,21 @@
 				title: 'Take the guided tour',
 				pressed: tourOpen,
 				onclick: () => (tourOpen = true),
+			},
+			{
+				// TIN-1771 — flip the AQI ramp to the colorblind-distinguishable
+				// "ColorVision-Assist" palette. A DISPLAY option only: recolours the
+				// PM2.5 dots + dashboard from one source; categories + labels unchanged.
+				id: 'aqi-palette',
+				label:
+					aqiPalette.mode === 'colorvision'
+						? 'AQI palette: color-assist (on) — switch back to AirNow'
+						: 'AQI palette: AirNow — switch to color-assist (colorblind-safe)',
+				shortLabel: aqiPalette.mode === 'colorvision' ? 'AirNow' : 'Color-assist',
+				icon: Contrast,
+				title: aqiPalette.mode === 'colorvision' ? 'AQI palette: color-assist (on)' : 'AQI palette: AirNow (default)',
+				pressed: aqiPalette.mode === 'colorvision',
+				onclick: () => aqiPalette.toggle(),
 			},
 		]}
 	/>

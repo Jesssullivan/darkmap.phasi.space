@@ -15,7 +15,7 @@
  */
 
 import { estimatePollutantAt, type DiffusionParams, type Pm25Station } from '$lib/atmospheric/pm25-diffusion';
-import { computeAqi, type AqiReading } from '$lib/atmospheric/aqi';
+import { computeAqi, paletteColorFor, type AqiReading, type PaletteMode } from '$lib/atmospheric/aqi';
 import { CRITERIA_POLLUTANTS } from '$lib/atmospheric/pollutants';
 
 export interface FieldBbox {
@@ -41,6 +41,12 @@ export interface BuildFieldOptions {
 	readonly params?: DiffusionParams;
 	/** Fill alpha for painted cells, 0–255 (default 140 — semi-transparent over the basemap). */
 	readonly alpha?: number;
+	/**
+	 * AQI colour palette (TIN-1771). 'colorvision' swaps in the colourblind-assist
+	 * ramp so the dominant density field recolours with the dots/dashboard, not just
+	 * the markers. Default 'airnow' keeps the canonical EPA colours (back-compat).
+	 */
+	readonly mode?: PaletteMode;
 }
 
 const hexToRgb = (hex: string): [number, number, number] => {
@@ -87,7 +93,7 @@ export const buildAqiField = (
 				rgba[idx + 3] = 0; // no coverage → transparent, never a fabricated colour
 				continue;
 			}
-			const [r, g, b] = hexToRgb(aqi.category.color);
+			const [r, g, b] = hexToRgb(paletteColorFor(aqi.category, opts.mode ?? 'airnow'));
 			rgba[idx] = r;
 			rgba[idx + 1] = g;
 			rgba[idx + 2] = b;

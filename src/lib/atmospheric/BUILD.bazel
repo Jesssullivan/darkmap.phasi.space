@@ -48,6 +48,7 @@ vitest.vitest_test(
         "src/lib/atmospheric/aq-crossval.test.ts",
         "src/lib/atmospheric/aqi.test.ts",
         "src/lib/atmospheric/aqi-field.test.ts",
+        "src/lib/atmospheric/aqi-palette.test.ts",
         "src/lib/atmospheric/model-cards.test.ts",
         "src/lib/atmospheric/openaq-history-shape.test.ts",
         "src/lib/atmospheric/openaq-shape.test.ts",

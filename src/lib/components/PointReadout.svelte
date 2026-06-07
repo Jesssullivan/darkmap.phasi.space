@@ -21,7 +21,8 @@
 		type PollenReading,
 	} from '$lib/effect/services/AirQualityService';
 	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
-	import { computeAqi, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
+	import { computeAqi, paletteColorFor, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
 	import type { HistorySeries } from '$lib/effect/services/OpenAQHistoryService';
 
 	export interface ReadoutData {
@@ -544,7 +545,7 @@
 				data-relevance={relOf('aqi')}
 				style:order={orderOf('aqi')}
 			>
-				<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
+				<div class="aqi-badge" style="--aqi-color: {paletteColorFor(aqi.category, aqiPalette.mode)}">
 					<span class="aqi-value">{aqi.aqi}</span>
 					<span class="aqi-meta">
 						<span class="aqi-cat">AQI · {aqi.category.name}</span>
