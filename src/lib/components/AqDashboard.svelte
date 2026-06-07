@@ -47,7 +47,8 @@
 		type Pm25Estimate,
 		type Pm25Station,
 	} from '$lib/atmospheric/pm25-diffusion';
-	import { computeAqi, type AqiPollutant, type AqiResult } from '$lib/atmospheric/aqi';
+	import { computeAqi, paletteColorFor, AQI_CATEGORIES, type AqiPollutant, type AqiResult } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
 	import { crossValidate, type CrossValResult } from '$lib/atmospheric/aq-crossval';
 	import { type HistorySeries, type HistoryPollutantName } from '$lib/atmospheric/openaq-history-shape';
 	import { buildViewportSummary, type ViewportSummary } from '$lib/atmospheric/viewport-summary';
@@ -356,7 +357,7 @@
 					</p>
 				{:else}
 					{@const cat = aqiResult.category}
-					<div class="aqi-badge" style={`--cat:${cat.color}`}>
+					<div class="aqi-badge" style={`--cat:${paletteColorFor(cat, aqiPalette.mode)}`}>
 						<span class="aqi-num">{aqiResult.aqi}</span>
 						<span class="aqi-meta">
 							<span class="aqi-cat">{cat.name}</span>
@@ -500,10 +501,13 @@
 						<div class="spread" aria-label={`PM2.5 AQI spread ${a.min} to ${a.max}`}>
 							<span class="spread-end">{a.min}</span>
 							<span class="spread-bar">
-								<span class="spread-fill" style={`--cat:${a.maxCategory.color}`}></span>
+								<span
+									class="spread-fill"
+									style={`--good:${paletteColorFor(AQI_CATEGORIES[0], aqiPalette.mode)};--cat:${paletteColorFor(a.maxCategory, aqiPalette.mode)}`}
+								></span>
 								<span class="spread-median" title={`median ${a.median}`}>{a.median}</span>
 							</span>
-							<span class="spread-end" style={`color:${a.maxCategory.color}`}>{a.max}</span>
+							<span class="spread-end" style={`color:${paletteColorFor(a.maxCategory, aqiPalette.mode)}`}>{a.max}</span>
 						</div>
 						<p class="muted area-cat">PM2.5 AQI · worst {a.maxCategory.name}</p>
 					{:else}
@@ -704,7 +708,7 @@
 		position: absolute;
 		inset: 0;
 		border-radius: 999px;
-		background: linear-gradient(to right, #00e400, var(--cat));
+		background: linear-gradient(to right, var(--good), var(--cat));
 		opacity: 0.55;
 	}
 	.spread-median {
