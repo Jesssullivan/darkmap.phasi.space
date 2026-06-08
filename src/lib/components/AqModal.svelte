@@ -234,6 +234,8 @@
 			width: 100%;
 			max-height: none;
 			height: calc(100vh - 64px);
+			/* dvh tracks the iOS dynamic toolbar (a fixed 100vh height clips on iOS). */
+			height: calc(100dvh - 64px);
 			margin-top: auto;
 			border-radius: 14px 14px 0 0;
 			border-bottom: 0;

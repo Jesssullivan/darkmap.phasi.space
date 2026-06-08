@@ -71,6 +71,43 @@
 		lastHasContent = hasContent;
 	});
 
+	// iOS URL-bar show/hide resizes the VISUAL viewport but does NOT re-run scroll-snap
+	// (WebKit gap — Chrome 81+ re-snaps after a layout change, Safari/iOS/FF do not), so
+	// the rail's scrollTop becomes a stale pixel offset against the resized dvh track and
+	// the sheet strands mid-detent. Re-pin to the NEAREST detent on visualViewport RESIZE
+	// (resize only — `scroll` fires continuously during rubber-band and would fight a
+	// drag), preserving the user's chosen detent. Dormant without a real resize event
+	// (so inert on desktop); the +layout.svelte bridge publishes the metrics it tracks.
+	$effect(() => {
+		const rail = railEl;
+		const vv = typeof window !== 'undefined' ? (window.visualViewport ?? null) : null;
+		if (!rail || !vv) return;
+		let raf1 = 0;
+		let raf2 = 0;
+		const resettle = (): void => {
+			const maxTop = rail.scrollHeight - rail.clientHeight;
+			const halfTop = halfSnapEl ? halfSnapEl.offsetTop : maxTop * 0.4;
+			const top = rail.scrollTop;
+			const edges = [0, halfTop, maxTop]; // PEEK / HALF / FULL
+			const nearest = edges.reduce((a, b) => (Math.abs(b - top) < Math.abs(a - top) ? b : a));
+			// Double-rAF: let the resized track settle before re-pinning (raiseSoon's idiom).
+			cancelAnimationFrame(raf1);
+			cancelAnimationFrame(raf2);
+			raf1 = requestAnimationFrame(() => {
+				rail.scrollTop = nearest;
+				raf2 = requestAnimationFrame(() => {
+					rail.scrollTop = nearest;
+				});
+			});
+		};
+		vv.addEventListener('resize', resettle);
+		return () => {
+			vv.removeEventListener('resize', resettle);
+			cancelAnimationFrame(raf1);
+			cancelAnimationFrame(raf2);
+		};
+	});
+
 	// The segmented control. Tapping a segment swaps the ONE sheet's content; the
 	// Layers segment additionally opens the (tall) rail drawer — its own height≥500
 	// Both segments stay full-opacity + reachable in every state (progressive
@@ -242,7 +279,10 @@
 		border-radius: 14px 14px 0 0;
 		box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
 		backdrop-filter: blur(10px);
-		padding: 0.4rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+		/* --vv-bottom (the live iOS browser-chrome inset, from the +layout.svelte
+		   visualViewport bridge) keeps the sheet's content clear of the URL bar as it
+		   slides; 0px on desktop / pre-bridge / no API, so identity there. */
+		padding: 0.4rem 0.75rem calc(0.75rem + var(--vv-bottom, 0px) + env(safe-area-inset-bottom, 0px));
 		padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
 		padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
 	}
