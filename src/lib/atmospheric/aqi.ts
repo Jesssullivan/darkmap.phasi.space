@@ -27,7 +27,7 @@ export interface AqiCategory {
 	readonly name: string;
 	readonly aqiLo: number;
 	readonly aqiHi: number;
-	/** US AQI category color (AirNow palette). */
+	/** US AQI category color — the default AirNow palette (alias of `paletteColorFor(cat, 'airnow')`). */
 	readonly color: string;
 }
 
@@ -42,6 +42,120 @@ export const AQI_CATEGORIES: readonly AqiCategory[] = [
 
 export const aqiCategory = (aqi: number): AqiCategory =>
 	AQI_CATEGORIES.find((c) => aqi <= c.aqiHi) ?? AQI_CATEGORIES[AQI_CATEGORIES.length - 1];
+
+/**
+ * Palette mode for the AQI category ramp. A DISPLAY option only — it recolors
+ * the same six EPA categories; it never reclassifies the data or relabels a
+ * reading. `'colorvision'` is the EPA "ColorVision-Assist" alternative for
+ * deuteranopia / protanopia, where the default AirNow green↔red ramp confuses.
+ */
+export type PaletteMode = 'airnow' | 'colorvision';
+
+/**
+ * ColorVision-Assist ramp (TIN-1771). The AirNow palette puts "Good" (green)
+ * and "Unhealthy" (red) on opposite ends of the red↔green axis that red-green
+ * CVD collapses, so those two — the most safety-critical pair — read nearly
+ * identical to ~8% of men. This ramp instead climbs a blue → cyan → yellow →
+ * orange → red → purple progression (a cividis / "IBM design" lineage) whose
+ * adjacent steps stay separated on the blue↔yellow axis deutan and protan
+ * vision preserve. Two measured properties (the unit test gates both):
+ *   • Every hex is ≥3:1 (WCAG AA non-text) against the near-black deck
+ *     #0a0e16 — min here is 4.33 (Hazardous), so the dot + legend swatch read.
+ *   • Every ADJACENT category pair clears a deuteranopia-simulated separation
+ *     (`cvdSeparation`) of ≥18 — min here is 24.17 (Unhealthy↔Very-unhealthy),
+ *     versus the AirNow ramp's 11.81 (USG↔Unhealthy, orange↔red), which CVD
+ *     nearly merges. So this is a strict improvement on the weakest link.
+ */
+const COLORVISION_RAMP: readonly string[] = [
+	'#4a90d9', // Good — blue
+	'#7fd0e0', // Moderate — cyan
+	'#f6e15a', // USG — yellow
+	'#f29e2e', // Unhealthy — orange
+	'#e15a5a', // Very unhealthy — red
+	'#b452a8', // Hazardous — purple
+];
+
+const PALETTE_RAMPS: Readonly<Record<PaletteMode, readonly string[]>> = {
+	airnow: AQI_CATEGORIES.map((c) => c.color),
+	colorvision: COLORVISION_RAMP,
+};
+
+/** Hex for an AQI category in the given palette. Defaults to the AirNow ramp. */
+export const paletteColorFor = (category: AqiCategory, mode: PaletteMode = 'airnow'): string => {
+	const i = AQI_CATEGORIES.indexOf(category);
+	const ramp = PALETTE_RAMPS[mode];
+	return i >= 0 ? ramp[i] : category.color;
+};
+
+/** Hex for a raw AQI value in the given palette (category lookup + palette swap). */
+export const colorFor = (aqi: number, mode: PaletteMode = 'airnow'): string => paletteColorFor(aqiCategory(aqi), mode);
+
+/** The full ordered hex ramp for a palette (Good → Hazardous). */
+export const paletteRamp = (mode: PaletteMode = 'airnow'): readonly string[] => PALETTE_RAMPS[mode];
+
+// ── Pure WCAG / CVD helpers ────────────────────────────────────────────────
+// DOM-free so this stays in the node-safe atmospheric test slice. Used by the
+// unit test to assert the palette's two load-bearing properties: legible
+// contrast on the deck and adjacent-category separability under CVD.
+
+/** The near-black deck the dots + legend swatches render on. */
+export const DECK_BG = '#0a0e16';
+
+const hexChannels = (hex: string): [number, number, number] => {
+	const h = hex.replace('#', '');
+	return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+};
+
+/** sRGB 0..255 channel → linear-light 0..1 (WCAG 2.x transfer function). */
+const srgbToLinear = (c8: number): number => {
+	const c = c8 / 255;
+	return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+/** WCAG relative luminance (0 black … 1 white) of a hex color. */
+export const relLuminance = (hex: string): number => {
+	const [r, g, b] = hexChannels(hex);
+	return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
+};
+
+/** WCAG contrast ratio (1 … 21) between two hex colors. Order-independent. */
+export const contrastRatio = (hexA: string, hexB: string): number => {
+	const la = relLuminance(hexA);
+	const lb = relLuminance(hexB);
+	const [hi, lo] = la >= lb ? [la, lb] : [lb, la];
+	return (hi + 0.05) / (lo + 0.05);
+};
+
+/**
+ * Brettel-style deuteranopia simulation (the green-cone-absent dichromat) in
+ * linear sRGB, then Euclidean distance between the two simulated colors. This
+ * is the property that justifies the ColorVision ramp: even after a deutan
+ * observer collapses the red↔green axis, adjacent categories must stay far
+ * apart. A small, self-contained projection — good enough to gate the ramp in a
+ * unit test, not a perceptual-research-grade model.
+ */
+const simulateDeuteranopia = (hex: string): [number, number, number] => {
+	const [r, g, b] = hexChannels(hex).map(srgbToLinear) as [number, number, number];
+	// Standard deutan projection (Vischeck / Brettel LMS approximation collapsed
+	// to a fixed linear-RGB matrix). Green is reconstructed from red + blue.
+	const rr = 0.625 * r + 0.375 * g + 0.0 * b;
+	const gg = 0.7 * r + 0.3 * g + 0.0 * b;
+	const bb = 0.0 * r + 0.3 * g + 0.7 * b;
+	return [rr, gg, bb];
+};
+
+/**
+ * Separation between two colors as seen by a deuteranope: Euclidean distance in
+ * the deutan-simulated linear-RGB space, scaled to ~0..100 so thresholds read
+ * intuitively. Larger = more distinguishable. The colorvision ramp is built so
+ * every ADJACENT category pair clears the test's threshold.
+ */
+export const cvdSeparation = (hexA: string, hexB: string): number => {
+	const a = simulateDeuteranopia(hexA);
+	const b = simulateDeuteranopia(hexB);
+	const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+	return d * 100;
+};
 
 interface Bp {
 	readonly cLo: number;

@@ -21,7 +21,8 @@
 		type PollenReading,
 	} from '$lib/effect/services/AirQualityService';
 	import { pollenOpticalDepth } from '$lib/atmospheric/pollen-extinction';
-	import { computeAqi, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
+	import { computeAqi, paletteColorFor, type AqiPollutant, type AqiReading } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
 	import type { HistorySeries } from '$lib/effect/services/OpenAQHistoryService';
 
 	export interface ReadoutData {
@@ -88,9 +89,11 @@
 		 */
 		onTransmissionForPoint?: () => void;
 		/**
-		 * Open the dedicated AQ-analysis dashboard (`/aq`) seeded from THIS point
-		 * + time. The dashboard pulls the full time-series + multi-pollutant +
-		 * source cross-validation for the location (V6-4).
+		 * Open the AQ-analysis dashboard seeded from THIS point + time. As of
+		 * TIN-1871 (idea ③) this is an in-SPA modal-popout (a focus-trapped
+		 * transient surface), not the old `/aq` route navigation — but it pulls the
+		 * same full time-series + multi-pollutant + source cross-validation for the
+		 * location (V6-4).
 		 */
 		onAqDashboardForPoint?: () => void;
 		/** Open the Orbit "Plan a pass" deep tool seeded from THIS point (S3). */
@@ -542,7 +545,7 @@
 				data-relevance={relOf('aqi')}
 				style:order={orderOf('aqi')}
 			>
-				<div class="aqi-badge" style="--aqi-color: {aqi.category.color}">
+				<div class="aqi-badge" style="--aqi-color: {paletteColorFor(aqi.category, aqiPalette.mode)}">
 					<span class="aqi-value">{aqi.aqi}</span>
 					<span class="aqi-meta">
 						<span class="aqi-cat">AQI · {aqi.category.name}</span>
@@ -993,7 +996,11 @@
 	.readout[data-scope='mean'] {
 		animation: none;
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — was `max-width:820px`: the mean dossier was hidden on the narrow COMPACT
+	   bottom strip. At MEDIUM (≥640px) the readout lives in the inspector grid cell,
+	   which must ALWAYS show the dossier (mean or point) — never display:none. So the
+	   width arm narrowed to <640px (COMPACT only); the short-screen arm is unchanged. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.readout[data-scope='mean'] {
 			display: none;
 		}
@@ -1098,7 +1105,9 @@
 		font-size: 0.95rem;
 		font-weight: 600;
 		line-height: 1.2;
-		color: var(--accent-amber);
+		/* Links lead value carries the active lens accent (W5c — Links blue). Only
+		   renders under the Links lens, so this resolves to the Links accent. */
+		color: var(--lens-accent, var(--accent-amber));
 		font-variant-numeric: tabular-nums;
 		display: flex;
 		flex-wrap: wrap;
@@ -1110,7 +1119,9 @@
 		font-size: 1.5rem;
 		font-weight: 700;
 		line-height: 1.05;
-		color: var(--accent-amber);
+		/* Sky lead value carries the active lens accent (W5c — Sky == amber, unchanged).
+		   Only renders under the Sky lens, so this resolves to the Sky accent. */
+		color: var(--lens-accent, var(--accent-amber));
 	}
 	.bortle-label {
 		display: block;
@@ -1125,6 +1136,25 @@
 		font-size: 0.8rem;
 		opacity: 0.85;
 	}
+
+	/* W5g — at the roomy inspector band (30rem cell, ≥1366px) the readout fills a
+	   wider column, so the lead VALUE scales up to match (adapting to the inspector's
+	   OWN width via container queries, not the viewport). At the laptop 22rem band the
+	   query doesn't match and the lead reverts to its base size; at COMPACT the inspector
+	   region is display:contents (no container) so this never fires. 27rem threshold
+	   sits between the 22rem laptop and 30rem roomy inspector tracks. */
+	@container inspector (min-width: 27rem) {
+		.bortle-class {
+			font-size: 1.9rem;
+		}
+		.bortle-label {
+			font-size: 0.85rem;
+		}
+		.links-lead-line {
+			font-size: 1.12rem;
+		}
+	}
+
 	@keyframes slide-up {
 		from {
 			opacity: 0;
@@ -1487,7 +1517,10 @@
 		opacity: 0.65;
 		color: #e9ecf3;
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — width arm narrowed from 820px to <640px: at MEDIUM the readout docks in
+	   the inspector grid cell (de-floated by +page), so this COMPACT float placement
+	   only applies below 640px. The short-screen arm is unchanged. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.readout {
 			left: 0.75rem;
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem);

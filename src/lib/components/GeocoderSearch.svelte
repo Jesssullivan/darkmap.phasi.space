@@ -14,6 +14,7 @@
 	 * parent decides whether to flyTo, push the hash, etc.
 	 */
 
+	import { Search } from '@lucide/svelte';
 	import { dispatchSearchInput } from '$lib/geocoder/coordParser';
 	import type { GeocodeResult } from '$lib/server/geocoder/GeocoderClient';
 
@@ -27,6 +28,12 @@
 		 * its header; the map leaves it floating. Default keeps the overlay.
 		 */
 		inline?: boolean;
+		/**
+		 * Compact map-overlay pill (X2): a search-icon button at rest that expands to
+		 * a full input on focus (or while it holds text). Keeps a minimal footprint on
+		 * the stage so it doesn't crowd the toolbar/lens overlays on a narrow map.
+		 */
+		compact?: boolean;
 		onSelect: (sel: { lat: number; lon: number; label: string }) => void;
 	}
 
@@ -35,6 +42,7 @@
 		debounceMs = 250,
 		placeholder = 'Search place or paste coords…',
 		inline = false,
+		compact = false,
 		onSelect,
 	}: Props = $props();
 
@@ -146,11 +154,15 @@
 <div
 	class="geocoder"
 	class:inline
+	class:compact
 	role="combobox"
 	aria-haspopup="listbox"
 	aria-expanded={open}
 	aria-controls="geocoder-listbox"
 >
+	{#if compact}
+		<Search class="geo-icon" size={16} aria-hidden="true" />
+	{/if}
 	<input
 		type="search"
 		class="search-input"
@@ -221,6 +233,60 @@
 		right: 0;
 		z-index: 20;
 	}
+	/* Compact map-overlay pill (X2): an icon-only search button at rest that grows to
+	   a full field on focus or while it holds text. Width-only transition (grows to the
+	   right over the map), so it never pushes the stacked toolbar below it. The parent
+	   sets position; this owns the resting/expanded shape. */
+	.geocoder.compact {
+		/* Shrink-wrap the (transitioning) input; the absolute icon + dropdown sit out
+		   of flow so they never widen the pill. */
+		width: max-content;
+	}
+	.geocoder.compact :global(.geo-icon) {
+		position: absolute;
+		left: 0.85rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: rgba(233, 236, 243, 0.7);
+		pointer-events: none;
+		z-index: 1;
+	}
+	.geocoder.compact .search-input {
+		width: 2.75rem;
+		padding-left: 2.15rem;
+		cursor: pointer;
+		transition: width 160ms ease;
+	}
+	.geocoder.compact:focus-within .search-input,
+	.geocoder.compact .search-input:not(:placeholder-shown) {
+		width: min(22rem, 60vw);
+		cursor: text;
+	}
+	/* The results dropdown drops below the input, out of the pill's width flow. */
+	.geocoder.compact .dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		min-width: min(22rem, 60vw);
+		z-index: 20;
+	}
+	/* COMPACT (P6): the search owns the top-LEFT, left-anchored (the MapToolbar moved
+	   to a top-right column), so the resting pill no longer overlaps the toolbar and the
+	   dropdown no longer re-centers/jumps as the field expands. The expanded width stays
+	   min(22rem,60vw) which at 375px = 225px from left 0.75rem → right ~237px, clear of
+	   the top-right toolbar column. */
+	@media (max-width: 639.98px) {
+		.geocoder.compact {
+			left: max(0.75rem, env(safe-area-inset-left));
+			right: auto;
+			transform: none;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.geocoder.compact .search-input {
+			transition: none;
+		}
+	}
 	.search-input {
 		width: 100%;
 		/* min-width:0 kills the flex/grid default `min-width:auto` min-content floor.
@@ -228,6 +294,10 @@
 		   RBE cell) can leave the input's intrinsic min-width unresolvable and stall
 		   inline-axis sizing of the .deck-header flex row it lives in (W1 peg). */
 		min-width: 0;
+		/* P6 — match the MapToolbar pill height (2.5rem) so the stacked top-left column
+		   (search above toolbar) reads as one deliberate cluster, not a thin caption. */
+		box-sizing: border-box;
+		min-height: 2.5rem;
 		background: rgba(8, 10, 16, 0.85);
 		color: #e9ecf3;
 		border: 1px solid rgba(255, 255, 255, 0.18);

@@ -14,18 +14,38 @@
 		ephemerisOpen: boolean;
 		/** Launch the chosen tool (the page wires this to the open*ForPoint handlers). */
 		onlaunch: (tool: ToolId) => void;
+		/** 'rail' = labelled tiles in the rail; 'overlay' = compact pills on the map's
+		 * right-edge corner (idea ①). Same TOOLS + lens order/accent in both. */
+		variant?: 'rail' | 'overlay';
 	}
 
-	let { lens, hasPoint, ephemerisOpen, onlaunch }: Props = $props();
+	let { lens, hasPoint, ephemerisOpen, onlaunch, variant = 'rail' }: Props = $props();
 
 	// The four deep tools, each as an ALWAYS-PRESENT, full-opacity launcher. `lens`
 	// is the persona this tool leads for — used ONLY to sort it first + accent it
 	// when that lens is active. Every tile stays opacity:1 + clickable in every lens
 	// (command-deck.md §4 — promote by order/accent, never dim/disable/hide).
-	const TOOLS: { id: ToolId; label: string; sub: string; icon: typeof Radio; lens: Lens }[] = [
-		{ id: 'transmission', label: 'Transmission', sub: 'T(λ) · path-AOD · link budget', icon: Radio, lens: 'links' },
-		{ id: 'passplan', label: 'Pass Plan', sub: 'satellite passes · polar track', icon: Satellite, lens: 'orbit' },
-		{ id: 'aq', label: 'Air Quality', sub: 'pollutants · NowCast AQI', icon: Wind, lens: 'air' },
+	// `key` is the keyboard accelerator (W5d) that mirrors this launcher — surfaced in
+	// the button title for discoverability. Twilight has none (V was dropped); it stays
+	// a click/disclosure toggle. The chords themselves live in +page.svelte's onDeckKey.
+	const TOOLS: { id: ToolId; label: string; sub: string; icon: typeof Radio; lens: Lens; key?: string }[] = [
+		{
+			id: 'transmission',
+			label: 'Transmission',
+			sub: 'T(λ) · path-AOD · link budget',
+			icon: Radio,
+			lens: 'links',
+			key: 'T',
+		},
+		{
+			id: 'passplan',
+			label: 'Pass Plan',
+			sub: 'satellite passes · polar track',
+			icon: Satellite,
+			lens: 'orbit',
+			key: 'P',
+		},
+		{ id: 'aq', label: 'Air Quality', sub: 'pollutants · NowCast AQI', icon: Wind, lens: 'air', key: 'A' },
 		{ id: 'twilight', label: 'Twilight', sub: 'sun/moon timing · dark window', icon: SunMoon, lens: 'sky' },
 	];
 
@@ -34,8 +54,8 @@
 	const orderFor = (toolLens: Lens): number => (toolLens === lens ? -1 : 0);
 </script>
 
-<section class="tools-cluster" aria-label="Deep tools">
-	<h2 class="cluster-title">Tools</h2>
+<section class="tools-cluster" class:overlay={variant === 'overlay'} aria-label="Deep tools">
+	{#if variant === 'rail'}<h2 class="cluster-title">Tools</h2>{/if}
 	<div class="cluster-grid">
 		{#each TOOLS as t (t.id)}
 			{@const Icon = t.icon}
@@ -45,7 +65,8 @@
 				class="tool-tile"
 				class:lead
 				style:order={orderFor(t.lens)}
-				aria-label={`Open ${t.label}${lead ? ' — leads the active lens' : ''}`}
+				aria-label={`Open ${t.label}${t.key ? ` (key ${t.key})` : ''}${lead ? ' — leads the active lens' : ''}`}
+				title={t.key ? `Open ${t.label} (key ${t.key})` : `Open ${t.label}`}
 				onclick={() => onlaunch(t.id)}
 			>
 				<span class="tool-icon"><Icon size={16} aria-hidden="true" /></span>
@@ -54,9 +75,11 @@
 						{t.label}
 						{#if t.id === 'twilight' && ephemerisOpen}<span class="on-dot" aria-label="open" title="open"></span>{/if}
 					</span>
-					<span class="tool-sub">{t.sub}</span>
+					{#if variant === 'rail'}<span class="tool-sub">{t.sub}</span>{/if}
 				</span>
-				<span class="tool-go" aria-hidden="true">{hasPoint || t.id === 'twilight' ? 'Open' : 'Pin →'}</span>
+				{#if variant === 'rail'}<span class="tool-go" aria-hidden="true"
+						>{hasPoint || t.id === 'twilight' ? 'Open' : 'Pin →'}</span
+					>{/if}
 			</button>
 		{/each}
 	</div>
@@ -113,19 +136,20 @@
 		outline: none;
 	}
 	.tool-tile:focus-visible {
-		outline: 2px solid var(--accent-amber);
+		outline: 2px solid var(--lens-accent, var(--accent-amber));
 		outline-offset: 1px;
 	}
-	/* LEAD = the active lens's tool. Accent + slightly heavier — never at the expense
-	   of the others' legibility (they stay opacity:1, full contrast). */
+	/* LEAD = the active lens's tool. Carries the active lens accent (W5c) + slightly
+	   heavier — never at the expense of the others' legibility (they stay opacity:1,
+	   full contrast). */
 	.tool-tile.lead {
-		border-color: rgba(var(--accent-amber-rgb), 0.6);
-		background: rgba(var(--accent-amber-rgb), 0.08);
+		border-color: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.6);
+		background: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.08);
 	}
 	.tool-icon {
 		display: flex;
 		flex: 0 0 auto;
-		color: var(--accent-amber);
+		color: var(--lens-accent, var(--accent-amber));
 	}
 	.tool-tile:not(.lead) .tool-icon {
 		color: #aeb6c6;
@@ -146,7 +170,7 @@
 		line-height: 1.1;
 	}
 	.tool-tile.lead .tool-label {
-		color: var(--accent-amber);
+		color: var(--lens-accent, var(--accent-amber));
 	}
 	.tool-sub {
 		font-size: 0.6rem;
@@ -165,7 +189,44 @@
 		width: 0.4rem;
 		height: 0.4rem;
 		border-radius: 50%;
-		background: var(--accent-amber);
-		box-shadow: 0 0 4px var(--accent-amber);
+		background: var(--lens-accent, var(--accent-amber));
+		box-shadow: 0 0 4px var(--lens-accent, var(--accent-amber));
+	}
+
+	/* OVERLAY variant (idea ①) — compact rounded pills hugging the map's right edge.
+	   +page positions the cluster absolute in the stage cell; these pills echo the
+	   top-left MapToolbar's pill vocabulary so both stage corners speak one control
+	   language. Pulling the cluster out of the rail frees the LayerRail's full height. */
+	.tools-cluster.overlay {
+		border-top: 0;
+		padding-top: 0;
+		margin-top: 0;
+		gap: 0.4rem;
+	}
+	.tools-cluster.overlay .cluster-grid {
+		gap: 0.4rem;
+	}
+	.tools-cluster.overlay .tool-tile {
+		width: auto;
+		min-height: 2.5rem;
+		gap: 0.45rem;
+		padding: 0.4rem 0.7rem;
+		border-radius: 999px;
+		background: rgba(8, 10, 16, 0.85);
+		backdrop-filter: blur(6px);
+		border-color: rgba(255, 255, 255, 0.14);
+	}
+	.tools-cluster.overlay .tool-label {
+		font-size: 0.72rem;
+		white-space: nowrap;
+	}
+	.tools-cluster.overlay .tool-tile.lead {
+		border-color: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.7);
+		background: rgba(var(--lens-accent-rgb, var(--accent-amber-rgb)), 0.12);
+	}
+	@media (pointer: coarse) {
+		.tools-cluster.overlay .tool-tile {
+			min-height: 3rem;
+		}
 	}
 </style>

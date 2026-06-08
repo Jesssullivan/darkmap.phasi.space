@@ -2,7 +2,14 @@
 <html lang="en" data-theme="omux" data-mode="light">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- viewport-fit=cover activates env(safe-area-inset-*) on notched devices (a no-op
+		     on iPhone SE, inset=0). interactive-widget=resizes-content is for Android Chrome
+		     only (inert on iOS WebKit, where the keyboard + URL-bar are handled via the
+		     visualViewport bridge in +layout.svelte); unknown keys are ignored, so harmless. -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
 		<meta
 			name="description"
 			content="Dark-sky planning map with VIIRS DNB, Falchi 2016 World Atlas, terrain horizon, OSM search, and sun/moon timing."

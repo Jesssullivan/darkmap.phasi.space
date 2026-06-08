@@ -45,6 +45,13 @@ export interface PollutantReading {
 	readonly value: number;
 	readonly units?: string;
 }
+/**
+ * Station status (TIN-1889 — station parity). `live` = a fresh value was joined;
+ * `pending` = the location reported within the freshness window but we haven't
+ * fetched its value (it's a marker, value loads on demand); `stale` = its last
+ * report is older than the freshness window (drawn as a marker, never a value).
+ */
+export type StationStatus = 'live' | 'pending' | 'stale';
 export interface StationFeature {
 	readonly type: 'Feature';
 	readonly properties: {
@@ -52,6 +59,9 @@ export interface StationFeature {
 		readonly locationName: string;
 		readonly value: number | null;
 		readonly pollutants: Partial<Record<PollutantName, PollutantReading>>;
+		readonly status: StationStatus;
+		/** ISO of the location's last report (for a "last seen Nh ago" marker). */
+		readonly lastSeen?: string;
 	};
 	readonly geometry: { readonly type: 'Point'; readonly coordinates: [number, number] };
 }
@@ -139,7 +149,44 @@ export const buildStationFeature = (
 			locationName: typeof loc.name === 'string' ? loc.name : 'Unknown',
 			value: pollutants.pm25?.value ?? null,
 			pollutants,
+			status: 'live',
+			lastSeen: loc.datetimeLast?.utc,
 		},
 		geometry: { type: 'Point', coordinates: [lon, lat] },
 	};
 };
+
+/**
+ * A metadata-only marker for one location (TIN-1889 — station parity). No `/latest`
+ * fetch: every in-view location with valid coordinates becomes a marker so the map
+ * reaches parity with other AQ maps, and the value loads on demand. `status` is
+ * `pending` if the location reported within the freshness window, else `stale`.
+ * Returns null only when the coordinates are unusable (never for a missing value).
+ */
+export const buildMarkerFeature = (loc: V3Location, nowMs: number, staleAfterMs: number): StationFeature | null => {
+	const lat = loc.coordinates?.latitude;
+	const lon = loc.coordinates?.longitude;
+	if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+		return null;
+	}
+	return {
+		type: 'Feature',
+		properties: {
+			locationId: typeof loc.id === 'number' ? loc.id : undefined,
+			locationName: typeof loc.name === 'string' ? loc.name : 'Unknown',
+			value: null,
+			pollutants: {},
+			status: isFresh(loc.datetimeLast?.utc, nowMs, staleAfterMs) ? 'pending' : 'stale',
+			lastSeen: loc.datetimeLast?.utc,
+		},
+		geometry: { type: 'Point', coordinates: [lon, lat] },
+	};
+};
+
+/** Build a marker for every in-view location with usable coordinates (parity mode). */
+export const buildAllMarkers = (
+	locations: ReadonlyArray<V3Location>,
+	nowMs: number,
+	staleAfterMs: number,
+): StationFeature[] =>
+	locations.map((l) => buildMarkerFeature(l, nowMs, staleAfterMs)).filter((f): f is StationFeature => f !== null);

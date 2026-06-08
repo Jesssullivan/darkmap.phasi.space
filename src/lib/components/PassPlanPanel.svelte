@@ -23,6 +23,7 @@
 	import { Effect, Layer } from 'effect';
 	import HelpTooltip from '$lib/components/HelpTooltip.svelte';
 	import { clearSkyTransmittance, findPasses, parseTle, type Pass } from '$lib/orbit';
+	import { footprintFeatureCollection, type FootprintFeatureCollection } from '$lib/map/orbit-footprint';
 	import type { HorizonPolygon } from '$lib/ephemeris/HorizonProvider';
 
 	interface Props {
@@ -34,8 +35,13 @@
 		catnr?: number;
 		/** Carrier for the Doppler readout, Hz (70 cm amateur downlink default). */
 		carrierHz?: number;
+		/**
+		 * Emit the selected pass's sub-satellite ground-footprint as GeoJSON for the
+		 * map overlay (null = clear). Mirrors TransmissionSheet's onBeam callback.
+		 */
+		onFootprint?: (fc: FootprintFeatureCollection | null) => void;
 	}
-	let { location, onclose, catnr = 25544, carrierHz = 437_000_000 }: Props = $props();
+	let { location, onclose, catnr = 25544, carrierHz = 437_000_000, onFootprint }: Props = $props();
 
 	let loading = $state(true);
 	let errorMsg = $state<string | null>(null);
@@ -240,6 +246,23 @@
 	const compass = (az: number) =>
 		['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(az / 45) % 8] ?? `${Math.round(az)}°`;
 	const epochStale = $derived(epochAgeDays !== null && epochAgeDays > 14);
+
+	// ── ground-footprint overlay (PR2b) ─────────────────────────────────────
+	// Project the SELECTED pass's sub-satellite point at culmination to a surface
+	// coverage circle + nadir dot, emitted to the map via onFootprint. The circle
+	// is the 0° GEOMETRIC horizon (not a comms/elevation-masked service area) and
+	// INSTANTANEOUS for the culmination instant — surfaced in the caption.
+	let showFootprint = $state(false);
+	$effect(() => {
+		if (!onFootprint) return;
+		const set = chosenSet;
+		if (!showFootprint || !selected || !set) {
+			onFootprint(null);
+			return;
+		}
+		const { satrec } = parseTle(set.line1, set.line2, set.name);
+		onFootprint(footprintFeatureCollection(satrec, selected.culmination));
+	});
 </script>
 
 <div class="pass-plan" role="dialog" aria-label="Plan a pass">
@@ -382,11 +405,11 @@
 
 		{#if selected}
 			<dl class="pp-detail">
-				<dt>AOS</dt>
+				<dt><abbr title="Acquisition of Signal — the satellite rises clear of your terrain horizon">AOS</abbr></dt>
 				<dd>{fmtClock(selected.aos)}Z · {compass(selected.aosAzDeg)}</dd>
 				<dt>Max el</dt>
 				<dd>{selected.maxElevationDeg.toFixed(1)}° @ {fmtClock(selected.culmination)}Z</dd>
-				<dt>LOS</dt>
+				<dt><abbr title="Loss of Signal — the satellite drops back below your terrain horizon">LOS</abbr></dt>
 				<dd>{fmtClock(selected.los)}Z · {compass(selected.losAzDeg)}</dd>
 				<dt>
 					T at culmination
@@ -417,6 +440,22 @@
 					</dd>
 				{/if}
 			</dl>
+
+			{#if onFootprint}
+				<section class="pp-footprint" aria-label="Sub-satellite ground footprint">
+					<label class="pp-fp-toggle">
+						<input type="checkbox" bind:checked={showFootprint} />
+						<span>Show ground footprint</span>
+					</label>
+					<p class="pp-fp-honesty">
+						Predicted (SGP4) · instantaneous at culmination · 0° geometric horizon (NOT comms/elevation-masked)
+						{#if epochAgeDays !== null}
+							· TLE epoch +{epochAgeDays.toFixed(1)} d{#if epochStale}
+								<span class="pp-warn" title="Elements are old; expect cross-track error">⚠ stale</span>{/if}
+						{/if}
+					</p>
+				</section>
+			{/if}
 		{/if}
 
 		<p class="pp-honesty">
@@ -662,5 +701,35 @@
 		margin: 0.6rem 0 0;
 		font-size: 0.62rem;
 		opacity: 0.6;
+	}
+	/* Ground-footprint toggle — cool cyan/teal, distinct from the amber chrome,
+	   matching the map overlay's coverage ring. */
+	.pp-footprint {
+		margin: 0.55rem 0 0;
+		padding: 0.45rem 0.55rem;
+		border: 1px solid rgba(94, 226, 208, 0.28);
+		border-radius: 6px;
+		background: rgba(94, 226, 208, 0.05);
+	}
+	.pp-fp-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.74rem;
+		cursor: pointer;
+	}
+	.pp-fp-toggle input {
+		accent-color: #5ee2d0;
+	}
+	.pp-fp-toggle:focus-within {
+		outline: 2px solid #5ee2d0;
+		outline-offset: 2px;
+		border-radius: 3px;
+	}
+	.pp-fp-honesty {
+		margin: 0.3rem 0 0;
+		font-size: 0.6rem;
+		opacity: 0.62;
+		line-height: 1.35;
 	}
 </style>

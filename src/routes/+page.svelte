@@ -2,7 +2,6 @@
 	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import {
 		classifyPositionFreshness,
@@ -45,12 +44,16 @@
 	import type { LookTarget } from '$lib/transmission/look-angle';
 	import { computePinEphemeris, type PinEphemerisReadout } from '$lib/ephemeris/pinEphemeris';
 	import { beamCenterline, beamSamplePoints, beamSectorPolygon } from '$lib/map/beam-footprint';
+	import type { FootprintFeatureCollection } from '$lib/map/orbit-footprint';
 	import { aggregatePath, type PathProfile } from '$lib/atmospheric/path-constituents';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
 	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import { buildAqiField } from '$lib/atmospheric/aqi-field';
+	import { computeAqi, type AqiPollutant } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
+	import { fmtAge } from '$lib/cache/badge';
 	import {
 		DEFAULT_DIFFUSION,
 		estimatePm25At,
@@ -65,6 +68,9 @@
 	import { columnOzoneDu } from '$lib/atmospheric/ozone-climatology';
 	import type { AerosolType } from '$lib/spectral/aerosol-types';
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
+	import AqModal from '$lib/components/AqModal.svelte';
+	import CommandPalette, { type PaletteCommand } from '$lib/components/CommandPalette.svelte';
+	import type { AqSeed } from '$lib/components/AqDashboard.svelte';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
 	// minimal Feature/FeatureCollection structure that MapLibre consumes.
@@ -77,7 +83,17 @@
 		geometry: RouteGeoJsonGeometry;
 	};
 	type RouteGeoJsonFC = { type: 'FeatureCollection'; features: RouteGeoJsonFeature[] };
-	import { Compass, LocateFixed, SunMoon, Upload, X } from '@lucide/svelte';
+	import {
+		ChevronLeft,
+		ChevronRight,
+		Compass,
+		Contrast,
+		LocateFixed,
+		PanelLeftOpen,
+		SunMoon,
+		Upload,
+		X,
+	} from '@lucide/svelte';
 	import Tour, { type TourStep } from '$lib/components/Tour.svelte';
 	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
@@ -89,6 +105,7 @@
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
 	import ToolsCluster from '$lib/components/ToolsCluster.svelte';
+	import ResponsiveDock, { type DockView } from '$lib/components/ResponsiveDock.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
 	import {
 		FALLBACK_CENTER,
@@ -105,7 +122,7 @@
 	import { makeMapLayerControllerLive, MapLayerController, type MapLayerError } from '$lib/map/MapLayerController';
 	import { decodeHash, encodeHash } from '$lib/url-hash';
 	import { lensStore } from '$lib/lens.svelte';
-	import { LENSES, LENS_ANNOUNCE, type Lens } from '$lib/lens';
+	import { LENSES, LENS_ANNOUNCE, LENS_ACCENT, type Lens } from '$lib/lens';
 
 	let mapEl: HTMLDivElement | undefined = $state();
 	let mapInstance: import('maplibre-gl').Map | undefined;
@@ -151,8 +168,61 @@
 	let ephemerisOpen = $state(false);
 	let ephemerisTime: Date = $state(initialTime());
 
-	// Guided tour — custom, no-dep. Spotlights the rail, the atmospheric overlays
-	// + spectral widget, the click-to-readout map, and the twilight tools.
+	// W4b (TIN-1865) — MEDIUM (640–1023px) Command Deck progressive-disclosure
+	// state. Both reflect onto .command-deck as data-rail-expanded /
+	// data-inspector-open; the ≥640px grid widens the matching column track so the
+	// 1fr stage SHRINKS (push, never overlay). Inert at COMPACT (<640, drawer) and
+	// WIDE (≥1024, both columns permanent) — those bands ignore the attributes, so
+	// they render byte-identical. railExpanded gates the icon-only ↔ full rail;
+	// inspectorOpen gates the thin tab ↔ readout column (auto-opened on pin below).
+	let railExpanded = $state(false);
+	let inspectorOpen = $state(false);
+	// W4b — the live layout tier (set by the matchMedia listeners in onMount below).
+	// `compact` (icon-only) rail is MEDIUM-ONLY: at WIDE the rail must render the FULL
+	// panel (byte-identical to before), and at COMPACT it is the mobile drawer (the
+	// LayerRail's own <640 rendering) — neither passes the icon-only mode. SSR starts
+	// 'wide' so the first paint matches the desktop default before hydration.
+	let layoutTier = $state<'compact' | 'medium' | 'wide'>('wide');
+	const railCompact = $derived(layoutTier === 'medium' && !railExpanded);
+
+	// W4c (TIN-1866) — the COMPACT ResponsiveDock engages at width<640 AND a tall
+	// enough viewport (height ≥501). Below that height the BYTE-IDENTICAL
+	// LANDSCAPE-short float fallback owns the layout (the dock host is display:none
+	// there and the readout/tools/gantt float as before). SSR starts `true` so the
+	// first paint matches the desktop default before hydration.
+	let viewportTall = $state(true);
+	const dockActive = $derived(layoutTier === 'compact' && viewportTall);
+	// The COMPACT dock's Tools-view launcher needs the lens accent, but .responsive-dock
+	// is a position:fixed SIBLING of .command-deck so it does NOT inherit --lens-accent*.
+	// Republish both (derived from LENS_ACCENT, the single source) on the dock launcher.
+	const hexToRgbTriplet = (hex: string): string => {
+		const h = hex.replace('#', '');
+		return `${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}`;
+	};
+	const dockAccent = $derived(LENS_ACCENT[lensStore.lens]);
+	const dockAccentRgb = $derived(hexToRgbTriplet(LENS_ACCENT[lensStore.lens]));
+	// (The ONE bottom-sheet's swap-view state is declared below, after the
+	// transmission/pass-plan state it derives from — W4c, see `dockView`.)
+
+	// W4b — MEDIUM mutual exclusion. At 640px a 16rem rail + a 20rem inspector
+	// together leave the 1fr stage a ~16px sliver (the map all but vanishes). To keep
+	// the map usable while honoring "push, never overlay", only ONE wide panel opens
+	// at a time: expanding the rail collapses the inspector to its tab, and opening
+	// the inspector collapses the rail to its icon column. Inert at COMPACT/WIDE (the
+	// attributes are ignored there), so this only shapes MEDIUM — and WIDE keeps both
+	// columns permanently via its own grid-template-columns override.
+	function setRailExpanded(next: boolean): void {
+		railExpanded = next;
+		if (next) inspectorOpen = false;
+	}
+	function setInspectorOpen(next: boolean): void {
+		inspectorOpen = next;
+		if (next) railExpanded = false;
+	}
+
+	// Guided tour — custom, no-dep. Per-lens: each persona gets onboarding steps
+	// that spotlight the Command-Deck cells that matter for its audience, always
+	// opening on the lens-switcher (every tool stays reachable from every lens).
 	// First-run auto-start (localStorage flag) + a replay button in the toolbar.
 	let tourOpen = $state(false);
 	const TOUR_FLAG = 'darkmap-tour-v1';
@@ -167,33 +237,93 @@
 		const header = document.querySelector<HTMLButtonElement>('[data-tour="atmosphere-header"]');
 		if (header && header.getAttribute('aria-expanded') !== 'true') header.click();
 	};
-	const tourSteps: readonly TourStep[] = [
-		{
-			anchor: '[data-tour="rail"]',
-			title: 'Layers live here',
-			body: 'Toggle the data layers — VIIRS night-lights and the Falchi World Atlas for light pollution, plus live atmospheric overlays. Pick a basemap up top.',
-			prepare: ensureRailOpen,
-		},
-		{
-			anchor: '[data-tour="atmosphere"]',
-			title: 'Atmosphere overlays',
-			body: 'Clouds, aerosol (AOD) and water-vapor overlays. To analyze spectral transmission T(λ) for a spot, click the map and open it from the point readout.',
-			prepare: () => {
-				ensureRailOpen();
-				expandAtmosphere();
+	// Display labels (lockstep with LensSwitcher's chips) for the shared opener copy.
+	const LENS_LABEL: Record<Lens, string> = { sky: 'Sky', air: 'Air', links: 'Links', orbit: 'Orbit' };
+	// First step is identical in shape for every lens: anchor the switcher and name
+	// the persona so the re-weight (never a gate) is legible from frame one.
+	const lensSwitcherStep = (lens: Lens): TourStep => ({
+		anchor: '[data-tour="lens-switcher"]',
+		title: `You're in the ${LENS_LABEL[lens]} lens`,
+		body: 'Switch personas here — every tool stays reachable from every lens; the lens just re-weights what leads.',
+	});
+	// Per-lens onboarding. Each array walks the cells that matter for that audience;
+	// rail/atmosphere steps reuse the prepare hooks so the target exists + is visible.
+	const tourStepsByLens: Record<Lens, readonly TourStep[]> = {
+		// Sky (astro): VIIRS + Falchi → Bortle/SQM, click-to-pin dark window, twilight tools.
+		sky: [
+			lensSwitcherStep('sky'),
+			{
+				anchor: '[data-tour="rail"]',
+				title: 'Brightness layers',
+				body: 'VIIRS night-lights + the Falchi World Atlas, surfaced as Bortle / SQM. Stack the dark-sky layers and pick a basemap up top.',
+				prepare: ensureRailOpen,
 			},
-		},
-		{
-			anchor: '[data-tour="map"]',
-			title: 'Click anywhere for a readout',
-			body: 'Tap the map to pin a point: VIIRS brightness, World Atlas radiance, live atmospheric conditions, modeled PM2.5 — and a directable spectral-transmission T(λ) analysis for that exact spot.',
-		},
-		{
-			anchor: '[data-tour="toolbar"]',
-			title: 'Sun, moon & sharing',
-			body: 'Open the twilight strip for sun/moon timing and the sky compass, follow your GPS, import a route, or copy a shareable link to this exact view.',
-		},
-	];
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Click to pin a site',
+				body: "Tap the map for a readout: Bortle class up front, tonight's dark window, and the DEM horizon for that exact spot.",
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Twilight & ephemeris',
+				body: 'Open the twilight gantt for sun/moon timing and the sky compass — plan the session around the dark hours.',
+			},
+		],
+		// Air (weather/smog): atmosphere overlays + PM2.5 field, NowCast vs 24-h, AQ tools.
+		air: [
+			lensSwitcherStep('air'),
+			{
+				anchor: '[data-tour="atmosphere"]',
+				title: 'Atmosphere & the PM2.5 field',
+				body: 'Clouds, aerosol (AOD) and water-vapor overlays plus the modeled PM2.5 field. Readouts report NowCast vs the 24-h AQI so you see both.',
+				prepare: () => {
+					ensureRailOpen();
+					expandAtmosphere();
+				},
+			},
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Click to pin air quality',
+				body: 'Tap the map to pin a point: the driving pollutant, its AQI, and cross-validated sources for that location.',
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Air Quality dashboard',
+				body: 'Open the Air Quality dashboard for the full station picture, and switch the AQI palette to the color-vision-assist ramp.',
+			},
+		],
+		// Links (laser/RF): path-AOD → T(λ) → link budget, Transmission tool.
+		links: [
+			lensSwitcherStep('links'),
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Click to pin a path',
+				body: 'Tap the map to pin an endpoint: path-AOD feeds the spectral transmission T(λ), which feeds the link budget.',
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Transmission & link budget',
+				body: 'Open Transmission to point the boresight, read the dB / dBm / dBi budget, and get a go / no-go for the link.',
+			},
+		],
+		// Orbit (LEO ground-station): pin the station, plan a pass over the real horizon.
+		orbit: [
+			lensSwitcherStep('orbit'),
+			{
+				anchor: '[data-tour="map"]',
+				title: 'Pin your ground station',
+				body: 'Tap the map to drop your ground station — every pass is computed against the real DEM horizon at that point.',
+			},
+			{
+				anchor: '[data-tour="toolbar"]',
+				title: 'Plan a pass',
+				body: 'Open Pass Plan for AOS/LOS over the terrain horizon, the az/el track, Doppler, and the sub-satellite ground footprint.',
+			},
+		],
+	};
+	// The tour presents the CURRENT lens's steps; flipping lenses while it's open
+	// re-points it (Tour re-measures on `steps`/`index` change).
+	const tourSteps = $derived<readonly TourStep[]>(tourStepsByLens[lensStore.lens]);
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- mounted tile date bookkeeping, not reactive UI state
 	const atmosphericTileDays = new Map<string, string>();
 	let viewCenter: { lat: number; lon: number } = $state({
@@ -231,6 +361,121 @@
 	// default (0.15) and shows it in the readout so users know it's not measured.
 	let transmissionOpen = $state(false);
 	let passPlanOpen = $state(false);
+
+	// TIN-1871 idea ③ — the AQ dashboard is an in-SPA modal-popout, not a route.
+	// Opened from the Air-quality launcher + the readout CTA (and auto-opened from
+	// the thin `/aq` redirect's `aq=1` hash flag). Viewport/pin-driven: the seed is
+	// the pinned point / shared hash; the modal's AqDashboard reuses getSensors(bbox).
+	let aqModalOpen = $state(false);
+	let aqModalSeed = $state<AqSeed | null>(null);
+
+	// W5e — the Cmd/Ctrl-K command palette. A focus-trapped transient surface
+	// (CommandPalette.svelte) exposing every deck action by fuzzy search. Opened from
+	// onDeckKey ABOVE the modifier guard so the chord isn't swallowed.
+	let paletteOpen = $state(false);
+
+	// The palette's command list — every deck action that has a keyboard/clickable
+	// home, reachable by fuzzy search. The run() closures read current state at call
+	// time; the referenced handlers are hoisted function declarations below. Labels
+	// stay static, so a plain const (not a rune) is correct.
+	const setLens = (l: Lens) => {
+		lensStore.set(l);
+		scheduleHashWrite();
+	};
+	const paletteCommands: PaletteCommand[] = [
+		{
+			id: 'lens-sky',
+			label: 'Switch to Sky lens',
+			hint: '1',
+			keywords: 'dark-sky astro bortle ephemeris',
+			run: () => setLens('sky'),
+		},
+		{
+			id: 'lens-air',
+			label: 'Switch to Air lens',
+			hint: '2',
+			keywords: 'weather smog air quality aqi',
+			run: () => setLens('air'),
+		},
+		{
+			id: 'lens-links',
+			label: 'Switch to Links lens',
+			hint: '3',
+			keywords: 'rf laser link budget transmission',
+			run: () => setLens('links'),
+		},
+		{
+			id: 'lens-orbit',
+			label: 'Switch to Orbit lens',
+			hint: '4',
+			keywords: 'leo passes ground station satellite',
+			run: () => setLens('orbit'),
+		},
+		{
+			id: 'tool-transmission',
+			label: 'Open Transmission',
+			hint: 'T',
+			keywords: 'spectral link budget path aod',
+			run: () => openTransmissionForPoint(),
+		},
+		{
+			id: 'tool-passplan',
+			label: 'Open Pass Plan',
+			hint: 'P',
+			keywords: 'satellite passes polar track orbit',
+			run: () => openPassPlanForPoint(),
+		},
+		{
+			id: 'tool-aq',
+			label: 'Open Air Quality',
+			hint: 'A',
+			keywords: 'pollutants nowcast aqi smog pm2.5',
+			run: () => openAqDashboardForPoint(),
+		},
+		{
+			id: 'tool-twilight',
+			label: 'Toggle Twilight strip',
+			keywords: 'sun moon timing dark window ephemeris gantt',
+			run: () => (ephemerisOpen = !ephemerisOpen),
+		},
+		{
+			id: 'open-layers',
+			label: 'Open layers',
+			keywords: 'rail drawer overlays viirs falchi basemap',
+			run: () => openLayersFromDock(),
+		},
+		{
+			id: 'open-tour',
+			label: 'Take the guided tour',
+			keywords: 'help onboarding walkthrough',
+			run: () => (tourOpen = true),
+		},
+		...BASEMAPS.map((b) => ({
+			id: `basemap-${b.id}`,
+			label: `Basemap: ${b.label}`,
+			keywords: 'map background tiles',
+			run: () => onBasemapChange(b.id),
+		})),
+	];
+
+	// W4c (TIN-1866) — the COMPACT ResponsiveDock's ONE-sheet swap view. Derived from
+	// the existing point/tool state so the smoke's canvas-pin → Readout view and
+	// "open transmission" → Tools view flows fall out for free. A manual segment tap
+	// pins a view via `dockViewPinned` until the underlying state moves it again
+	// (the open/close handlers clear the pin so state always wins after an action).
+	let dockViewPinned = $state<DockView | null>(null);
+	const dockView = $derived<DockView>(dockViewPinned ?? (transmissionOpen || passPlanOpen ? 'tools' : 'readout'));
+	function setDockView(next: DockView): void {
+		dockViewPinned = next;
+	}
+	// Opening the layers drawer = the rail-toggle path (the tall, detach-on-close
+	// drawer the mobile-layers smoke contracts on). The COMPACT floating "≡ Layers"
+	// chip is the sole trigger; the command palette's "Open layers" entry reuses this.
+	function openLayersFromDock(): void {
+		const toggle = document.querySelector<HTMLButtonElement>('[data-tour="rail-toggle"]');
+		if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click();
+	}
+
 	let transmissionCurve = $state<TransmissionCurve | undefined>(undefined);
 	let transmissionLoading = $state(false);
 	let transmissionError = $state<string | undefined>(undefined);
@@ -380,6 +625,8 @@
 	function openTransmissionForPoint(): void {
 		passPlanOpen = false;
 		transmissionOpen = true;
+		// W4c — let the state-driven dock view (→ Tools) take over the COMPACT sheet.
+		dockViewPinned = null;
 		void loadTransmissionPin();
 		void refreshTransmission();
 	}
@@ -388,23 +635,37 @@
 	function openPassPlanForPoint(): void {
 		transmissionOpen = false;
 		passPlanOpen = true;
+		dockViewPinned = null;
 	}
 	function closePassPlan(): void {
 		passPlanOpen = false;
+		dockViewPinned = null;
+		// Defensive teardown of the orbit footprint overlay (the data-gate on
+		// passPlanOpen already clears it; this mirrors closeTransmission's beam cleanup).
+		orbitFootprintFC = null;
+		removeFootprintOverlay();
 	}
 
-	// Hand off to the dedicated AQ-analysis dashboard (/aq, V6-4), seeded from the
-	// selected point + ephemeris time via the shared URL-hash codec. The map zoom
-	// rides along so a "View on map" return lands where we left.
+	// TIN-1871 idea ③ — open the AQ dashboard as an in-SPA modal-popout (no longer
+	// `goto('/aq')`). Seeded from the selected point + ephemeris time; the modal's
+	// AqDashboard pulls stations via the same getSensors(bbox) ±0.75° fetch. Both
+	// the overlay TOOLS pill and the readout CTA route here.
 	function openAqDashboardForPoint(): void {
-		// Never gate on a pinned point (command-deck.md §5): with no pin, seed the
-		// dashboard from the viewport center so the TOOLS launcher always works.
+		// Never gate on a pinned point (command-deck.md §5): with no pin, seed from
+		// the viewport center so the TOOLS launcher always works (carry-the-query,
+		// zero re-entry).
 		const at = readout ?? { lat: viewCenter.lat, lon: viewCenter.lon };
-		const hash = encodeHash({
-			view: { lat: at.lat, lon: at.lon, zoom: mapInstance?.getZoom() ?? 8 },
-			time: ephemerisTime,
-		});
-		void goto(`/aq${hash}`);
+		aqModalSeed = { lat: at.lat, lon: at.lon, time: ephemerisTime };
+		aqModalOpen = true;
+	}
+	function closeAqModal(): void {
+		aqModalOpen = false;
+	}
+	// "View on map" from inside the modal: close + recentre on the analysed point
+	// (the route's old `/<hash>` link became a same-SPA recentre).
+	function aqViewOnMap(at: { lat: number; lon: number }): void {
+		aqModalOpen = false;
+		mapInstance?.easeTo({ center: [at.lon, at.lat], duration: 600 });
 	}
 
 	// Load the per-pin ephemeris (sun/moon alt-az + DEM horizon) for the selected
@@ -536,6 +797,9 @@
 
 	function closeTransmission(): void {
 		transmissionOpen = false;
+		// W4c — closing the tool swaps the COMPACT dock back to the Readout view
+		// (state-driven default), the smoke's "close → readout visible again" step.
+		dockViewPinned = null;
 		transmissionBandId = null;
 		transmissionBandCurve = undefined;
 		// Reset the boresight to the zenith default so the next open starts honestly
@@ -640,6 +904,82 @@
 	// hidden it only tracks beamShow/transmissionOpen and stays cheap.
 	$effect(() => {
 		syncBeamOverlay();
+	});
+
+	// PR2b — orbit sub-satellite ground-footprint overlay (MapLibre GeoJSON),
+	// mirroring the BEAM overlay above. A cool cyan/teal coverage ring + nadir dot,
+	// visibly distinct from the amber beam. The pure GeoJSON is computed in the
+	// PassPlanPanel (which owns the satrec + selected pass); we just render what it
+	// emits via onFootprint, gated to while the pass panel is open.
+	const FOOTPRINT_SRC = 'darkmap-orbit-footprint-src';
+	const FOOTPRINT_FILL = 'darkmap-orbit-footprint-fill-lyr';
+	const FOOTPRINT_LINE = 'darkmap-orbit-footprint-line-lyr';
+	const FOOTPRINT_NADIR = 'darkmap-orbit-footprint-nadir-lyr';
+	const FOOTPRINT_CYAN = '#5ee2d0';
+	let orbitFootprintFC = $state<FootprintFeatureCollection | null>(null);
+
+	function removeFootprintOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		if (map.getLayer(FOOTPRINT_NADIR)) map.removeLayer(FOOTPRINT_NADIR);
+		if (map.getLayer(FOOTPRINT_LINE)) map.removeLayer(FOOTPRINT_LINE);
+		if (map.getLayer(FOOTPRINT_FILL)) map.removeLayer(FOOTPRINT_FILL);
+		if (map.getSource(FOOTPRINT_SRC)) map.removeSource(FOOTPRINT_SRC);
+	}
+
+	function syncFootprintOverlay(): void {
+		const map = mapInstance;
+		if (!map) return;
+		// Gate the render to while the pass panel is open (the data-clear in
+		// closePassPlan already covers this; the gate is belt-and-suspenders).
+		const data = passPlanOpen ? orbitFootprintFC : null;
+		if (!data) {
+			removeFootprintOverlay();
+			return;
+		}
+		if (!map.isStyleLoaded()) {
+			map.once('styledata', syncFootprintOverlay);
+			return;
+		}
+		const existing = map.getSource(FOOTPRINT_SRC) as import('maplibre-gl').GeoJSONSource | undefined;
+		if (existing) {
+			existing.setData(data);
+			return;
+		}
+		map.addSource(FOOTPRINT_SRC, { type: 'geojson', data });
+		map.addLayer({
+			id: FOOTPRINT_FILL,
+			type: 'fill',
+			source: FOOTPRINT_SRC,
+			filter: ['==', ['get', 'kind'], 'footprint'],
+			paint: { 'fill-color': FOOTPRINT_CYAN, 'fill-opacity': 0.09 },
+		});
+		map.addLayer({
+			id: FOOTPRINT_LINE,
+			type: 'line',
+			source: FOOTPRINT_SRC,
+			filter: ['==', ['get', 'kind'], 'footprint'],
+			paint: { 'line-color': FOOTPRINT_CYAN, 'line-width': 2, 'line-opacity': 0.9 },
+		});
+		map.addLayer({
+			id: FOOTPRINT_NADIR,
+			type: 'circle',
+			source: FOOTPRINT_SRC,
+			filter: ['==', ['get', 'kind'], 'nadir'],
+			paint: {
+				'circle-radius': 4,
+				'circle-color': FOOTPRINT_CYAN,
+				'circle-opacity': 0.9,
+				'circle-stroke-color': '#0a0e16',
+				'circle-stroke-width': 1,
+			},
+		});
+	}
+
+	// Render the orbit footprint from the FC the PassPlanPanel emits, gated to the
+	// open pass panel. Reading orbitFootprintFC/passPlanOpen registers the deps.
+	$effect(() => {
+		syncFootprintOverlay();
 	});
 
 	// V3-10 — AOD variation along the beam centerline, sampled from the cached
@@ -990,6 +1330,9 @@
 		// point + an open tool survive a lens change with the coordinate intact.)
 		if (transmissionOpen) closeTransmission();
 		if (passPlanOpen) closePassPlan();
+		// W4c — unpinning returns the COMPACT dock to its state-driven default (the
+		// viewport-readout view), clearing any manual segment pin.
+		dockViewPinned = null;
 	}
 
 	async function queryAt(lat: number, lon: number): Promise<void> {
@@ -999,6 +1342,14 @@
 		readoutInflight = controller;
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
+		// W4b — pinning a point auto-opens the MEDIUM inspector column so the readout
+		// is visible without a second click (the tab handle stays the manual toggle).
+		// Goes through setInspectorOpen so the rail collapses to its icon column (mutual
+		// exclusion keeps the map usable). Inert outside MEDIUM.
+		setInspectorOpen(true);
+		// W4c — a fresh pin shows the COMPACT dock's Readout view (clear any manual
+		// segment pin) + the dock auto-raises to HALF (ResponsiveDock effect on hasPoint).
+		dockViewPinned = null;
 		// Drop the locator crosshair immediately so the point is visible while the readout loads.
 		pointMarker?.place(lon, lat);
 
@@ -1115,11 +1466,29 @@
 		}, 250);
 	}
 
-	// Number-key lens accelerator: 1→Sky, 2→Air, 3→Links, 4→Orbit. Guarded so it
-	// never hijacks typing in the geocoder / any input. (The visible switcher
-	// chips land in S1/PR2; this is the keyboard path.)
-	function onLensKey(e: KeyboardEvent): void {
+	// Command-Deck keyboard accelerators (W5d). Two unmodified-key families, both
+	// guarded so they never hijack typing in the geocoder / any input:
+	//   1–4   → lens switch (1→Sky, 2→Air, 3→Links, 4→Orbit).
+	//   T/P/A → the three deep-tool launchers (Transmission / Pass plan / Air quality),
+	//           a keyboard mirror of the always-present TOOLS cluster — identical
+	//           semantics to clicking the pill (no new pin-gating). Twilight has no
+	//           chord (V was dropped) — it stays a click/disclosure toggle.
+	// Cmd/Ctrl-K (the palette, W5e) is handled separately ABOVE this guard.
+	function onDeckKey(e: KeyboardEvent): void {
+		// Cmd/Ctrl-K toggles the command palette (W5e) — handled FIRST, above the
+		// modifier guard below, and works even from inside an input (the palette is a
+		// global accelerator, like the browser's own Find). The palette owns the
+		// keyboard while open (its own Esc/arrows/Enter), so we early-return after.
+		if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			paletteOpen = !paletteOpen;
+			return;
+		}
+		if (paletteOpen) return; // palette is focus-trapped; deck chords stay inert behind it
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		// While the AQ modal-popout is open it owns the keyboard (focus-trapped); the
+		// deck accelerators must not fire behind it.
+		if (aqModalOpen) return;
 		const t = e.target as HTMLElement | null;
 		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
 			return;
@@ -1128,6 +1497,18 @@
 		if (Number.isInteger(idx) && idx >= 0 && idx < LENSES.length) {
 			lensStore.set(LENSES[idx]);
 			scheduleHashWrite();
+			return;
+		}
+		switch (e.key.toLowerCase()) {
+			case 't':
+				openTransmissionForPoint();
+				break;
+			case 'p':
+				openPassPlanForPoint();
+				break;
+			case 'a':
+				openAqDashboardForPoint();
+				break;
 		}
 	}
 
@@ -1236,6 +1617,35 @@
 	const pointFetchGen = new Map<string, number>();
 	let pointMoveendDebounce: ReturnType<typeof setTimeout> | undefined;
 
+	// X1 — viewport-AQ for the RAIL's Air instrument, DECOUPLED from the smog layer.
+	// The smog fetch (refreshPointLayer) only runs while the layer is mounted, so with
+	// smog off (the default + every non-Air lens) pm25Stations stays [] and the always-
+	// visible Air tile reads "no stations in view" forever. This independent fetch keeps
+	// the instrument live — gated to the air|links lenses where the tile leads, with its
+	// own abort/gen/debounce; it shares the OpenAQ proxy's 5-min HTTP cache with the
+	// click-AQ + smog paths (same getSensors → same /api/atmospheric/openaq URL).
+	let viewportAqStations = $state<Pm25Station[]>([]);
+	let viewportAqController: AbortController | undefined;
+	let viewportAqGen = 0;
+	let viewportAqDebounce: ReturnType<typeof setTimeout> | undefined;
+
+	// TIN-1889 — always-on OpenAQ station markers, decoupled from the smog toggle.
+	// The cheap `markers=1` parity call returns EVERY in-view station (other AQ maps
+	// show hundreds; the valued path is bound by a 50-cap). Markers are baseline map
+	// furniture — present under every lens, regardless of the smog layer — while the
+	// smog toggle still controls the heavy interpolated AQI density field. Values load
+	// on demand via the point readout. Own source/layer + abort/gen/debounce.
+	const STATION_MARKERS_SRC = 'darkmap-aq-stations-src';
+	const STATION_MARKERS_LAYER = 'darkmap-aq-stations-circ';
+	let stationMarkersController: AbortController | undefined;
+	let stationMarkersGen = 0;
+	let stationMarkersDebounce: ReturnType<typeof setTimeout> | undefined;
+	// The instrument prefers the smog layer's already-fetched stations when that layer
+	// is on (no double fetch); otherwise it uses the independent viewport fetch.
+	const instrumentStations = $derived(
+		layerState[SMOG_LAYER_ID]?.on && pm25Stations.length > 0 ? pm25Stations : viewportAqStations,
+	);
+
 	const pointSourceId = (id: string) => `darkmap-${id}-pt-src`;
 	const pointHeatmapId = (id: string) => `darkmap-${id}-pt-heat`;
 	const pointCircleId = (id: string) => `darkmap-${id}-pt-circ`;
@@ -1296,7 +1706,7 @@
 				source: srcId,
 				paint: {
 					'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 3, 12, 7],
-					'circle-color': pm25CircleColorExpression(),
+					'circle-color': pm25CircleColorExpression(aqiPalette.mode),
 					'circle-opacity': opacity,
 					'circle-stroke-width': 1,
 					'circle-stroke-color': 'rgba(8, 10, 16, 0.85)',
@@ -1437,6 +1847,278 @@
 		}, 500);
 	}
 
+	// X1 — fetch stations for the CURRENT viewport for the rail Air instrument,
+	// independent of whether the smog layer is mounted. Mirrors refreshPointLayer's
+	// abort + generation discipline (fast pans/lens-flips can't write stale data) but
+	// writes viewportAqStations instead of a MapLibre source. Honest: a non-Success
+	// exit keeps the prior list; an empty Success yields [] → buildViewportSummary
+	// renders the truthful "no stations in view" / null-AQI, never a fabricated 0.
+	async function refreshViewportAq(): Promise<void> {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const b = map.getBounds();
+		const bbox = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+		viewportAqController?.abort();
+		const controller = new AbortController();
+		viewportAqController = controller;
+		const myGen = ++viewportAqGen;
+		const stillCurrent = (): boolean => !controller.signal.aborted && viewportAqGen === myGen;
+		try {
+			const exit = await Effect.runPromiseExit(
+				Effect.gen(function* () {
+					const svc = yield* OpenAQService;
+					return yield* svc.getSensors(bbox, { signal: controller.signal });
+				}).pipe(Effect.provide(OpenAQServiceLive)),
+			);
+			if (!stillCurrent() || exit._tag !== 'Success') return;
+			const fc: OpenAQSensorCollection = exit.value;
+			viewportAqStations = fc.features.map((f) => ({
+				lon: f.geometry.coordinates[0],
+				lat: f.geometry.coordinates[1],
+				value: f.properties.value,
+				pollutants: Object.fromEntries(
+					Object.entries(f.properties.pollutants ?? {}).map(([name, r]) => [name, r?.value ?? null]),
+				),
+			}));
+		} finally {
+			if (viewportAqController === controller) viewportAqController = undefined;
+		}
+	}
+
+	// X1 — debounced viewport-AQ refresh, gated to the lenses where the Air tile leads
+	// (air|links). Under Sky/Orbit we skip the fetch (cheaper) and the tile shows its
+	// last-known or truthful-empty state. Called from moveend/zoomend + on lens-enter.
+	function scheduleViewportAqRefresh(): void {
+		const l = lensStore.lens;
+		if (l !== 'air' && l !== 'links') return;
+		clearTimeout(viewportAqDebounce);
+		viewportAqDebounce = setTimeout(() => void refreshViewportAq(), 500);
+	}
+
+	// X1 — entering the air|links lens refreshes the instrument even without a pan
+	// (the moveend/zoomend hooks cover subsequent moves). Reads lensStore.lens so it
+	// re-runs on every lens change; the schedule fn no-ops for Sky/Orbit.
+	$effect(() => {
+		void lensStore.lens;
+		scheduleViewportAqRefresh();
+	});
+
+	// TIN-1771 — re-paint the valued PM2.5 dot ramp when the AQI palette flips
+	// (airnow ↔ colorvision). A DISPLAY swap only: same breakpoints, recoloured
+	// from `aqiPalette.mode`. Mirrors how `setPointLayerOpacity` re-applies a
+	// single paint property to every mounted point-circle layer in place.
+	$effect(() => {
+		const mode = aqiPalette.mode;
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const color = pm25CircleColorExpression(mode);
+		for (const id of POINT_SOURCE_IDS) {
+			const circId = pointCircleId(id);
+			if (map.getLayer(circId)) map.setPaintProperty(circId, 'circle-color', color);
+		}
+		// The dominant interpolated AQI density field bakes the palette into its
+		// raster, so recolour it on flip too (self-guarded: no-ops when smog is off).
+		renderAqiField();
+	});
+
+	// TIN-1889 — mount the always-on station-markers source + circle layer once. It
+	// sits BELOW the smog layer's valued circles (which mount later on toggle), so
+	// when smog is on the AQI-coloured circles draw on top of these baseline dots at
+	// the same coordinates — progressive enhancement, never a double-draw. Pending
+	// (recently reporting) markers are solid; stale (>24 h) markers are hollow.
+	async function mountStationMarkers(): Promise<void> {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		if (!map.isStyleLoaded()) {
+			await new Promise<void>((resolve) => map.once('style.load', () => resolve()));
+		}
+		if (!map.getSource(STATION_MARKERS_SRC)) {
+			map.addSource(STATION_MARKERS_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+		}
+		if (!map.getLayer(STATION_MARKERS_LAYER)) {
+			map.addLayer({
+				id: STATION_MARKERS_LAYER,
+				type: 'circle',
+				source: STATION_MARKERS_SRC,
+				paint: {
+					'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2, 11, 4.5],
+					// pending = a solid station dot; stale = transparent fill (hollow ring).
+					'circle-color': ['match', ['get', 'status'], 'stale', 'rgba(120, 140, 160, 0)', 'rgba(110, 182, 255, 0.85)'],
+					'circle-stroke-width': 1,
+					'circle-stroke-color': [
+						'match',
+						['get', 'status'],
+						'stale',
+						'rgba(150, 170, 190, 0.5)',
+						'rgba(8, 10, 16, 0.85)',
+					],
+				},
+			});
+			// TIN-1889 Phase 3 — click a station marker → a transient popup with its
+			// reading (lazy-fetched), separate from the diffusion readout. preventDefault
+			// suppresses the catch-all map-click (which pins a point) for marker clicks.
+			map.on('click', STATION_MARKERS_LAYER, (ev) => {
+				ev.preventDefault();
+				void openStationPopup(ev);
+			});
+			map.on('mouseenter', STATION_MARKERS_LAYER, () => {
+				map.getCanvas().style.cursor = 'pointer';
+			});
+			map.on('mouseleave', STATION_MARKERS_LAYER, () => {
+				map.getCanvas().style.cursor = '';
+			});
+		}
+		await refreshStationMarkers();
+	}
+
+	// Fetch every in-view station marker (parity mode — no /latest fan-out) + setData.
+	// Abort/generation-guarded so fast pans can't write stale markers; soft-fails to
+	// the prior markers on a network error.
+	async function refreshStationMarkers(): Promise<void> {
+		if (!mapInstance) return;
+		const map = mapInstance;
+		const b = map.getBounds();
+		const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+		stationMarkersController?.abort();
+		const controller = new AbortController();
+		stationMarkersController = controller;
+		const myGen = ++stationMarkersGen;
+		try {
+			const res = await fetch(`/api/atmospheric/openaq?bbox=${encodeURIComponent(bbox)}&markers=1`, {
+				signal: controller.signal,
+			});
+			if (controller.signal.aborted || stationMarkersGen !== myGen || !res.ok) return;
+			const fc = (await res.json()) as { type: string; features: unknown[] };
+			const src = map.getSource(STATION_MARKERS_SRC);
+			if (src && 'setData' in src && typeof (src as { setData?: unknown }).setData === 'function') {
+				(src as { setData: (data: unknown) => void }).setData(fc);
+			}
+		} catch {
+			/* abort or transient network — keep the prior markers (never a fabricated set) */
+		} finally {
+			if (stationMarkersController === controller) stationMarkersController = undefined;
+		}
+	}
+
+	function scheduleStationMarkersRefresh(): void {
+		clearTimeout(stationMarkersDebounce);
+		stationMarkersDebounce = setTimeout(() => void refreshStationMarkers(), 500);
+	}
+
+	// TIN-1889 Phase 3 — the transient station popup (one at a time). NOT a focus-trap:
+	// it's a lightweight readout, so the lens/tool keyboard chords keep working behind it.
+	let stationPopup: import('maplibre-gl').Popup | undefined;
+	const POLLUTANT_LABEL: Record<string, string> = {
+		pm25: 'PM2.5',
+		pm10: 'PM10',
+		o3: 'O₃',
+		no2: 'NO₂',
+		so2: 'SO₂',
+		co: 'CO',
+	};
+
+	type StationProps = { locationId?: number; locationName?: string; status?: string; lastSeen?: string };
+	type StationProperties = {
+		value: number | null;
+		pollutants: Record<string, { value: number; units?: string }>;
+		status: string;
+		lastSeen?: string;
+	};
+
+	// AQI category (color + name + index) from a station's pollutant readings, or null.
+	function stationAqi(pollutants: Record<string, { value: number; units?: string }>) {
+		const readings = Object.entries(pollutants).map(([p, r]) => ({
+			pollutant: p as AqiPollutant,
+			value: r.value,
+			units: r.units,
+		}));
+		const res = computeAqi(readings);
+		return res ? { color: res.category.color, name: res.category.name, aqi: res.aqi } : null;
+	}
+
+	async function openStationPopup(ev: {
+		features?: Array<{ properties?: unknown; geometry?: unknown }>;
+	}): Promise<void> {
+		const f = ev.features?.[0];
+		if (!f || !mapInstance || !maplibreLib) return;
+		const props = (f.properties ?? {}) as StationProps;
+		const geom = f.geometry as { type?: string; coordinates?: [number, number] };
+		if (geom?.type !== 'Point' || !geom.coordinates) return;
+		const [lon, lat] = geom.coordinates;
+		const name = typeof props.locationName === 'string' ? props.locationName : 'Station';
+
+		const root = document.createElement('div');
+		root.className = 'aq-popup';
+		const h = document.createElement('strong');
+		h.className = 'aq-popup-name';
+		h.textContent = name; // textContent → XSS-safe against OpenAQ-supplied names
+		root.appendChild(h);
+		const body = document.createElement('div');
+		body.className = 'aq-popup-body muted';
+		body.textContent = props.status === 'stale' ? '' : 'Loading…';
+		root.appendChild(body);
+		const cta = document.createElement('button');
+		cta.type = 'button';
+		cta.className = 'aq-popup-cta';
+		cta.textContent = 'Open full readout →';
+		cta.addEventListener('click', () => {
+			stationPopup?.remove();
+			void queryAt(lat, lon);
+		});
+		root.appendChild(cta);
+
+		stationPopup?.remove();
+		stationPopup = new maplibreLib.Popup({ closeButton: true, closeOnClick: true, maxWidth: '260px', offset: 10 })
+			.setLngLat([lon, lat])
+			.setDOMContent(root)
+			.addTo(mapInstance);
+
+		const staleLine = (lastSeen?: string): string => {
+			const age = lastSeen ? fmtAge(Date.parse(lastSeen), Date.now()) : null;
+			return age ? `No recent reading — last reported ${age} ago.` : 'No recent reading.';
+		};
+
+		if (props.status === 'stale') {
+			body.textContent = staleLine(props.lastSeen);
+			return;
+		}
+
+		try {
+			const res = await fetch(
+				`/api/atmospheric/openaq?locationId=${encodeURIComponent(String(props.locationId ?? ''))}`,
+			);
+			if (!res.ok) throw new Error(String(res.status));
+			const fc = (await res.json()) as { features?: Array<{ properties: StationProperties }> };
+			const sp = fc.features?.[0]?.properties;
+			body.replaceChildren();
+			if (!sp || sp.status === 'stale' || (sp.value === null && Object.keys(sp.pollutants).length === 0)) {
+				body.className = 'aq-popup-body muted';
+				body.textContent = staleLine(sp?.lastSeen ?? props.lastSeen);
+				return;
+			}
+			body.className = 'aq-popup-body';
+			const aqi = stationAqi(sp.pollutants);
+			if (aqi) {
+				const chip = document.createElement('span');
+				chip.className = 'aq-popup-chip';
+				chip.style.setProperty('--chip', aqi.color);
+				chip.textContent = `AQI ${aqi.aqi} · ${aqi.name}`;
+				body.appendChild(chip);
+			}
+			const ul = document.createElement('ul');
+			ul.className = 'aq-popup-pollutants';
+			for (const [p, r] of Object.entries(sp.pollutants)) {
+				const li = document.createElement('li');
+				li.textContent = `${POLLUTANT_LABEL[p] ?? p.toUpperCase()} ${r.value}${r.units ? ` ${r.units}` : ''}`;
+				ul.appendChild(li);
+			}
+			body.appendChild(ul);
+		} catch {
+			body.className = 'aq-popup-body muted';
+			body.textContent = 'Reading unavailable.';
+		}
+	}
+
 	// AQ-3 — rendered AQI density field. A coarse viewport grid of composite-AQI
 	// cells (from the same kernel diffusion as the readout) rasterized to a
 	// MapLibre `image` source, replacing the heatmap-blur-over-points. Rebuilt
@@ -1487,6 +2169,7 @@
 			units: pollutantUnits,
 			alpha: 150,
 			params: fieldParams,
+			mode: aqiPalette.mode,
 		});
 
 		const heatId = pointHeatmapId(SMOG_LAYER_ID);
@@ -1652,6 +2335,8 @@
 		// Resolve the active lens before the map mounts: hash (shareable) wins,
 		// else the remembered choice, else Sky. Map state stays orthogonal.
 		lensStore.init(decodeHash(window.location.hash).lens);
+		// TIN-1771 — resolve the remembered AQI palette (display option only).
+		aqiPalette.init();
 		if (!mapEl) return;
 		const maplibre = await import('maplibre-gl');
 		maplibreLib = maplibre;
@@ -1699,6 +2384,9 @@
 		for (const layer of LAYERS) {
 			if (layerState[layer.id]?.on) mountLayer(layer);
 		}
+		// TIN-1889 — the OpenAQ station markers are baseline furniture, mounted once
+		// regardless of any layer toggle or lens.
+		void mountStationMarkers();
 
 		const syncCenter = (): void => {
 			if (!mapInstance) return;
@@ -1714,15 +2402,20 @@
 			};
 		};
 		syncCenter();
+		scheduleViewportAqRefresh(); // X1 — first paint (e.g. a #lens=air deep-link)
 		mapInstance.on('moveend', () => {
 			syncCenter();
 			scheduleHashWrite();
 			schedulePointRefresh();
+			scheduleViewportAqRefresh();
+			scheduleStationMarkersRefresh();
 		});
 		mapInstance.on('zoomend', () => {
 			syncCenter();
 			scheduleHashWrite();
 			schedulePointRefresh();
+			scheduleViewportAqRefresh();
+			scheduleStationMarkersRefresh();
 		});
 
 		// Default the twilight strip open in the browser, while keeping SSR
@@ -1730,6 +2423,9 @@
 		ephemerisOpen = true;
 
 		mapInstance.on('click', (ev) => {
+			// A station-marker click handles itself (preventDefault) → don't also pin a
+			// diffusion-readout point under it (TIN-1889 Phase 3).
+			if (ev.defaultPrevented) return;
 			void queryAt(ev.lngLat.lat, ev.lngLat.lng);
 		});
 
@@ -1827,6 +2523,61 @@
 		return () => clearTimeout(t);
 	});
 
+	// TIN-1871 idea ③ — auto-open the AQ modal from the thin `/aq` redirect. That
+	// route bounces to `/<hash>&aq=1` (the hash can't reach the server), so we read
+	// the raw `aq=1` flag here on init, seed the modal from the decoded view (or the
+	// viewport centre), then strip the flag so a refresh/back doesn't re-pop and the
+	// shareable URL stays the clean `/<hash>`. Preserves `/aq#m=…` deep-links + the
+	// aq-dashboard smoke's path.
+	onMount(() => {
+		if (!browser) return;
+		const raw = window.location.hash.replace(/^#/, '');
+		const hasAqFlag = raw.split('&').some((seg) => seg === 'aq=1' || seg === 'aq');
+		if (!hasAqFlag) return;
+		const parsed = decodeHash(window.location.hash);
+		const at = parsed.view ?? { lat: viewCenter.lat, lon: viewCenter.lon };
+		aqModalSeed = { lat: at.lat, lon: at.lon, time: parsed.time ?? ephemerisTime };
+		aqModalOpen = true;
+		// Strip the transient flag, keeping the rest of the hash (m=/et=/lens=…).
+		const kept = raw
+			.split('&')
+			.filter((seg) => seg !== 'aq=1' && seg !== 'aq')
+			.join('&');
+		window.history.replaceState(window.history.state, '', `${window.location.pathname}${kept ? `#${kept}` : ''}`);
+	});
+
+	// W4a (TIN-1864) — publish the responsive layout tier as a DOM signal on
+	// <html> so the browser-RBE smoke can select the right non-overlap contract
+	// per breakpoint (and W4b/W4c read the same boundaries). Pure signal: it sets
+	// no styles itself. Boundaries match the Command Deck cascade
+	// (compact <640 / medium 640–1023 / wide ≥1024; command-deck.md §3).
+	onMount(() => {
+		if (!browser) return;
+		const wide = window.matchMedia('(min-width: 1024px) and (min-height: 501px)');
+		const medium = window.matchMedia('(min-width: 640px) and (min-height: 501px)');
+		// W4c — the dock's tall-enough gate (matches its CSS engagement query so the
+		// JS render and the styling agree on the COMPACT-tall band exactly).
+		const tall = window.matchMedia('(min-height: 501px)');
+		const applyTier = () => {
+			const tier = wide.matches ? 'wide' : medium.matches ? 'medium' : 'compact';
+			document.documentElement.dataset.layoutTier = tier;
+			// W4b — mirror the tier into reactive state so `railCompact` (icon-only rail)
+			// can be MEDIUM-only; WIDE/COMPACT never get the icon mode.
+			layoutTier = tier;
+			// W4c — the ResponsiveDock engages only when COMPACT and tall enough.
+			viewportTall = tall.matches;
+		};
+		applyTier();
+		wide.addEventListener('change', applyTier);
+		medium.addEventListener('change', applyTier);
+		tall.addEventListener('change', applyTier);
+		return () => {
+			wide.removeEventListener('change', applyTier);
+			medium.removeEventListener('change', applyTier);
+			tall.removeEventListener('change', applyTier);
+		};
+	});
+
 	onDestroy(() => {
 		clearTimeout(hashWriteTimer);
 		readoutGen++;
@@ -1846,6 +2597,8 @@
 		} catch {
 			// not registered (SSR / early teardown) — ignore.
 		}
+		stationPopup?.remove();
+		stationPopup = undefined;
 		mapInstance?.remove();
 		mapInstance = undefined;
 		controllerLayer = undefined;
@@ -1853,7 +2606,7 @@
 	});
 </script>
 
-<svelte:window onkeydown={onLensKey} />
+<svelte:window onkeydown={onDeckKey} />
 
 <svelte:head>
 	<title>darkmap</title>
@@ -1875,40 +2628,46 @@
      TEMPORARY fallback until W4's full responsive reflow. -->
 <div
 	class="command-deck"
+	data-lens={lensStore.lens}
 	data-ephemeris={ephemerisOpen ? 'open' : 'closed'}
 	data-readout={readout ? 'open' : 'closed'}
 	data-transmission={transmissionOpen ? 'open' : 'closed'}
 	data-passplan={passPlanOpen ? 'open' : 'closed'}
+	data-rail-expanded={railExpanded}
+	data-inspector-open={inspectorOpen}
+	data-dock-active={dockActive}
 >
-	<!-- HEADER region: lens chips (left) + geocoder (right), out of the float-soup
-	     into a reserved top row. ≤1023px display:contents → both keep their own
-	     fixed placement. -->
-	<header class="deck-header" aria-label="Lens + search">
-		<LensSwitcher
-			active={lensStore.lens}
-			onselect={(lens) => {
-				lensStore.set(lens);
-				scheduleHashWrite();
-			}}
-		/>
-		<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
-		<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
-
-		<GeocoderSearch
-			bias={viewCenter}
-			onSelect={(sel) => {
-				if (!mapInstance) return;
-				mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
-			}}
-		/>
-	</header>
+	<!-- X2 — the HEADER region is gone: its lens chips + search are now map overlays
+	     (in fieldFloats, inside .stage), reclaiming the ~4rem band for a taller map.
+	     The lens switcher sits top-right, the compact search top-left above the toolbar;
+	     at COMPACT the deck is display:contents so both keep their own fixed placement
+	     (byte-identical fallback). -->
 
 	<!-- RAIL region: the per-lens instrument row on top + the LayerRail below. At
 	     WIDE this is the left grid track (20rem) — it PUSHES the stage, never
 	     overlays it. ≤1023px display:contents → LayerRail keeps its mobile-drawer
 	     positioning (the rail-toggle + backdrop live inside LayerRail, fixed). -->
 	<aside class="left-dock" aria-label="Lens dock">
-		<InstrumentColumn lens={lensStore.lens} stations={pm25Stations} location={viewCenter} time={ephemerisTime} />
+		<!-- W4b — MEDIUM rail-expand toggle. At MEDIUM the rail is a 4.5rem icon column
+		     by default; this button widens its grid track (push, never overlay) to
+		     reveal the full rail. Full-opacity, always reachable; hidden at COMPACT
+		     (drawer owns it) + WIDE (rail is the permanent 20rem column) via CSS. -->
+		<button
+			type="button"
+			class="rail-expand-toggle"
+			aria-label={railExpanded ? 'Collapse layers panel' : 'Expand layers panel'}
+			aria-expanded={railExpanded}
+			title={railExpanded ? 'Collapse layers panel' : 'Expand layers panel'}
+			onclick={() => setRailExpanded(!railExpanded)}
+		>
+			{#if railExpanded}
+				<ChevronLeft size={18} aria-hidden="true" />
+			{:else}
+				<PanelLeftOpen size={18} aria-hidden="true" />
+			{/if}
+			<span class="rail-expand-label">Layers</span>
+		</button>
+		<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 		<div class="left-dock-scroll">
 			<LayerRail
 				lens={lensStore.lens}
@@ -1918,21 +2677,13 @@
 				basemap={activeBasemap}
 				onbasemapchange={onBasemapChange}
 				time={ephemerisTime}
+				compact={railCompact}
+				onexpand={() => setRailExpanded(true)}
 			/>
 		</div>
-		<!-- W2 — the persistent TOOLS launcher cluster: all four deep tools, always one
-		     click away, full opacity in every lens; the lens only re-orders + accents. -->
-		<ToolsCluster
-			lens={lensStore.lens}
-			hasPoint={!!readout}
-			{ephemerisOpen}
-			onlaunch={(tool) => {
-				if (tool === 'transmission') openTransmissionForPoint();
-				else if (tool === 'passplan') openPassPlanForPoint();
-				else if (tool === 'aq') openAqDashboardForPoint();
-				else ephemerisOpen = !ephemerisOpen;
-			}}
-		/>
+		<!-- idea ① — the persistent TOOLS launcher cluster moved OUT of the rail to the
+		     map's right corner (rendered in fieldFloats as compact pills), freeing the
+		     LayerRail's full scrollable height. Same launchers, same lens order/accent. -->
 	</aside>
 
 	<!-- STAGE region: the MapLibre canvas as grid-area:stage — NO position:fixed,
@@ -1976,100 +2727,91 @@
 	     WIDE (22rem track). ≤1023px display:contents → it keeps its bottom-right
 	     float + click-to-open behaviour. -->
 	<aside class="deck-inspector" aria-label="Point inspector">
-		<PointReadout
-			scope={readout ? 'point' : 'mean'}
-			lens={lensStore.lens}
-			lat={readout?.lat}
-			lon={readout?.lon}
-			time={ephemerisTime}
-			data={readout?.data}
-			loading={readout?.loading ?? false}
-			error={readout?.error}
-			pm25={pm25Estimate}
-			{aqEstimates}
-			{pollutantUnits}
-			airQuality={airQualityReading}
-			history={stationHistory}
-			historyLoading={stationHistoryLoading}
-			onclose={closeReadout}
-			onTransmissionForPoint={openTransmissionForPoint}
-			onAqDashboardForPoint={openAqDashboardForPoint}
-			onPlanPassForPoint={openPassPlanForPoint}
-		/>
-		<!-- W3 — the deep tools dock IN the inspector (master-detail), below the
-		     readout overview, yoked to the pinned point. At WIDE they flow in this
-		     column (CSS de-floats them); ≤1023px the .deck-inspector is display:contents
-		     so each component's own position:fixed float is the byte-identical fallback.
-		     One tool at a time (open*ForPoint mutually exclude). -->
-		{#if transmissionOpen}
-			<TransmissionSheet
-				pointLat={readout?.lat}
-				pointLon={readout?.lon}
-				curve={transmissionCurve}
-				loading={transmissionLoading}
-				error={transmissionError}
-				onclose={closeTransmission}
-				aerosolType={transmissionAerosolType}
-				aod={transmissionAod}
-				aodSource={transmissionConstituents?.aod550.caption}
-				pwvSource={transmissionConstituents?.pwv.caption}
-				angstrom={transmissionAngstrom}
-				{onAerosolTypeChange}
-				{onAodChange}
-				{onAngstromChange}
-				selectedBandId={transmissionBandId}
-				bandCurve={transmissionBandCurve}
-				bandLoading={transmissionBandLoading}
-				bandError={transmissionBandError}
-				{onBandSelect}
-				lookAzimuthDeg={transmissionAzimuthDeg}
-				lookElevationDeg={transmissionElevationDeg}
-				lookTarget={transmissionLookTarget}
-				{lookZenithDeg}
-				{lookAirmass}
-				lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
-				lookOccluded={lookOcclusion.occluded}
-				blocked={transmissionBlocked}
-				{sunAvailable}
-				{moonAvailable}
-				lookHorizon={transmissionPin?.polygon ?? null}
-				{onLookTargetChange}
-				{onLookAzimuthChange}
-				{onLookElevationChange}
-				showBeam={beamShow}
-				beamwidthDeg={beamBeamwidthDeg}
-				{beamRangeKm}
-				{onBeamToggle}
-				{onBeamwidthChange}
-				{onBeamRangeChange}
-				pathAod={beamPathAod}
-			/>
-		{/if}
-		{#if passPlanOpen && readout}
-			<PassPlanPanel location={{ lat: readout.lat, lon: readout.lon }} onclose={closePassPlan} />
+		<!-- W4b — MEDIUM inspector tab. The always-visible, full-opacity handle for the
+		     readout column: collapsed it is a thin vertical "Inspector" rail; opening
+		     widens the grid track (push, never overlay) so the readout shows. The
+		     readout is NEVER hidden-as-disabled — this tab is its reachable affordance.
+		     Hidden at COMPACT (float fallback) + WIDE (permanent column) via CSS. -->
+		<button
+			type="button"
+			class="inspector-tab"
+			aria-label={inspectorOpen ? 'Collapse inspector' : 'Expand inspector'}
+			aria-expanded={inspectorOpen}
+			title={inspectorOpen ? 'Collapse inspector' : 'Expand inspector'}
+			onclick={() => setInspectorOpen(!inspectorOpen)}
+		>
+			{#if inspectorOpen}
+				<ChevronRight size={16} aria-hidden="true" />
+			{:else}
+				<ChevronLeft size={16} aria-hidden="true" />
+			{/if}
+			<span class="inspector-tab-label">Inspector</span>
+		</button>
+		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered
+		     below); the inspector body keeps them for MEDIUM/WIDE (grid) + COMPACT-short
+		     (the byte-identical float fallback). One render site each — never duplicated. -->
+		{#if !dockActive}
+			<div class="inspector-body">
+				{@render readoutBlock()}
+				{@render toolsBlock()}
+			</div>
 		{/if}
 	</aside>
 
 	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
 	     "X floats over the twilight strip" is structurally impossible. ≤1023px
-	     display:contents → the gantt keeps its current fixed bottom-strip layout. -->
+	     display:contents → the gantt keeps its current fixed bottom-strip layout.
+	     W4c — at COMPACT-tall the gantt is the dock sheet's thin top row instead. -->
 	<div class="deck-dock">
-		{#if ephemerisOpen}
-			<EphemerisGantt
-				location={viewCenter}
-				time={ephemerisTime}
-				bounds={viewBounds}
-				zoom={viewZoom}
-				onTimeChange={(t) => {
-					setEphemerisTime(t);
-					scheduleHashWrite();
-				}}
-			/>
+		{#if !dockActive}
+			{@render ganttBlock()}
 		{/if}
 	</div>
 </div>
 
+<!-- W4c (TIN-1866) — the COMPACT (<640px, height≥501) ResponsiveDock: ONE non-modal
+     bottom-sheet (PEEK/HALF/FULL scroll-snap) that SWAPS Layers/Readout/Tools in a
+     single panel. Replaces the old display:contents float-soup at COMPACT. Inert
+     elsewhere (dockActive is false at MEDIUM/WIDE + COMPACT-short, where the grid /
+     byte-identical float fallback own the layout). -->
+{#if dockActive}
+	<ResponsiveDock
+		view={dockView}
+		onViewChange={setDockView}
+		hasPoint={!!readout}
+		toolsActive={transmissionOpen || passPlanOpen}
+	>
+		{#snippet ganttRow()}
+			{@render ganttBlock()}
+		{/snippet}
+		{#snippet lensStrip()}
+			<LensSwitcher
+				docked
+				active={lensStore.lens}
+				onselect={(lens) => {
+					lensStore.set(lens);
+					scheduleHashWrite();
+				}}
+			/>
+		{/snippet}
+		{#snippet readoutView()}
+			{@render readoutBlock()}
+		{/snippet}
+		{#snippet toolsView()}
+			{@render toolsBlock()}
+		{/snippet}
+	</ResponsiveDock>
+{/if}
+
 <Tour bind:open={tourOpen} steps={tourSteps} />
+
+<!-- TIN-1871 idea ③ — the AQ dashboard modal-popout (transient surface). Portals to
+     <body>, so it sits above the Command Deck grid without joining it; the map +
+     deck stay live behind a faint (non-opaque) backdrop. Self-gates on `open`. -->
+<AqModal open={aqModalOpen} seed={aqModalSeed} onClose={closeAqModal} onViewOnMap={aqViewOnMap} />
+
+<!-- W5e — Cmd/Ctrl-K command palette (focus-trapped transient surface). -->
+<CommandPalette open={paletteOpen} commands={paletteCommands} onClose={() => (paletteOpen = false)} />
 
 {#snippet fieldFloats()}
 	<!-- W3 moved the deep tools (TransmissionSheet / PassPlanPanel) OUT of here into
@@ -2082,6 +2824,25 @@
 	     keep it rendered (breakpoint-exclusive, never removed). De-dup, not deletion. -->
 	{#if ephemerisOpen}
 		<SkyCompass location={viewCenter} time={ephemerisTime} />
+	{/if}
+
+	<!-- idea ① — the deep-tool launchers as compact pills on the map's RIGHT corner
+	     (mirrors the top-left MapToolbar). WIDE/MEDIUM only — COMPACT reaches the tools
+	     via the ResponsiveDock's Tools tab, so no second launcher there. The launch
+	     handlers + the inspector master-detail dock are unchanged from the rail mount. -->
+	{#if !dockActive}
+		<ToolsCluster
+			variant="overlay"
+			lens={lensStore.lens}
+			hasPoint={!!readout}
+			{ephemerisOpen}
+			onlaunch={(tool) => {
+				if (tool === 'transmission') openTransmissionForPoint();
+				else if (tool === 'passplan') openPassPlanForPoint();
+				else if (tool === 'aq') openAqDashboardForPoint();
+				else ephemerisOpen = !ephemerisOpen;
+			}}
+		/>
 	{/if}
 
 	<MapToolbar
@@ -2128,6 +2889,21 @@
 				pressed: tourOpen,
 				onclick: () => (tourOpen = true),
 			},
+			{
+				// TIN-1771 — flip the AQI ramp to the colorblind-distinguishable
+				// "ColorVision-Assist" palette. A DISPLAY option only: recolours the
+				// PM2.5 dots + dashboard from one source; categories + labels unchanged.
+				id: 'aqi-palette',
+				label:
+					aqiPalette.mode === 'colorvision'
+						? 'AQI palette: color-assist (on) — switch back to AirNow'
+						: 'AQI palette: AirNow — switch to color-assist (colorblind-safe)',
+				shortLabel: aqiPalette.mode === 'colorvision' ? 'AirNow' : 'Color-assist',
+				icon: Contrast,
+				title: aqiPalette.mode === 'colorvision' ? 'AQI palette: color-assist (on)' : 'AQI palette: AirNow (default)',
+				pressed: aqiPalette.mode === 'colorvision',
+				onclick: () => aqiPalette.toggle(),
+			},
 		]}
 	/>
 
@@ -2139,9 +2915,164 @@
 		onchange={onRouteFileChange}
 	/>
 
+	<!-- X2 — lens switcher + search, re-homed from the deleted HEADER region onto the
+	     stage. At WIDE/MEDIUM the deck pins the lens chips top-right + the compact search
+	     top-left (above the toolbar); at COMPACT (.stage display:contents) each keeps its
+	     own position:fixed placement = the byte-identical fallback. -->
+	<!-- P6 — on the smallest screens (COMPACT-tall, dockActive) the lens switcher docks
+	     into the ResponsiveDock as a strip instead of floating over the crowded top band;
+	     it still floats at WIDE/MEDIUM and short-landscape. -->
+	{#if !dockActive}
+		<LensSwitcher
+			active={lensStore.lens}
+			onselect={(lens) => {
+				lensStore.set(lens);
+				scheduleHashWrite();
+			}}
+		/>
+	{/if}
+	<!-- Announce the lens change to assistive tech (the visual re-weight is silent to SR). -->
+	<p class="sr-only" aria-live="polite">{LENS_ANNOUNCE[lensStore.lens]}</p>
+	<GeocoderSearch
+		compact
+		bias={viewCenter}
+		onSelect={(sel) => {
+			if (!mapInstance) return;
+			mapInstance.flyTo({ center: [sel.lon, sel.lat], zoom: Math.max(11, mapInstance.getZoom()), essential: true });
+		}}
+	/>
+
 	<footer class="attribution">
 		<a href="/docs">credits + sources</a>
 	</footer>
+{/snippet}
+
+<!-- W4c — single render sites for the readout / deep-tools / gantt. Placed in the
+     INSPECTOR + DOCK grid cells at MEDIUM/WIDE + the COMPACT-short float fallback;
+     re-homed into the ResponsiveDock's ONE sheet at COMPACT-tall. Never duplicated:
+     each is rendered in exactly one of those two locations per the dockActive gate. -->
+{#snippet readoutBlock()}
+	<PointReadout
+		scope={readout ? 'point' : 'mean'}
+		lens={lensStore.lens}
+		lat={readout?.lat}
+		lon={readout?.lon}
+		time={ephemerisTime}
+		data={readout?.data}
+		loading={readout?.loading ?? false}
+		error={readout?.error}
+		pm25={pm25Estimate}
+		{aqEstimates}
+		{pollutantUnits}
+		airQuality={airQualityReading}
+		history={stationHistory}
+		historyLoading={stationHistoryLoading}
+		onclose={closeReadout}
+		onTransmissionForPoint={openTransmissionForPoint}
+		onAqDashboardForPoint={openAqDashboardForPoint}
+		onPlanPassForPoint={openPassPlanForPoint}
+	/>
+{/snippet}
+
+{#snippet toolsBlock()}
+	<!-- COMPACT-tall: the Tools view IS the launcher when no tool is open. The overlay
+	     ToolsCluster is {#if !dockActive} (hidden on mobile), so without this the Tools
+	     tab would be EMPTY until a tool was opened from the readout CTA — a dead end.
+	     Once a tool opens it takes over the pane (one-at-a-time, like the readout CTA
+	     path) — NOT stacked above the sheet, which rode the raised dock up into the
+	     floating toolbar. Lens-ordered, full-opacity (re-weight-never-gate). Accent
+	     republished here (the fixed dock can't inherit --lens-accent* from the deck). -->
+	{#if dockActive && !transmissionOpen && !passPlanOpen}
+		<div class="dock-tools-launcher" style:--lens-accent={dockAccent} style:--lens-accent-rgb={dockAccentRgb}>
+			<ToolsCluster
+				variant="rail"
+				lens={lensStore.lens}
+				hasPoint={!!readout}
+				{ephemerisOpen}
+				onlaunch={(tool) => {
+					if (tool === 'transmission') openTransmissionForPoint();
+					else if (tool === 'passplan') openPassPlanForPoint();
+					else if (tool === 'aq') openAqDashboardForPoint();
+					else ephemerisOpen = !ephemerisOpen;
+				}}
+			/>
+		</div>
+	{/if}
+	<!-- W3/W4c — the deep tools (master-detail), yoked to the pinned point. One tool
+	     at a time (open*ForPoint mutually exclude). At WIDE/MEDIUM they flow in the
+	     inspector column; at COMPACT-tall they render below the launcher in the dock's
+	     Tools view; at COMPACT-short each component's own position:fixed float is the
+	     byte-identical fallback. -->
+	{#if transmissionOpen}
+		<TransmissionSheet
+			pointLat={readout?.lat}
+			pointLon={readout?.lon}
+			curve={transmissionCurve}
+			loading={transmissionLoading}
+			error={transmissionError}
+			onclose={closeTransmission}
+			aerosolType={transmissionAerosolType}
+			aod={transmissionAod}
+			aodSource={transmissionConstituents?.aod550.caption}
+			pwvSource={transmissionConstituents?.pwv.caption}
+			angstrom={transmissionAngstrom}
+			{onAerosolTypeChange}
+			{onAodChange}
+			{onAngstromChange}
+			selectedBandId={transmissionBandId}
+			bandCurve={transmissionBandCurve}
+			bandLoading={transmissionBandLoading}
+			bandError={transmissionBandError}
+			{onBandSelect}
+			lookAzimuthDeg={transmissionAzimuthDeg}
+			lookElevationDeg={transmissionElevationDeg}
+			lookTarget={transmissionLookTarget}
+			{lookZenithDeg}
+			{lookAirmass}
+			lookHorizonAltDeg={lookOcclusion.horizonAltitudeDeg}
+			lookOccluded={lookOcclusion.occluded}
+			blocked={transmissionBlocked}
+			{sunAvailable}
+			{moonAvailable}
+			lookHorizon={transmissionPin?.polygon ?? null}
+			{onLookTargetChange}
+			{onLookAzimuthChange}
+			{onLookElevationChange}
+			showBeam={beamShow}
+			beamwidthDeg={beamBeamwidthDeg}
+			{beamRangeKm}
+			{onBeamToggle}
+			{onBeamwidthChange}
+			{onBeamRangeChange}
+			pathAod={beamPathAod}
+		/>
+	{/if}
+	{#if passPlanOpen && readout}
+		<PassPlanPanel
+			location={{ lat: readout.lat, lon: readout.lon }}
+			onclose={closePassPlan}
+			onFootprint={(fc) => (orbitFootprintFC = fc)}
+		/>
+	{:else if passPlanOpen}
+		<!-- Pass-plan launched with no pin yet — PassPlanPanel needs a location, so show
+		     a prompt instead of a blank pane with a lit Tools dot (no disabled state). -->
+		<p class="dock-tool-hint">Tap the map to pin your ground station, then plan a pass.</p>
+	{/if}
+{/snippet}
+
+{#snippet ganttBlock()}
+	{#if ephemerisOpen}
+		<EphemerisGantt
+			location={viewCenter}
+			time={ephemerisTime}
+			bounds={viewBounds}
+			zoom={viewZoom}
+			onTimeChange={(t) => {
+				setEphemerisTime(t);
+				scheduleHashWrite();
+			}}
+		/>
+	{/if}
 {/snippet}
 
 <style>
@@ -2162,64 +3093,105 @@
 		position: fixed;
 		inset: 0;
 	}
-	/* ===== W1 — the Command Deck grid shell (docs/ux/command-deck.md §2/§3) =====
-	   ≤1023px: the deck is `display:contents` (inert) — every region wrapper is
-	   also display:contents, so each child reverts to its own current fixed
-	   positioning. This is the TEMPORARY single-column fallback (full responsive =
-	   W4); it keeps the COMPACT layout byte-identical, which the 390px browser-RBE
-	   smoke contracts depend on. */
+	/* ===== W5c — per-lens accent (docs/ux/command-deck.md §4 re-weight: accent) =====
+	   The active lens publishes one `--lens-accent` (+ its -rgb triple for tints) onto
+	   the deck; descendants (the active chip, the inspector lead value, the leading
+	   TOOLS launcher) swap `--accent-amber → var(--lens-accent)` so the active lens is
+	   legible at a glance. `--lens-accent` is declared here on `.command-deck` so each
+	   `[data-lens]` block (same element, higher specificity) recomputes the solid form
+	   from its own triple. Custom-prop inheritance survives the COMPACT display:contents,
+	   so this works at every breakpoint. Sky == amber (no visible change). Mirrors
+	   LENS_ACCENT in src/lib/lens.ts — keep in lockstep. */
+	.command-deck {
+		--lens-accent-rgb: var(--accent-amber-rgb);
+		--lens-accent: rgb(var(--lens-accent-rgb));
+	}
+	.command-deck[data-lens='sky'] {
+		--lens-accent-rgb: 255, 209, 102;
+	}
+	.command-deck[data-lens='air'] {
+		--lens-accent-rgb: 74, 222, 128;
+	}
+	.command-deck[data-lens='links'] {
+		--lens-accent-rgb: 107, 182, 255;
+	}
+	.command-deck[data-lens='orbit'] {
+		--lens-accent-rgb: 196, 166, 255;
+	}
+	/* ===== W1/W4b — the Command Deck grid shell (docs/ux/command-deck.md §2/§3) =====
+	   COMPACT (<640px): the deck is `display:contents` (inert) — every region wrapper
+	   is also display:contents, so each child reverts to its own current fixed
+	   positioning (the mobile-drawer/float layout). This unbracketed base keeps the
+	   COMPACT layout byte-identical, which the 390px browser-RBE smoke contracts
+	   depend on. MEDIUM (≥640px) + WIDE (≥1024px) override it with the real grid
+	   below — a strict min-width cascade (no paired max/min brackets). */
 	.command-deck,
-	.deck-header,
 	.stage,
 	.deck-inspector,
 	.deck-dock {
 		display: contents;
 	}
-	/* WIDE (≥1024px): ONE real grid. Two areas can never occupy the same pixels,
-	   so the map + twilight strip can only be SHRUNK, never occluded. Tracks:
-	   [20rem rail][1fr stage][22rem inspector]; rows: header / body / dock. This
-	   replaces the PR5 --portal-inset faux-grid + the z4→z13 ladder + the
-	   .field-hud{pointer-events:none} scrim. */
-	@media (min-width: 1024px) {
+	/* W4b — the MEDIUM-only disclosure affordances (rail-expand toggle + inspector
+	   tab) are OFF at COMPACT (<640): the deck is display:contents there, so any
+	   stray flow element would shift the byte-identical mobile layout. They turn on
+	   in the ≥640px block; WIDE turns them off again (permanent columns, no handles).
+	   The .inspector-body wrapper is display:contents at COMPACT so the readout +
+	   deep tools keep their own float positioning (the byte-identical fallback). */
+	.rail-expand-toggle,
+	.inspector-tab {
+		display: none;
+	}
+	.inspector-body {
+		display: contents;
+	}
+	/* ===== MEDIUM + WIDE shared structure (≥640px): ONE real grid. =====
+	   Two grid areas can never occupy the same pixels, so the map + twilight strip
+	   can only be SHRUNK, never occluded — overlap is impossible by construction.
+	   Areas: 'header header header' / 'rail stage inspector' / 'dock dock dock'.
+	   The COLUMN TRACKS differ by band: MEDIUM drives them from state vars (the rail
+	   + inspector PUSH the 1fr stage when expanded); WIDE overrides to fixed wide
+	   columns (the ≥1024px block further down). This replaces the PR5 --portal-inset
+	   faux-grid + the z4→z13 ladder + the .field-hud{pointer-events:none} scrim. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.command-deck {
 			display: grid;
 			position: fixed;
 			inset: 0;
-			/* W2 — Instrument Bay ratio (docs/ux/command-deck.md): the map is one gauge
-			   in a balanced deck, not the whole point. Laptop band (1024–1365px): a 1fr
-			   stage that never overflows (a hard min-floor + the wide side columns would
-			   exceed 1024px). RAIL 20rem, INSPECTOR 26rem (room for the docked deep tools
-			   in W3 + readout breathing). The roomy band (≥1366px, below) widens to the
-			   full bay with the 380px stage floor. trackResize re-fires map.resize on a
-			   track change; --stage-inset-* still feeds fitBounds. */
-			grid-template-columns: 20rem minmax(0, 1fr) 26rem;
+			/* W4b — MEDIUM column tracks driven by the disclosure state on .command-deck.
+			   --rail-w: 4.5rem icon column collapsed → 16rem full rail when expanded.
+			   --insp-w: 2.5rem inspector tab collapsed → 20rem readout column when open.
+			   The middle 1fr stage absorbs the difference, so expanding either side
+			   SHRINKS the stage — that IS "push, never overlay". WIDE overrides the
+			   whole grid-template-columns line below, so these vars are MEDIUM-only. */
+			--rail-w: 4.5rem;
+			--insp-w: 2.5rem;
+			grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--insp-w);
 			/* minmax(0, …) on every row drops the implicit `min-content` floor.
 			   That floor makes a track size to its content's intrinsic min, which —
 			   with the fontless CI cell's zero-metric text — can enter a grid
 			   track-sizing CYCLE that pegs the main thread before DCL (the page
 			   never loads; no console). Capping the min at 0 breaks the cycle. */
-			grid-template-rows: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+			/* X2 — the HEADER row is gone (its lens chips + search are stage overlays now);
+			   the rail/stage/inspector row is the top row → the map reclaims ~4rem of height. */
+			grid-template-rows: minmax(0, 1fr) minmax(0, auto);
 			grid-template-areas:
-				'header header header'
 				'rail stage inspector'
 				'dock dock dock';
 			gap: 0.75rem;
 			padding: 0.75rem;
 			box-sizing: border-box;
 		}
+		/* W4b — the disclosure state widens the matching column track. The 1fr stage
+		   shrinks to compensate; nothing overlays (the tracks are spatially separate). */
+		.command-deck[data-rail-expanded='true'] {
+			--rail-w: 16rem;
+		}
+		.command-deck[data-inspector-open='true'] {
+			--insp-w: 20rem;
+		}
 		/* contain:layout isolates each region's internal layout so a child's
 		   intrinsic sizing can't propagate back into the grid track computation
 		   (belt-and-suspenders with minmax(0,…) against the fontless layout cycle). */
-		.deck-header {
-			grid-area: header;
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 1rem;
-			min-width: 0;
-			min-height: 0;
-			contain: layout;
-		}
 		.stage {
 			grid-area: stage;
 			display: block;
@@ -2232,15 +3204,77 @@
 		}
 		.deck-inspector {
 			grid-area: inspector;
-			display: block;
+			/* flex column: the inspector tab (MEDIUM) pins on top; the scrolling body
+			   fills the rest. At WIDE the tab is display:none, so it is body-only. */
+			display: flex;
+			flex-direction: column;
 			min-width: 0;
 			min-height: 0;
-			/* W3 — the inspector is the scroll container for the readout + a docked deep
-			   tool stack. overflow-y:auto (not hidden) lets Playwright auto-scroll a low
-			   control (e.g. the link-budget Tx-power input) into view = actionable. */
+			overflow: hidden;
+			/* W5g — establish the INSPECTOR as a query container so the docked readout
+			   adapts to the inspector's OWN width (22rem laptop vs 30rem roomy), not the
+			   viewport. container-type:inline-size subsumes the prior contain:layout.
+			   At COMPACT the region is display:contents (no box) → no container, so the
+			   PointReadout @container rules simply don't match there. */
+			container-type: inline-size;
+			container-name: inspector;
+		}
+		/* W4b — the MEDIUM inspector tab: a thin, full-opacity vertical handle. Collapsed
+		   the column is 2.5rem (--insp-w) and the "Inspector" label reads bottom-to-top;
+		   opening widens the track to 20rem (push, never overlay) so the readout shows.
+		   The readout is NEVER hidden-as-disabled — this tab is its reachable affordance. */
+		.inspector-tab {
+			flex: 0 0 auto;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 0.4rem;
+			width: 100%;
+			background: rgba(255, 255, 255, 0.05);
+			color: #e9ecf3;
+			border: 1px solid rgba(255, 255, 255, 0.12);
+			border-radius: 6px;
+			padding: 0.45rem 0.3rem;
+			font-family: var(--font-mono, ui-monospace, monospace);
+			font-size: 0.78rem;
+			cursor: pointer;
+		}
+		.inspector-tab:hover {
+			background: rgba(255, 255, 255, 0.1);
+		}
+		.inspector-tab:focus-visible {
+			outline: 2px solid var(--accent-amber);
+			outline-offset: 2px;
+		}
+		.inspector-tab-label {
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+		}
+		/* Collapsed (2.5rem tab): stack the chevron + the vertical "Inspector" label. */
+		.command-deck:not([data-inspector-open='true']) .inspector-tab {
+			flex-direction: column;
+			height: 100%;
+			align-items: center;
+		}
+		.command-deck:not([data-inspector-open='true']) .inspector-tab-label {
+			writing-mode: vertical-rl;
+			margin-top: 0.4rem;
+		}
+		/* The readout/deep-tool body scrolls within the column (overflow-y:auto, not
+		   hidden, lets Playwright auto-scroll a low control into view = actionable).
+		   Collapsed it is clipped by the 2.5rem track + .deck-inspector overflow:hidden;
+		   the tab is the handle, so nothing is lost — expand reveals it. */
+		.inspector-body {
+			display: block;
+			flex: 1 1 auto;
+			min-height: 0;
+			min-width: 0;
+			margin-top: 0.5rem;
 			overflow-y: auto;
 			overflow-x: hidden;
-			contain: layout;
+		}
+		.command-deck:not([data-inspector-open='true']) .inspector-body {
+			margin-top: 0;
 		}
 		.deck-dock {
 			grid-area: dock;
@@ -2258,44 +3292,15 @@
 			inset: 0;
 		}
 
-		/* De-fix the region children at WIDE: the lens chips + geocoder (HEADER),
-		   the PointReadout (INSPECTOR), and the twilight gantt (DOCK) drop their
-		   own position:fixed/inset/z-index and flow into their grid cells. Their
-		   own ≤1023px float positioning is untouched (the COMPACT fallback). The
-		   stage overlays (toolbar, sky, sheets) stay fixed — W2/W3 dock them. */
-		/* min-width:0 on BOTH flex children drops the default `min-width:auto`
-		   min-content floor. In the fontless CI RBE cell, degenerate text metrics
-		   leave the chips'/input's min-content inline-size unresolvable, which can
-		   stall the .deck-header flex row's inline-axis sizing and peg layout before
-		   DCL. The prior W1 fix only capped the block axis (minmax(0,…) rows); this
-		   is the inline-axis counterpart. */
-		.deck-header :global(.lens-switcher) {
-			position: static;
-			inset: auto;
-			z-index: auto;
-			min-width: 0;
-		}
-		.deck-header :global(.geocoder) {
-			position: relative;
-			top: auto;
-			left: auto;
-			transform: none;
-			z-index: auto;
-			width: min(28rem, 100%);
-			min-width: 0;
-		}
-		/* The geocoder's results dropdown overlays following content (anchored to
-		   the input), not the viewport. */
-		.deck-header :global(.geocoder .dropdown) {
-			position: absolute;
-			left: 0;
-			right: 0;
-			z-index: 20;
-		}
-		/* INSPECTOR: the readout is the persistent right column — fills the 22rem
-		   cell, no fixed anchor, scrolls within the cell. Covers the base readout
-		   AND the deep-tool overview states (deep tools still float as sheets in
-		   W1; W3 docks them into this column). */
+		/* De-fix the region children at MEDIUM+WIDE: the lens chips + geocoder
+		   (HEADER), the PointReadout (INSPECTOR), and the twilight gantt (DOCK) drop
+		   their own position:fixed/inset/z-index and flow into their grid cells. Their
+		   own <640px float positioning is untouched (the COMPACT fallback). The stage
+		   overlays (toolbar, sky, sheets) stay fixed at COMPACT; here they clip to the
+		   stage. */
+		/* INSPECTOR: the readout is the persistent right column — fills the cell, no
+		   fixed anchor, scrolls within the cell. Covers the base readout AND the
+		   deep-tool overview states. */
 		.deck-inspector :global(.readout) {
 			position: static;
 			inset: auto;
@@ -2309,7 +3314,7 @@
 		}
 		/* W3 — the docked deep tools flow in the inspector column below the readout:
 		   de-float them (mirrors the .readout rule above), cap to the cell + scroll
-		   internally, and kill the slide-up entrance (pointless docked). ≤1023px the
+		   internally, and kill the slide-up entrance (pointless docked). <640px the
 		   inspector is display:contents, so the components' OWN position:fixed float
 		   applies unchanged = the byte-identical fallback. */
 		.deck-inspector :global(.sheet),
@@ -2341,17 +3346,38 @@
 		}
 		/* Stage overlays become position:absolute so they clip to the STAGE cell
 		   (which is position:relative) instead of the viewport — keeping them off the
-		   HEADER / INSPECTOR / DOCK regions by construction. The deep-tool sheets
-		   (.sheet / .pass-plan) also clip to the stage; W3 docks them into the
-		   inspector. MapErrorToast + drop-hint already live in the stage. */
-		/* Map controls live on the map's OWN top-left corner (the conventional
-		   map-control home — Cesium/Palantir/Google Maps), a horizontal cluster.
-		   This clears the lower-right (where it crowded the inspector + the twilight
-		   gantt) — the operator's "buttons piled in the lower right" complaint. The
-		   ≤820px float fallback (compact bottom strip) is untouched. */
-		.stage :global(.toolbar) {
+		   HEADER / INSPECTOR / DOCK regions by construction. MapErrorToast + drop-hint
+		   already live in the stage. */
+		/* X2 — the re-homed HEADER controls join the stage overlays. Search owns the
+		   top-LEFT (the universal map-search slot) as a compact pill; the lens switcher
+		   owns the top-RIGHT (the "mode-picker" slot, clear of the right-edge tools); the
+		   MapToolbar stacks just below the search. All position:absolute → they clip to
+		   the stage cell, off the inspector/dock by construction. At COMPACT the deck is
+		   display:contents so these rules don't apply and each keeps its own fixed float. */
+		.stage :global(.geocoder) {
 			position: absolute;
 			top: 0.75rem;
+			left: 0.75rem;
+			right: auto;
+			transform: none;
+			z-index: 10;
+			max-width: calc(100% - 1.5rem);
+		}
+		.stage :global(.lens-switcher) {
+			position: absolute;
+			top: 0.75rem;
+			right: 0.75rem;
+			left: auto;
+			transform: none;
+			z-index: 9;
+		}
+		/* Map controls live on the map's OWN top-left corner (the conventional
+		   map-control home — Cesium/Palantir/Google Maps), a horizontal cluster — now
+		   stacked just BELOW the search pill (X2). Clears the lower-right (the operator's
+		   "buttons piled in the lower right" complaint). */
+		.stage :global(.toolbar) {
+			position: absolute;
+			top: 3.9rem;
 			left: 0.75rem;
 			right: auto;
 			bottom: auto;
@@ -2361,17 +3387,72 @@
 			gap: 0.4rem;
 			max-width: calc(100% - 1.5rem);
 		}
-		/* W1 de-dup: the RAIL instrument column owns the sky dome at WIDE, so the
-		   standalone float is hidden here (it stays rendered + visible ≤1023px, where
-		   the rail is hidden — one dome at every breakpoint, never removed). */
+		/* idea ① — the deep-tool launcher pills hug the stage's RIGHT edge, vertically
+		   centered: clear of the top-left MapToolbar, the top .sky dome (MEDIUM), and the
+		   bottom-right attribution. Inside the stage cell (position:relative;
+		   overflow:hidden) so they can never touch the header / inspector / dock regions. */
+		.stage :global(.tools-cluster.overlay) {
+			position: absolute;
+			right: 0.75rem;
+			top: 50%;
+			transform: translateY(-50%);
+			left: auto;
+			bottom: auto;
+			z-index: 8;
+			max-height: calc(100% - 1.5rem);
+		}
+		/* De-dup: the RAIL instrument column owns the embedded sky dome. The standalone
+		   float is hidden ONLY when that embedded dome is actually visible — i.e. at
+		   MEDIUM when the rail is EXPANDED (the instrument tiles show). At MEDIUM
+		   COLLAPSED the instrument column is icon-hidden, so the standalone float MUST
+		   stay = one dome at every state, never removed (W4b honesty bar). WIDE always
+		   shows the embedded dome, so it hides the float unconditionally (below). */
+		.command-deck[data-rail-expanded='true'] .stage :global(.sky) {
+			display: none;
+		}
+		.stage :global(.maplibregl-ctrl-bottom-right) {
+			z-index: 2;
+		}
+	}
+	/* X2 — below 1200px the WIDE/MEDIUM stage is too narrow (~320px at 1024) for four
+	   LABELLED lens chips (~326px) at the top-right; they'd overflow and collide with the
+	   top-left search. Go icon-only there (the chip aria-label keeps each named for AT);
+	   labels return at ≥1200px where the stage is roomy. Pairs with the ≤820px icon mode
+	   the component already has — this just extends it up through the WIDE-narrow band. */
+	@media (min-width: 640px) and (max-width: 1199.98px) and (min-height: 501px) {
+		.stage :global(.lens-switcher .chip-label) {
+			display: none;
+		}
+	}
+	/* ===== WIDE-only column tracks (≥1024px) =====
+	   W2 — Instrument Bay ratio (docs/ux/command-deck.md): the map is one gauge in a
+	   balanced deck, not the whole point. RAIL 20rem (full rail always shown), STAGE
+	   1fr, INSPECTOR 26rem (room for the docked deep tools + readout breathing). This
+	   overrides the MEDIUM state-driven tracks above, so at WIDE both side columns are
+	   permanent (no icon-rail / no tab) — the data-rail-expanded / data-inspector-open
+	   attributes are inert. The shared structure (areas, rows, de-float rules, stage
+	   overlays) is inherited from the ≥640px block. */
+	@media (min-width: 1024px) and (min-height: 501px) {
+		.command-deck {
+			/* W5b — laptop band (1024–1365px): trim the side columns so the 1fr stage
+			   clears ~320px (≥300) at 1024 instead of §9's 240px bare remainder. The
+			   roomy band (≥1366px, below) restores the full 22rem/30rem bay + 380px
+			   stage floor. Docked deep-tools at the 22rem inspector scroll (W3). */
+			grid-template-columns: 19rem minmax(0, 1fr) 22rem;
+		}
+		/* WIDE — the rail's instrument column always shows the embedded dome, so the
+		   standalone float is hidden unconditionally (the data-rail-expanded attribute
+		   is inert at WIDE). One dome, never two. */
 		.stage :global(.sky) {
 			display: none;
 		}
-		/* W3 — the deep tools left the .stage for the inspector; this WIDE stage-clip
-		   rule is now dead (matches nothing) and is removed. The ≤1023px float fallback
-		   is unaffected (it lives in the components' own CSS + the data-* overrides). */
-		.stage :global(.maplibregl-ctrl-bottom-right) {
-			z-index: 2;
+		/* WIDE — the inspector is the permanent 26rem column: no tab handle, the body
+		   flows from the top of the cell (drop the MEDIUM tab gap). */
+		.inspector-tab {
+			display: none;
+		}
+		.inspector-body {
+			margin-top: 0;
 		}
 	}
 	/* Decorative frame — at WIDE it is the STAGE cell's inset border (was a z4
@@ -2383,7 +3464,7 @@
 		inset: 0;
 		pointer-events: none;
 	}
-	@media (min-width: 1024px) {
+	@media (min-width: 1024px) and (min-height: 501px) {
 		.portal-frame {
 			display: block;
 		}
@@ -2446,17 +3527,22 @@
 		z-index: 100;
 		pointer-events: none;
 	}
-	/* RAIL region. ≤1023px: display:contents = inert wrapper, so LayerRail +
+	/* RAIL region. <640px: display:contents = inert wrapper, so LayerRail +
 	   InstrumentColumn fall back to their OWN positioning (the mobile drawer stays
-	   unchanged). At WIDE: the left grid cell (20rem track) — a real region that
-	   PUSHES the stage, never overlays it. Instrument row pinned on top
-	   (flex:0 0 auto); the rail scrolls below (.left-dock-scroll owns the scroll;
-	   the re-homed .layer-rail goes position:static + overflow:visible at WIDE).
-	   The card chrome moves here from the rail. */
+	   unchanged). At MEDIUM+WIDE: the left grid cell — a real region that PUSHES the
+	   stage, never overlays it. Instrument row pinned on top (flex:0 0 auto); the
+	   rail scrolls below (.left-dock-scroll owns the scroll; the re-homed .layer-rail
+	   goes position:static + overflow:visible at ≥640px). The card chrome moves here
+	   from the rail. */
 	.left-dock {
 		display: contents;
 	}
-	@media (min-width: 1024px) {
+	/* MEDIUM + WIDE shared: the rail card. At MEDIUM the column track is 4.5rem
+	   (collapsed icon column) or 16rem (expanded) — set on .command-deck via --rail-w;
+	   this card just fills it (overflow:hidden clips the wide content while collapsed).
+	   The rail-expand toggle is pinned on top; below it the instrument row + the
+	   scrolling rail body. WIDE overrides the padding + always shows everything. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.left-dock {
 			grid-area: rail;
 			display: flex;
@@ -2467,10 +3553,17 @@
 			background: rgba(8, 10, 16, 0.85);
 			border: 1px solid rgba(255, 255, 255, 0.08);
 			border-radius: 8px;
-			padding: 0.85rem 0.9rem;
+			padding: 0.6rem 0.55rem;
 			box-sizing: border-box;
 			overflow: hidden;
-			contain: layout;
+			/* W5g — establish the RAIL as a query container so its instrument row reveals
+			   based on the rail's OWN width (collapsed 4.5rem icon column vs expanded 16rem
+			   vs WIDE 19rem), not the viewport tier + disclosure attribute. container-type
+			   subsumes the prior contain:layout. (The LayerRail's icon-vs-panel swap stays
+			   on the `railCompact` rune — it's a structural {#if} render-branch a container
+			   query can't replace.) */
+			container-type: inline-size;
+			container-name: rail;
 		}
 		.left-dock :global(.instrument-column) {
 			flex: 0 0 auto;
@@ -2483,6 +3576,65 @@
 			-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent);
 		}
 		.left-dock-scroll::-webkit-scrollbar {
+			display: none;
+		}
+		/* W4b — the MEDIUM rail-expand toggle: a full-opacity icon button pinned at the
+		   top of the rail card. Collapsed it is icon-only (label hidden); expanded the
+		   "Layers" label shows. It widens the grid track (push), never overlays. */
+		.rail-expand-toggle {
+			flex: 0 0 auto;
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			align-self: flex-start;
+			background: rgba(255, 255, 255, 0.05);
+			color: #e9ecf3;
+			border: 1px solid rgba(255, 255, 255, 0.12);
+			border-radius: 6px;
+			padding: 0.4rem 0.45rem;
+			font-family: var(--font-mono, ui-monospace, monospace);
+			font-size: 0.8rem;
+			cursor: pointer;
+		}
+		.rail-expand-toggle:hover {
+			background: rgba(255, 255, 255, 0.1);
+		}
+		.rail-expand-toggle:focus-visible {
+			outline: 2px solid var(--accent-amber);
+			outline-offset: 2px;
+		}
+		.rail-expand-label {
+			display: none;
+		}
+		/* Expanded: show the "Layers" label on the rail-expand toggle. (Disclosure-driven,
+		   not density — stays an attribute selector.) */
+		.command-deck[data-rail-expanded='true'] .rail-expand-label {
+			display: inline;
+		}
+	}
+	/* W5g — the instrument row reveals on the RAIL's own width, not the viewport tier +
+	   disclosure attribute. Collapsed (4.5rem icon column) the InstrumentColumn is below
+	   its own 1024px display:none floor and the rail container is far under 8rem, so it
+	   stays hidden; expanding the rail to 16rem (or WIDE's 19rem) crosses 8rem and reveals
+	   it. Full-opacity + reachable — progressive disclosure, NOT display:none-as-disable.
+	   The old MEDIUM-collapse ToolsCluster rules were dead (idea ① re-homed the cluster to
+	   the map's right-edge overlay, out of .left-dock) and are removed. */
+	@container rail (min-width: 8rem) {
+		.left-dock :global(.instrument-column) {
+			display: flex;
+		}
+	}
+	/* WIDE-only: the rail is the permanent 20rem column — roomier padding, no MEDIUM
+	   icon-toggle. The instrument row + full rail + full ToolsCluster all render via
+	   their own defaults: the MEDIUM-collapse rules above are gated on
+	   html[data-layout-tier='medium'], so they never fire at WIDE — WIDE is
+	   byte-identical with no re-override needed. */
+	@media (min-width: 1024px) and (min-height: 501px) {
+		.left-dock {
+			padding: 0.85rem 0.9rem;
+		}
+		/* The MEDIUM icon-toggle is not part of the WIDE permanent rail. */
+		.rail-expand-toggle {
 			display: none;
 		}
 	}
@@ -2529,9 +3681,11 @@
 	.attribution a {
 		color: var(--accent-amber);
 	}
-	/* WIDE: the attribution sits at the bottom-left of the STAGE cell (which is
-	   position:relative), clear of the dock row. */
-	@media (min-width: 1024px) {
+	/* MEDIUM+WIDE: the attribution sits at the bottom-left of the STAGE cell (which is
+	   position:relative at ≥640px), clear of the dock row — instead of the COMPACT
+	   field-bottom-reserve offset. W4b broadened this from WIDE-only to ≥640px so the
+	   MEDIUM stage anchors it correctly too. */
+	@media (min-width: 640px) and (min-height: 501px) {
 		.attribution {
 			bottom: 0.75rem;
 			left: 0.75rem;
@@ -2543,7 +3697,10 @@
 	   this is the desktop default. Scoped to the COMPACT float fallback (≤1023px);
 	   at WIDE the readout lives in the INSPECTOR grid cell so this never applies.
 	   (Deep-tool-into-inspector docking is W3.) */
-	@media (max-width: 1023px) {
+	/* W4b — was `max-width:1023px` (COMPACT + MEDIUM). At MEDIUM the readout + deep
+	   tools now dock in the inspector grid cell (de-floated above), so this COMPACT
+	   float-fallback is scoped to <640px to avoid fighting the MEDIUM grid. */
+	@media (max-width: 639.98px) {
 		.command-deck[data-transmission='open'] :global(.readout[role='dialog']),
 		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			top: calc(1rem + env(safe-area-inset-top, 0px));
@@ -2555,7 +3712,11 @@
 			overflow-y: auto;
 		}
 	}
-	@media (max-width: 820px), (max-height: 500px) {
+	/* W4b — the width arm narrowed from 820px to 639.98px: the 640–820px band is now
+	   MEDIUM (grid-docked readout/sheet/toolbar), so the COMPACT float-fallback no
+	   longer applies there. The (max-height:500px) short-screen arm is unchanged, so
+	   COMPACT + every breakpoint's short-screen behavior stays byte-identical. */
+	@media (max-width: 639.98px), (max-height: 500px) {
 		.command-deck :global(.readout[role='dialog']) {
 			bottom: calc(
 				var(--field-bottom-reserve, 8.75rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)
@@ -2601,7 +3762,7 @@
 	   --gantt-reserve-rem to clear the gantt instead of dipping ~60px into it. Scoped
 	   to portrait + readout-only so the short/landscape concession and the
 	   transmission/passplan top-strip placements are untouched. */
-	@media (max-width: 820px) and (orientation: portrait) {
+	@media (max-width: 639.98px) and (orientation: portrait) {
 		.command-deck[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
 			:global(.readout[role='dialog']) {
 			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
@@ -2609,7 +3770,7 @@
 			max-height: calc(100dvh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 5rem) !important;
 		}
 	}
-	@media (max-width: 820px) and (orientation: landscape), (max-height: 500px) {
+	@media (max-width: 639.98px) and (orientation: landscape), (max-height: 500px) {
 		.command-deck[data-transmission='open'][data-readout='open'] {
 			--field-panel-max-height: min(38vh, calc(100vh - var(--field-panel-bottom) - 1rem));
 			--field-panel-max-height: min(38vh, calc(100dvh - var(--field-panel-bottom) - 1rem));
@@ -2621,12 +3782,54 @@
 		.command-deck[data-passplan='open'] :global(.readout[role='dialog']) {
 			display: none;
 		}
+		/* W4c (TIN-1866): readout-ONLY (no tool open) at short/landscape — the gantt's
+		   full event clock here is taller than --field-bottom-reserve, so anchor the
+		   readout bottom at --gantt-reserve-rem to clear it (mirrors the portrait
+		   TIN-1810 fix, which is orientation:portrait-scoped and misses this band). */
+		.command-deck[data-readout='open']:not([data-transmission='open']):not([data-passplan='open'])
+			:global(.readout[role='dialog']) {
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px) + var(--field-gap)) !important;
+			max-height: calc(100dvh - var(--gantt-reserve-rem, 13rem) - env(safe-area-inset-bottom, 0px) - 1rem) !important;
+		}
 		.command-deck[data-transmission='open'] :global(.toolbar),
 		.command-deck[data-passplan='open'] :global(.toolbar) {
 			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
 		}
 		.command-deck[data-transmission='open'] :global(.sheet) {
 			right: calc(var(--map-toolbar-inset-rem, 5rem) + 0.75rem) !important;
+			/* W4c: anchor the deep-tool sheet above the gantt's full footprint at
+			   short/landscape (the --field-panel-bottom reserve is ~10px shy of the
+			   gantt top here) so the sheet never dips into the gantt row. */
+			bottom: calc(var(--gantt-reserve-rem, 13rem) + env(safe-area-inset-bottom, 0px)) !important;
+			max-height: min(34dvh, calc(100dvh - var(--gantt-reserve-rem, 13rem) - 4rem)) !important;
+		}
+	}
+	/* ===== W4c (TIN-1866) — COMPACT-tall ResponsiveDock band (<640px, height≥501) =====
+	   The dock is a fixed bottom-sheet covering up to ~88dvh, so the bottom-right
+	   float home for the MapToolbar would sit UNDER the sheet (overlap). Re-home the
+	   toolbar to the map strip's top-RIGHT as a VERTICAL icon column (P6 — the
+	   map-control convention; clears the top-left for the search pill + the rail toggle,
+	   and clears the gantt/readout/sheet below by construction). Gated on
+	   [data-dock-active='true'] so it engages only when the dock is actually live
+	   (post-hydration); the COMPACT-short / landscape-short float fallback + the
+	   pre-hydration paint keep their byte-identical placement. The !important matches
+	   the float-fallback rules' specificity so this wins inside the same band. */
+	@media (max-width: 639.98px) and (min-height: 501px) {
+		.command-deck[data-dock-active='true'] :global(.toolbar) {
+			top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
+			right: max(0.75rem, env(safe-area-inset-right, 0px)) !important;
+			left: auto !important;
+			bottom: auto !important;
+			flex-direction: column !important;
+			flex-wrap: nowrap !important;
+			width: auto !important;
+			z-index: 8 !important;
+		}
+		/* The attribution's bottom-left float would also dip under the sheet — hide it
+		   while the dock owns the bottom (the /docs credits link lives in the dock's
+		   reachable content surfaces; not lost). */
+		.command-deck[data-dock-active='true'] .attribution {
+			display: none !important;
 		}
 	}
 	:global(.follow-marker) {
@@ -2675,5 +3878,99 @@
 		.command-deck {
 			grid-template-columns: 22rem minmax(380px, 1fr) 30rem;
 		}
+	}
+
+	/* TIN-1889 Phase 3 — the station-marker click popup. Built imperatively (maplibre
+	   Popup), so styled via :global. Matches the deck's dark + mono vocabulary. */
+	:global(.maplibregl-popup.maplibregl-popup .maplibregl-popup-content) {
+		background: rgba(8, 10, 16, 0.94);
+		color: #e9ecf3;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 9px;
+		padding: 0.6rem 0.7rem;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+		font-family: var(--font-mono, ui-monospace, monospace);
+		backdrop-filter: blur(6px);
+	}
+	:global(.maplibregl-popup .maplibregl-popup-tip) {
+		border-top-color: rgba(8, 10, 16, 0.94);
+		border-bottom-color: rgba(8, 10, 16, 0.94);
+	}
+	:global(.maplibregl-popup .maplibregl-popup-close-button) {
+		color: #aeb6c6;
+		font-size: 1.1rem;
+		padding: 0 0.3rem;
+	}
+	:global(.aq-popup) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		min-width: 9rem;
+	}
+	:global(.aq-popup-name) {
+		font-size: 0.82rem;
+		font-weight: 700;
+		padding-right: 1rem;
+	}
+	:global(.aq-popup-body) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.74rem;
+	}
+	:global(.aq-popup-body.muted) {
+		opacity: 0.7;
+	}
+	:global(.aq-popup-chip) {
+		align-self: flex-start;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.15rem 0.45rem;
+		border-radius: 999px;
+		font-size: 0.68rem;
+		font-weight: 600;
+		color: #0a0a0a;
+		background: var(--chip, #aeb6c6);
+	}
+	:global(.aq-popup-pollutants) {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		font-variant-numeric: tabular-nums;
+	}
+	:global(.aq-popup-cta) {
+		align-self: flex-start;
+		margin-top: 0.1rem;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--accent-amber);
+		font: inherit;
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+	:global(.aq-popup-cta:hover) {
+		text-decoration: underline;
+	}
+	/* COMPACT dock Tools-view launcher (mobile) — the ToolsCluster brings its own
+	   tile styling; the wrapper just separates it from the open tool that renders
+	   below it when one is launched. */
+	.dock-tools-launcher {
+		margin-bottom: 0.6rem;
+	}
+	.dock-tools-launcher:last-child {
+		margin-bottom: 0;
+	}
+	/* Pass-plan launched with no pin yet — a prompt, never a blank pane. */
+	.dock-tool-hint {
+		margin: 0.4rem 0 0;
+		padding: 0.75rem 0.5rem;
+		font-size: 0.78rem;
+		opacity: 0.7;
+		text-align: center;
 	}
 </style>

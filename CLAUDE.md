@@ -1,20 +1,13 @@
-# Claude — darkmap.phasi.space sister site
+# Claude — darkmap.phasi.space
 
-This is the `darkmap.phasi.space` sister site. Read `AGENTS.md` first for the
-authoritative operating contract.
+Read `AGENTS.md` first — it is the authoritative operating contract. This file is
+only the handful of reminders worth keeping in context every session:
 
-Quick reminders:
+- Use `just <recipe>` for every operation; don't invoke pnpm/vite/bazelisk directly
+  unless you're extending the Justfile.
+- Never run browserful Playwright e2e locally (`just test-e2e` needs `LOCAL=1`) — CI's
+  e2e lane is the source of truth. Locally use `just check` / `just ci-quick`.
+- Skeleton 4.15.2 + Tailwind v4 are pinned exact behind a compat shim — do not upgrade
+  them. See `AGENTS.md` §Theme.
 
-- Use `just <recipe>` for every operation — do not invoke pnpm/vite/bazelisk
-  directly unless extending the Justfile.
-- Runs a SvelteKit **adapter-node** server (app + thin proxy/normalization API
-  routes; no DB, no edge auth). See `AGENTS.md` §Build for the architecture
-  contract; federate via `tinyland.dev` snapshots.
-- Skeleton 4.15.2 pinned exact; Tailwind v4 with `skeletonTailwindV4Compat()`
-  shim. See `AGENTS.md` §Theme for the do-not-upgrade guardrails.
-- Browserful Playwright e2e and the adapter-node build are **remote-first**:
-  locally use `just check` / `just ci-quick`; never run `just test-e2e`
-  browserful locally (it requires `LOCAL=1`). CI's e2e lane is the source of
-  truth.
-- Bazel registry: `tinyland-inc/bazel-registry` first, then BCR.
-- See repo: https://github.com/Jesssullivan/darkmap.phasi.space
+Repo: https://github.com/Jesssullivan/darkmap.phasi.space

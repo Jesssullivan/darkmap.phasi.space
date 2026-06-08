@@ -186,6 +186,9 @@ async function runSmokeScenario(page, scenario) {
 		case 'aq-dashboard':
 			await runAqDashboardSmoke(page);
 			return;
+		case 'click-budget':
+			await runClickBudgetSmoke(page);
+			return;
 		default:
 			throw new Error(`unknown DARKMAP_RBE_SMOKE_SCENARIO: ${scenario}`);
 	}
@@ -357,6 +360,19 @@ async function runMobileHudSmoke(page) {
 	await page.locator('.gantt').waitFor({ state: 'visible', timeout: 20_000 });
 	await page.locator('.toolbar').waitFor({ state: 'visible', timeout: 20_000 });
 
+	// P6 — the top-band map overlays must not collide on the smallest screens (the
+	// pre-P6 bug: the centered search pill overlapped the top-left toolbar, and the lens
+	// chips piled into the same corner). Search now owns top-left, the toolbar is a
+	// top-right column, and the lens switcher is docked (COMPACT-tall) or floats
+	// (short-landscape) — none may overlap. Asserted BEFORE the pin, in the resting
+	// top-band state, across all matrix viewports.
+	await page.locator('.geocoder').first().waitFor({ state: 'visible', timeout: 20_000 });
+	await assertHudBoxesDoNotOverlap(page, 'mobile-top-band', [
+		['.geocoder', '.toolbar'],
+		['.geocoder', '.lens-switcher'],
+		['.toolbar', '.lens-switcher'],
+	]);
+
 	const canvas = page.locator(MAP_CANVAS_SELECTOR).first();
 	await canvas.click(); // canvas center — robust to the portal inset (the canvas is narrower than the viewport)
 
@@ -382,12 +398,22 @@ async function runMobileHudSmoke(page) {
 	// short/landscape viewports (height <=500: switcher top-left + right-half
 	// sheet leave no clean spot) the overview yields and hides until the tool
 	// closes; that's a deliberate space concession, not lens-gating.
+	// W4c (TIN-1866): the COMPACT ResponsiveDock is ONE sheet whose Readout and
+	// Tools views are mutually exclusive — opening the transmission tool swaps the
+	// readout view OUT (height:0). The overview+detail coexistence does NOT hold
+	// there, so detect the swap-host and skip the readout-coexistence assertion.
+	// The float layout + tall non-dock viewports keep the readout mounted as before.
 	const transmissionPairs = [
 		['.sheet', '.toolbar'],
 		['.sheet', '.gantt'],
 	];
+	const swapHost = await page.evaluate(
+		() =>
+			document.documentElement.dataset.layoutTier === 'compact' &&
+			!!document.querySelector('[data-responsive-dock], .responsive-dock'),
+	);
 	const vpHeight = (page.viewportSize() ?? { height: 0 }).height;
-	if (vpHeight > 500) {
+	if (vpHeight > 500 && !swapHost) {
 		await readout.waitFor({ state: 'visible', timeout: 20_000 });
 		transmissionPairs.push(['.sheet', '.readout[role="dialog"]']);
 	}
@@ -642,9 +668,9 @@ async function runLensReweightSmoke(page) {
 	expect(tierOf(s, 'worldAtlas') === '2', `Orbit worldAtlas should be Tier-2, got ${tierOf(s, 'worldAtlas')}`);
 	assertNeverGated(s, 'orbit');
 
-	// PR5: an explicit &b= must survive the Dark-preferring per-lens nudge.
-	// lens=links is Dark-preferring (would nudge to Dark if the basemap were
-	// unpinned), so it exercises the nudge-skip; a hash-only goto won't reload
+	// PR5: an explicit &b= must survive the per-lens basemap nudge.
+	// lens=links nudges toward the default basemap (now OSM) if unpinned, so it
+	// exercises the nudge-skip; a hash-only goto won't reload
 	// (the module lens store would keep its value), so set the hash then reload.
 	await page.evaluate(() => {
 		window.location.hash = '#m=42.44,-76.5,9&b=satellite&lens=links';
@@ -773,8 +799,111 @@ async function runOrbitSmoke(page) {
 	);
 }
 
+async function runClickBudgetSmoke(page) {
+	// W5f — the reachable-in-N click-budget contract (command-deck.md §9). From a
+	// COLD load, each lens's signature answer must be reachable within its budget:
+	//   Sky → Bortle   ≤1 (pin)
+	//   Air → AQI      ≤1 (pin; AQI is data-gated, shown in every lens)
+	//   Links → margin ≤2 (pin + the readout's transmission CTA)
+	//   Orbit → pass   ≤2 (pin + the readout's pass CTA)
+	// This is the SOFTER check (TIN-1870 fork): we prove REACHABILITY within the
+	// budget — the lead element is present/clickable at the right step — not exact
+	// click counts or exact values. One pin is reused across all four lenses (the
+	// later answers are "N clicks from cold", counting the shared pin). Order matters:
+	// the readout-level answers (Sky/Air/Orbit CTAs) are checked BEFORE Links opens
+	// the transmission deep tool, which docks INTO the inspector at WIDE (W3) and
+	// swaps the readout out. Per TIN-1770 the slow cell's reflow makes a panel-OPEN
+	// click unreliable for Orbit, so Orbit asserts its CTA is present + enabled at
+	// Tier-1 (the 2nd click's target), mirroring the orbit smoke; Links reuses the
+	// link-budget smoke's proven-on-cell CTA click.
+	await runMapCanvasSmoke(page);
+
+	// X2 — the re-homed HEADER controls (lens switcher → stage top-right, compact
+	// search → stage top-left above the toolbar) are now position:absolute stage
+	// overlays. The mobile-hud-matrix overlap smoke is COMPACT-only and never included
+	// the geocoder/lens-switcher, so this is the only gate covering the new WIDE overlap
+	// risk. Asserted at the click-budget WIDE viewport (1280x800) where all four
+	// overlays are present.
+	await page.locator('.lens-switcher').first().waitFor({ state: 'visible', timeout: 20_000 });
+	await assertHudBoxesDoNotOverlap(page, 'x2-header-reclaim', [
+		['.geocoder', '.toolbar'],
+		['.geocoder', '.lens-switcher'],
+		['.lens-switcher', '.tools-cluster.overlay'],
+		['.lens-switcher', '.toolbar'],
+	]);
+
+	const fail = (msg) => {
+		throw new Error(`click-budget: ${msg}`);
+	};
+	const setLens = async (key, name) => {
+		await page.keyboard.press(key);
+		await page.waitForFunction(
+			(n) => document.querySelector('.lens-switcher .chip[aria-pressed="true"]')?.getAttribute('aria-label') === n,
+			name,
+			{ timeout: 10_000 },
+		);
+	};
+
+	// ── Sky ≤1 ────────────────────────────────────────────────────────────────
+	await setLens('1', 'Sky');
+	await page.locator(MAP_CANVAS_SELECTOR).first().click(); // click 1 of the budget: pin a point
+	const readout = page.getByRole('dialog', { name: /point readout/i });
+	await readout.waitFor({ timeout: 20_000 });
+	const bortle = page.locator('.bortle-class').first();
+	await bortle.waitFor({ state: 'attached', timeout: 20_000 });
+	const skyText = ((await bortle.textContent()) ?? '').trim();
+	if (!/Bortle/i.test(skyText)) fail(`Sky answer (Bortle) not reachable in ≤1 click: "${skyText}"`);
+
+	// ── Air ≤1 ────────────────────────────────────────────────────────────────
+	// Same pin (no extra map click). AQI is data-gated, not lens-gated.
+	await setLens('2', 'Air');
+	const aqiVal = page.locator('.aqi-value').first();
+	await aqiVal.waitFor({ state: 'attached', timeout: 20_000 });
+	const airText = ((await aqiVal.textContent()) ?? '').trim();
+	if (!/\d/.test(airText)) fail(`Air answer (AQI) not reachable in ≤1 click: "${airText}"`);
+
+	// ── Orbit ≤2 ──────────────────────────────────────────────────────────────
+	// Checked BEFORE Links opens the transmission deep tool (which swaps the readout
+	// out at WIDE). The pass CTA is the 2nd click's target; we assert it is present,
+	// enabled, and promoted to Tier-1 under the Orbit lens (panel-open is unreliable
+	// on the slow cell — TIN-1770).
+	await setLens('4', 'Orbit');
+	const passCta = readout.getByRole('button', { name: /plan a satellite pass/i });
+	await passCta.waitFor({ state: 'attached', timeout: 20_000 });
+	if (!(await passCta.isEnabled())) fail('Orbit pass CTA is disabled (not reachable in ≤2)');
+	const passMeta = await page.evaluate(() => {
+		const cta = document.querySelector('.pass-plan-link');
+		return { kind: cta?.getAttribute('data-cta') ?? null, tier: cta?.getAttribute('data-tier') ?? null };
+	});
+	if (passMeta.kind !== 'pass') fail(`Orbit CTA is not the pass tool (data-cta=${passMeta.kind})`);
+	if (passMeta.tier !== '1') fail(`Orbit pass CTA not promoted to Tier-1 (data-tier=${passMeta.tier})`);
+
+	// ── Links ≤2 ──────────────────────────────────────────────────────────────
+	// pin (1, shared) + the transmission CTA (2) → the link margin in the sheet.
+	await setLens('3', 'Links');
+	await readout.getByRole('button', { name: /open spectral transmission analysis/i }).click(); // click 2
+	const margin = page.locator('.lb-margin-val').first();
+	await margin.waitFor({ state: 'attached', timeout: 20_000 });
+	const linksText = ((await margin.textContent()) ?? '').trim();
+	if (!/[+-]?\d/.test(linksText)) fail(`Links answer (margin) not reachable in ≤2 clicks: "${linksText}"`);
+
+	console.log(
+		`darkmap click-budget smoke: Sky Bortle ≤1 ("${skyText}") · Air AQI ≤1 ("${airText}") · ` +
+			`Orbit pass CTA Tier-1 ≤2 · Links margin ≤2 ("${linksText}")`,
+	);
+}
+
 async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 	const results = await page.evaluate((inputPairs) => {
+		// W4a (TIN-1864): the COMPACT swap-host is ONE bottom-sheet whose
+		// Layers/Readout/Tools views are mutually exclusive, so a swapped-out pair
+		// member (e.g. the point readout while the transmission sheet shows) is
+		// legitimately absent — not an overlap failure. Tolerate a null box ONLY in
+		// that COMPACT swap-host; everywhere else (today's float fallback, medium,
+		// wide) a missing box stays a hard error so real regressions still throw.
+		const layoutTier = document.documentElement.dataset.layoutTier ?? '';
+		const swapHost = document.querySelector('[data-responsive-dock], .responsive-dock');
+		const tolerateAbsent = layoutTier === 'compact' && swapHost instanceof HTMLElement;
 		const boxFor = (selector) => {
 			const node = document.querySelector(selector);
 			if (!(node instanceof HTMLElement)) return null;
@@ -808,12 +937,12 @@ async function assertHudBoxesDoNotOverlap(page, label, pairs) {
 				a !== null &&
 				b !== null &&
 				!(a.right <= b.left + 2 || b.right <= a.left + 2 || a.bottom <= b.top + 2 || b.bottom <= a.top + 2);
-			return { a, aSelector, b, bSelector, overlap };
+			return { a, aSelector, b, bSelector, overlap, tolerateAbsent };
 		});
 	}, pairs);
 
 	for (const result of results) {
-		if (!result.a || !result.b) {
+		if ((!result.a || !result.b) && !result.tolerateAbsent) {
 			throw new Error(`missing visible HUD box for ${label}: ${JSON.stringify(result)}`);
 		}
 		if (result.overlap) {
@@ -978,23 +1107,33 @@ async function runSmogSmoke(page) {
 }
 
 async function runAqDashboardSmoke(page) {
-	// TIN-1815: the /aq dashboard populates from the mocked OpenAQ stations +
-	// history. Navigate straight to the dashboard with a point in the hash (NYC,
-	// where the canned stations sit) — `m=lat,lon,zoom` → applyHash → loadPoint.
+	// TIN-1815 / TIN-1871: the /aq dashboard populates from the mocked OpenAQ
+	// stations + history. As of TIN-1871 idea ③ the dashboard is an in-SPA
+	// modal-popout, not a route — `/aq` is now a thin redirect that bounces the
+	// deep-link into the SPA (`/#m=…&aq=1`), where the map page auto-opens the AQ
+	// modal seeded from the hash. So navigating to `/aq#m=…` (NYC, where the canned
+	// stations sit) still drives: redirect → modal opens → loadPoint → OpenAQ fetch.
 	// The proof cell has no WebGL AND no system fonts, so we assert the DASHBOARD
 	// behaviour + DOM presence/text — never visibility/bbox (text-only nodes
 	// collapse to zero size without fonts and read as "hidden"). The OpenAQ fetch
-	// fires, the AQI badge computes a number, the Area overview reports stations
-	// (not the empty state). Remove the data path ⇒ this fails.
+	// fires, the modal renders (role=dialog), the AQI badge computes a number, the
+	// Area overview reports stations (not the empty state). Remove the data path or
+	// the redirect/auto-open ⇒ this fails.
 	const openaqRequest = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/atmospheric/openaq', {
 		timeout: 20_000,
 	});
 	await page.goto(`${baseURL}/aq#m=40.75,-73.95,9`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-	await openaqRequest; // the dashboard pulled stations for the seeded point
+	await openaqRequest; // the modal's dashboard pulled stations for the seeded point
+
+	// The AQ modal-popout mounted (the redirect's `aq=1` flag auto-opened it). Wait
+	// for the dialog ATTACHED — same font-less-cell caveat as the badge below.
+	const dialog = page.locator('[data-aq-modal="open"]');
+	await dialog.waitFor({ state: 'attached', timeout: 20_000 });
 
 	// AQI badge computes from the mocked stations (estimate → US-EPA AQI). Wait
 	// for it ATTACHED (not visible) — the font-less cell renders text nodes at
-	// zero size; the value is in textContent regardless.
+	// zero size; the value is in textContent regardless. The selector is unchanged
+	// — the dashboard body moved into the modal but kept its data/aria hooks.
 	const aqiNum = page.locator('.aqi-badge .aqi-num');
 	await aqiNum.waitFor({ state: 'attached', timeout: 20_000 });
 	const aqiText = ((await aqiNum.textContent()) ?? '').trim();
@@ -1006,7 +1145,7 @@ async function runAqDashboardSmoke(page) {
 		throw new Error('aq-dashboard: Area overview shows the no-stations empty state despite mocked stations');
 	}
 
-	console.log(`darkmap aq-dashboard smoke: /aq populated — AQI=${aqiText}, stations present (no empty state)`);
+	console.log(`darkmap aq-dashboard smoke: /aq → modal opened — AQI=${aqiText}, stations present (no empty state)`);
 }
 
 async function installNetworkGuards(page, baseURL) {

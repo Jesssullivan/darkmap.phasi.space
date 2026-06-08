@@ -60,6 +60,15 @@ js_library(
     visibility = ["//visibility:public"],
 )
 
+# SGP4 orbit helpers consumed by the map slice (`orbit-footprint.ts` imports
+# `$lib/orbit`'s subSatellitePoint / footprintRadiusKm / geodesicRing as VALUES).
+# Self-contained root-package module (its only `$lib` import is type-only).
+js_library(
+    name = "lib_orbit",
+    srcs = ["src/lib/orbit.ts"],
+    visibility = ["//visibility:public"],
+)
+
 # Note: the former //:lib_cache_policy / //:lib_offline_cache_service /
 # //:lib_offline_cache_routes wrappers moved into
 # //src/lib/effect/services:{cache_policy,offline_cache_service,offline_cache_routes}
@@ -397,6 +406,28 @@ js_test(
 )
 
 js_test(
+    name = "playwright_click_budget_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-click-budget-smoke.mjs",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-click-budget-smoke.mjs",
+    tags = [
+        "chromium",
+        "click-budget-smoke",
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
     name = "playwright_orbit_smoke",
     data = [
         ":app_build",
@@ -494,6 +525,7 @@ test_suite(
         ":playwright_toolbar_labels_smoke",
         ":playwright_lens_reweight_smoke",
         ":playwright_link_budget_smoke",
+        ":playwright_click_budget_smoke",
         ":playwright_orbit_smoke",
         ":playwright_smog_smoke",
         ":playwright_aq_dashboard_smoke",

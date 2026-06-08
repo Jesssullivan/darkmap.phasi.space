@@ -23,10 +23,39 @@
 
 	onMount(() => {
 		mounted = true;
+
+		// visualViewport bridge — publish live visual-viewport metrics as CSS custom
+		// properties on <html> so the COMPACT bottom-sheet (ResponsiveDock) tracks the
+		// iOS URL-bar show/hide. --vvh = visual-viewport height (px); --vv-bottom = the
+		// browser-chrome inset at the bottom (layout height − visual height − visual
+		// offsetTop, clamped ≥0). CSS falls back to dvh / 0px wherever these are unset
+		// (desktop, or engines without the API). iOS resizes the VISUAL viewport on the
+		// URL-bar slide but not the layout viewport, so a fixed bottom sheet would
+		// otherwise strand — see ResponsiveDock's re-settle effect.
+		const vv = window.visualViewport ?? null;
+		const publishVV = (): void => {
+			if (!vv) return;
+			const root = document.documentElement;
+			const bottomInset = Math.max(0, root.clientHeight - vv.height - vv.offsetTop);
+			root.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
+			root.style.setProperty('--vv-bottom', `${Math.round(bottomInset)}px`);
+		};
+		if (vv) {
+			publishVV();
+			vv.addEventListener('resize', publishVV);
+			vv.addEventListener('scroll', publishVV);
+		}
+		const cleanup = (): void => {
+			if (vv) {
+				vv.removeEventListener('resize', publishVV);
+				vv.removeEventListener('scroll', publishVV);
+			}
+		};
+
 		// Register the service worker for offline field use. Production-only +
 		// secure-context guard so `just dev` never caches stale builds and so
 		// HTTP previews degrade gracefully (SW registration is HTTPS-gated).
-		if (dev || !window.isSecureContext) return;
+		if (dev || !window.isSecureContext) return cleanup;
 		void Effect.runPromiseExit(
 			Effect.gen(function* () {
 				const cache = yield* OfflineCacheService;
@@ -35,6 +64,7 @@
 		).then((exit) => {
 			if (exit._tag === 'Failure') console.warn('OfflineCache register failed', exit.cause);
 		});
+		return cleanup;
 	});
 
 	// The map at `/` is the application surface — full viewport, no chrome.

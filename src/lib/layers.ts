@@ -60,7 +60,7 @@ export interface RasterLayerDef {
 
 const GIBS_ATTRIBUTION = 'Imagery courtesy NASA EOSDIS GIBS';
 
-const viirs = (year: number, defaultEnabled = false): RasterLayerDef => ({
+const viirs = (year: number, defaultEnabled = false, opacity = 0.85): RasterLayerDef => ({
 	id: `viirs_${year}`,
 	upstreamLayer: `PostGIS:VIIRS_${year}`,
 	label: `VIIRS ${year}`,
@@ -68,11 +68,13 @@ const viirs = (year: number, defaultEnabled = false): RasterLayerDef => ({
 	group: 'viirs_annual',
 	year,
 	defaultEnabled,
-	opacity: 0.85,
+	opacity,
 });
 
 export const LAYERS: ReadonlyArray<RasterLayerDef> = [
-	viirs(2019, true),
+	// Default display: VIIRS 2019 at a faint 25% so it reads as a subtle wash over
+	// the OSM basemap (paired with World Atlas 25% below). Other years toggle at 85%.
+	viirs(2019, true, 0.25),
 	viirs(2018),
 	viirs(2017),
 	viirs(2016),
@@ -86,8 +88,9 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		label: 'World Atlas 2015',
 		description: 'Falchi et al. 2016 World Atlas of Artificial Night Sky Brightness (styled).',
 		group: 'world_atlas',
-		defaultEnabled: false,
-		opacity: 0.7,
+		// On by default at a faint 25% — pairs with VIIRS 2019 25% over OSM.
+		defaultEnabled: true,
+		opacity: 0.25,
 	},
 	{
 		id: 'clouds-modis-terra',

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildStationFeature, selectFreshLocations, type V3Latest, type V3Location } from './openaq-shape';
+import {
+	buildAllMarkers,
+	buildMarkerFeature,
+	buildStationFeature,
+	selectFreshLocations,
+	type V3Latest,
+	type V3Location,
+} from './openaq-shape';
 
 const NOW = Date.parse('2026-05-31T08:00:00Z');
 const DAY = 24 * 3600 * 1000;
@@ -98,5 +105,44 @@ describe('buildStationFeature', () => {
 		const f = buildStationFeature(l, [latest({ sensorsId: 11, value: 20 })], NOW, DAY);
 		expect(f!.properties.value).toBeNull();
 		expect(f!.properties.pollutants.no2).toEqual({ value: 20, units: 'ppb' });
+	});
+
+	it('tags a joined feature status:live with its lastSeen', () => {
+		const f = buildStationFeature(loc(), [latest()], NOW, DAY);
+		expect(f!.properties.status).toBe('live');
+		expect(f!.properties.lastSeen).toBe(FRESH);
+	});
+});
+
+describe('buildMarkerFeature / buildAllMarkers (station-parity markers)', () => {
+	it('makes a value-less marker for a fresh location → status:pending', () => {
+		const f = buildMarkerFeature(loc({ datetimeLast: { utc: FRESH } }), NOW, DAY);
+		expect(f!.properties.status).toBe('pending');
+		expect(f!.properties.value).toBeNull();
+		expect(f!.properties.pollutants).toEqual({});
+		expect(f!.properties.lastSeen).toBe(FRESH);
+		expect(f!.geometry.coordinates).toEqual([-118, 34]);
+	});
+
+	it('marks an old location stale, but still renders it (parity ≠ dropping it)', () => {
+		const f = buildMarkerFeature(loc({ datetimeLast: { utc: OLD } }), NOW, DAY);
+		expect(f!.properties.status).toBe('stale');
+		expect(f).not.toBeNull();
+	});
+
+	it('drops only markers with unusable coordinates', () => {
+		expect(buildMarkerFeature(loc({ coordinates: undefined }), NOW, DAY)).toBeNull();
+		expect(buildMarkerFeature(loc({ coordinates: { latitude: NaN, longitude: -118 } }), NOW, DAY)).toBeNull();
+	});
+
+	it('keeps every coord-valid location (no freshness/criteria/50-cap drop)', () => {
+		const ls = [
+			loc({ id: 1, datetimeLast: { utc: FRESH } }),
+			loc({ id: 2, datetimeLast: { utc: OLD } }),
+			loc({ id: 3, sensors: [{ id: 9, parameter: { name: 'bc' } }] }), // non-criteria — still a marker
+			loc({ id: 4, coordinates: undefined }), // only this one drops
+		];
+		const markers = buildAllMarkers(ls, NOW, DAY);
+		expect(markers.map((m) => m.properties.locationId)).toEqual([1, 2, 3]);
 	});
 });
