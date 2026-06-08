@@ -285,6 +285,8 @@
 		.cmdk-panel {
 			width: 100%;
 			max-height: calc(100vh - 56px);
+			/* dvh tracks the iOS dynamic toolbar (100vh is the large viewport → clips). */
+			max-height: calc(100dvh - 56px);
 			margin-top: 56px;
 			border-radius: 0 0 12px 12px;
 			border-top: 0;
