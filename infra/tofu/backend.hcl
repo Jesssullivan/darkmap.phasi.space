@@ -1,7 +1,7 @@
 bucket                      = "tofu-state"
 key                         = "darkmap-tinyland-dev/terraform.tfstate"
 region                      = "us-east-1"
-endpoint                    = "http://attic-rustfs-hl.nix-cache.svc:9000"
+endpoint                    = "http://tofu-state-rustfs.nix-cache.svc:9000"
 use_path_style              = true
 skip_credentials_validation = true
 skip_region_validation      = true
