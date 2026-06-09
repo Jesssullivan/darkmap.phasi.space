@@ -17,7 +17,7 @@ lives in `infra/kustomize/honey/darkmap/` and is applied with
 State lives in the on-prem `rustfs` S3 endpoint:
 
 ```
-http://attic-rustfs-hl.nix-cache.svc:9000/tofu-state/darkmap-tinyland-dev/terraform.tfstate
+http://tofu-state-rustfs.nix-cache.svc:9000/tofu-state/darkmap-tinyland-dev/terraform.tfstate
 ```
 
 Reach it from a tailnet-joined host (operator workstation or the

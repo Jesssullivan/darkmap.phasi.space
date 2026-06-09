@@ -188,7 +188,7 @@ Read it before touching any Flywheel/RBE surface.
   darkmap-specific Cloudflare + Kustomize resources — never replace
   them.
 - State backend is S3-compatible: rustfs at
-  `attic-rustfs-hl.nix-cache.svc:9000` via the standard S3 API.
+  `tofu-state-rustfs.nix-cache.svc:9000` via the standard S3 API.
   **This is NOT a §5 invariant violation** — that invariant forbids
   rustfs as RBE CAS / action-cache authority, not as a Tofu state
   S3 backend. rustfs exposes an S3-compatible API on `:9000` and
