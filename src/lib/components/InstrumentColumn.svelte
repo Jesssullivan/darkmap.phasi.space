@@ -15,9 +15,16 @@
 		location: { lat: number; lon: number };
 		/** Active ephemeris cursor time. */
 		time: Date;
+		/**
+		 * Docked COMPACT variant (the ResponsiveDock instrument row). The WIDE left-dock
+		 * row is `display:none` <1024px (it had no mobile home); `compact` overrides that
+		 * so the AQ-in-view + Sky tiles surface in the bottom dock on mobile. Mirrors
+		 * SkyCompass's `embedded` flag.
+		 */
+		compact?: boolean;
 	}
 
-	let { lens, stations, location, time }: Props = $props();
+	let { lens, stations, location, time, compact = false }: Props = $props();
 
 	// Air tile — honest area rollup of the in-view PM2.5 stations (reuses the
 	// tested pure helper; null AQI ⇒ no PM2.5 reporting, never a fabricated 0).
@@ -39,7 +46,7 @@
 	});
 </script>
 
-<aside class="instrument-column" aria-label="Lens overview instruments">
+<aside class="instrument-column" class:compact aria-label="Lens overview instruments">
 	<section class="tile" class:lead={airTier === 2} data-tier={airTier} aria-label="Air — viewport air quality">
 		<div class="tile-label">
 			Air · viewport
@@ -64,12 +71,18 @@
 		{/if}
 	</section>
 
-	<section class="tile sky-tile" class:lead={skyTier === 2} data-tier={skyTier} aria-label="Sky — local dome">
-		<p class="tile-label">Sky · local dome</p>
-		{#if mounted}
-			<SkyCompass {location} {time} embedded />
-		{/if}
-	</section>
+	<!-- The Sky dome is omitted in the COMPACT dock variant: it's tall (would overflow the
+	     bottom-sheet's 88dvh and push the readout CTA under the tabs), and the standalone
+	     SkyCompass float already covers the dome at COMPACT. The docked instrument is the
+	     AQ-in-view gauge (the reported bug). -->
+	{#if !compact}
+		<section class="tile sky-tile" class:lead={skyTier === 2} data-tier={skyTier} aria-label="Sky — local dome">
+			<p class="tile-label">Sky · local dome</p>
+			{#if mounted}
+				<SkyCompass {location} {time} embedded />
+			{/if}
+		</section>
+	{/if}
 </aside>
 
 <style>
@@ -90,6 +103,19 @@
 		.instrument-column {
 			display: flex;
 		}
+	}
+	/* Docked COMPACT variant — surfaces in the ResponsiveDock instrument row on mobile
+	   (overrides the <1024px display:none). Tighter so it fits the bottom-sheet header
+	   without crowding the gantt/tabs below it. */
+	.instrument-column.compact {
+		display: flex;
+		gap: 0.4rem;
+	}
+	.instrument-column.compact .tile {
+		padding: 0.3rem 0.25rem;
+	}
+	.instrument-column.compact .aqi-value {
+		font-size: 1.1rem;
 	}
 	.tile {
 		flex: 1 1 0;

@@ -25,9 +25,12 @@ test('C1: Air-lens in-view instrument — coherent state + the COMPACT visibilit
 	await page.waitForSelector('canvas.maplibregl-canvas', { timeout: 30_000 });
 	await page.waitForTimeout(4000); // map first paint + the eager viewport-AQ fetch settles
 
-	const col = page.locator('.instrument-column').first();
-	const colCount = await page.locator('.instrument-column').count();
-	const colVisible = colCount ? await col.isVisible().catch(() => false) : false;
+	// The FIX surfaces the instrument in the dock's Readout view at COMPACT (the WIDE
+	// .left-dock copy is display:none <1024px). The docked copy carries `.compact`.
+	const dockInstrument = page.locator('.instrument-column.compact').first();
+	const totalCols = await page.locator('.instrument-column').count();
+	const dockVisible = await dockInstrument.isVisible().catch(() => false);
+	const col = dockInstrument;
 	const aqiValue = await col
 		.locator('.aqi-value')
 		.first()
@@ -39,12 +42,15 @@ test('C1: Air-lens in-view instrument — coherent state + the COMPACT visibilit
 		.textContent()
 		.catch(() => null);
 	console.log(
-		`[C1 ${testInfo.project.name}] instrument count=${colCount} visibleAtCOMPACT=${colVisible} aqi-value=${JSON.stringify(aqiValue)} aqi-sub=${JSON.stringify(aqiSub)}`,
+		`[C1 ${testInfo.project.name}] total .instrument-column=${totalCols} dockInstrumentVisible=${dockVisible} aqi-value=${JSON.stringify(aqiValue)} aqi-sub=${JSON.stringify(aqiSub)}`,
 	);
 
+	// GATE (the C fix): the AQ in-view instrument is surfaced in the bottom dock at COMPACT
+	// (was display:none-orphaned ⇒ this was RED before the fix).
+	await expect(dockInstrument, 'AQ in-view instrument is visible in the dock at COMPACT').toBeVisible();
+
 	// Honesty-bar invariant (both engines, keyed or not): a real AQI number OR an explicit
-	// empty-state — never blank, never a fabricated 0. (The COMPACT visibility is LOGGED
-	// here; the fix PR turns it into the gate: instrument must be reachable on mobile.)
+	// empty-state — never blank, never a fabricated 0.
 	expect(aqiValue, 'instrument tile renders a value or an honest dash').toBeTruthy();
 	if (aqiValue && aqiValue.trim() !== '—') {
 		expect(aqiValue.trim(), 'a populated AQI is a real number, never a fabricated 0').not.toBe('0');
