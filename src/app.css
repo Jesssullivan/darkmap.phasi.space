@@ -98,6 +98,19 @@ html {
 	}
 }
 
+/* TIN-1891 — the 821px+-wide SHORT-screen band (e.g. 844×390 landscape phones):
+   wider than 820 so the MapToolbar keeps its LABELED strip (which WRAPS to ~2 rows
+   with real fonts, ~9.2rem wide), but ≤500px tall so the float-fallback readout
+   applies. The base 8rem token under-reserves there → the readout's right edge
+   dipped ~19px into the toolbar. CI-invisible (the fontless GF cell renders the
+   labels narrow); proven with the real-font camera. 10.5rem clears the wrapped
+   strip with margin for every token reader (readout/gantt/sheet right-insets). */
+@media (min-width: 821px) and (max-height: 500px) {
+	html {
+		--map-toolbar-inset-rem: 10.5rem;
+	}
+}
+
 /* The PR5 @media block that set the --portal-inset-* gutter tokens is DELETED
    (W1). The Command Deck grid (+page.svelte, ≥1024px) replaces the faux-grid:
    real tracks [20rem rail][1fr stage][22rem inspector] keep the map ≥ 300px
