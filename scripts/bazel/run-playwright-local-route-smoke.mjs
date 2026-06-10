@@ -4,12 +4,19 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, statSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { chromium } from '@playwright/test';
+import { chromium, webkit } from '@playwright/test';
 
 process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
 
 const DEFAULT_VIEWPORT = { width: 390, height: 844 };
 const SMOKE_SCENARIO = process.env.DARKMAP_RBE_SMOKE_SCENARIO ?? 'shell';
+// Engine select (RBE-native WebKit): 'chromium' (default, the GF proof cell) or
+// 'webkit' — the engine iOS Safari AND iOS Chrome actually run, so WebKit/mobile
+// regressions are visible to the same scenario suite. The webkit executor image is
+// a separate (cross-repo) provision: it needs `playwright install-deps webkit` and
+// REAL FONTS (WebKit has no fontless/swiftshader mode), so webkit targets are NOT
+// in the chromium proof suite until that cell exists.
+const SMOKE_ENGINE = process.env.DARKMAP_RBE_SMOKE_ENGINE === 'webkit' ? 'webkit' : 'chromium';
 const SMOKE_VIEWPORTS = parseViewportList(process.env.DARKMAP_RBE_SMOKE_VIEWPORTS);
 const MAP_CANVAS_SELECTOR = '[data-tour="map"] canvas, canvas.maplibregl-canvas';
 const TRANSPARENT_PNG = Buffer.from(
@@ -23,8 +30,11 @@ ensureWritableEnvDir('HOME', join(chromiumRuntimeDir, 'home'));
 ensureWritableEnvDir('XDG_CONFIG_HOME', join(chromiumRuntimeDir, 'xdg-config'));
 ensureWritableEnvDir('XDG_CACHE_HOME', join(chromiumRuntimeDir, 'xdg-cache'));
 
-const chromiumPath = findChromiumExecutable();
-if (!chromiumPath) {
+const browserPath = SMOKE_ENGINE === 'webkit' ? findWebkitExecutable() : findChromiumExecutable();
+if (!browserPath && SMOKE_ENGINE === 'chromium') {
+	// Chromium MUST be explicit (the RBE cell pins /bin/chromium; locally CHROME_BIN).
+	// WebKit may resolve from Playwright's own managed cache (empty path = let
+	// webkit.launch() find it — the local `pnpm exec playwright install webkit` loop).
 	console.error(
 		'set GF_RBE_CHROMIUM_EXECUTABLE, GF_CHROMIUM_EXECUTABLE_PATH, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, PUPPETEER_EXECUTABLE_PATH, or CHROME_BIN',
 	);
@@ -61,11 +71,19 @@ server.on('exit', (code, signal) => {
 let browser;
 try {
 	await waitForServer(baseURL);
-	browser = await chromium.launch({
-		executablePath: chromiumPath,
-		headless: true,
-		args: ['--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--no-sandbox', '--use-gl=swiftshader'],
-	});
+	browser =
+		SMOKE_ENGINE === 'webkit'
+			? // WebKit: no chromium flags (they're meaningless there); empty executablePath
+				// falls through to Playwright's managed binary.
+				await webkit.launch({
+					...(browserPath ? { executablePath: browserPath } : {}),
+					headless: true,
+				})
+			: await chromium.launch({
+					executablePath: browserPath,
+					headless: true,
+					args: ['--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--no-sandbox', '--use-gl=swiftshader'],
+				});
 
 	for (const viewport of SMOKE_VIEWPORTS) {
 		const viewportLabel = `${viewport.width}x${viewport.height}`;
@@ -138,7 +156,9 @@ try {
 				);
 			}
 
-			console.log(`darkmap Playwright ${SMOKE_SCENARIO} smoke passed at ${viewportLabel} with ${chromiumPath}`);
+			console.log(
+				`darkmap Playwright ${SMOKE_SCENARIO} smoke passed at ${viewportLabel} with ${SMOKE_ENGINE}:${browserPath || '(playwright-managed)'}`,
+			);
 		} finally {
 			await context.close();
 		}
@@ -1340,6 +1360,23 @@ function findChromiumExecutable() {
 		process.env.PUPPETEER_EXECUTABLE_PATH,
 		process.env.CHROME_BIN,
 		'/bin/chromium',
+	].filter(Boolean);
+
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return candidate;
+	}
+	return '';
+}
+
+function findWebkitExecutable() {
+	// Mirrors the chromium chain for a future GF webkit cell; unlike chromium an
+	// empty result is FINE — webkit.launch() then uses Playwright's managed binary
+	// (the local `pnpm exec playwright install webkit` loop).
+	const candidates = [
+		process.env.GF_RBE_WEBKIT_EXECUTABLE,
+		process.env.GF_WEBKIT_EXECUTABLE_PATH,
+		process.env.PLAYWRIGHT_WEBKIT_EXECUTABLE_PATH,
+		process.env.WEBKIT_BIN,
 	].filter(Boolean);
 
 	for (const candidate of candidates) {

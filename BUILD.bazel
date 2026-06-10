@@ -534,6 +534,75 @@ test_suite(
 )
 
 # =============================================================================
+# webkit_smoke_suite — the WebKit-engine twin of the chromium proof (RBE-native
+# WebKit wiring). iOS Safari AND iOS Chrome are both WebKit, and the dock/mobile
+# bugs reproduced ONLY there — the chromium cell is structurally blind to them.
+# Same scenario harness, engine-selected via DARKMAP_RBE_SMOKE_ENGINE=webkit.
+#
+# NOT in playwright_browser_rbe_smoke_suite and NOT flywheel-tagged yet: the GF
+# executor image is chromium-only (fontless/swiftshader). A WebKit cell needs
+# `playwright install-deps webkit` + REAL FONTS (no fontless mode) — that image
+# is the cross-repo (GloriousFlywheel) workstream. Until it exists these run
+# LOCALLY: `bazelisk test //:webkit_smoke_suite` (or `just webkit-smoke`),
+# resolving Playwright's managed webkit binary (pnpm exec playwright install webkit).
+# =============================================================================
+js_test(
+    name = "playwright_webkit_shell_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-webkit-shell-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-webkit-shell-smoke.mjs",
+    tags = [
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+        "webkit",
+        "webkit-rbe-candidate",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_webkit_mobile_hud_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-webkit-mobile-hud-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-webkit-mobile-hud-smoke.mjs",
+    tags = [
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+        "webkit",
+        "webkit-rbe-candidate",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "webkit_smoke_suite",
+    tags = [
+        "local-server-route-smoke",
+        "manual",
+        "playwright",
+        "webkit",
+        "webkit-rbe-candidate",
+    ],
+    tests = [
+        ":playwright_webkit_shell_smoke",
+        ":playwright_webkit_mobile_hud_smoke",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
 # root_lib_test — top-level src/lib unit-test slice
 #
 # The `src/lib` top-level modules (basemaps, layers, lens, url-hash,
