@@ -122,6 +122,96 @@
 		};
 	});
 
+	// ── grip drag (Bug A) ─────────────────────────────────────────────────────
+	// The grip was a decorative aria-hidden div — it LOOKED like a drag handle but
+	// had no handler, so the only way to move the sheet was scroll-CHAINING into the
+	// pointer-events:none rail, which WebKit handles differently (the reported
+	// "grip provably nonfunctional" on iOS Safari/Chrome + desktop Safari). Make it
+	// a real control: a pointer drag drives rail.scrollTop 1:1 — the one primitive
+	// BOTH engines honor (proven in e2e dock-webkit A2) — release snaps to a detent
+	// with direction bias, and ArrowUp/Down step detents (the grip is now a
+	// focusable button, strictly better a11y than the hidden div). Mandatory
+	// scroll-snap is suspended during the drag so it doesn't fight the finger.
+	let dragging = $state(false);
+	let dragStartY = 0;
+	let dragStartTop = 0;
+
+	const detentEdges = (rail: HTMLDivElement): number[] => {
+		const maxTop = rail.scrollHeight - rail.clientHeight;
+		const halfTop = halfSnapEl ? halfSnapEl.offsetTop : maxTop * 0.4;
+		return [0, halfTop, maxTop]; // PEEK / HALF / FULL
+	};
+
+	function onGripPointerDown(ev: PointerEvent): void {
+		const rail = railEl;
+		if (!rail) return;
+		dragging = true;
+		dragStartY = ev.clientY;
+		dragStartTop = rail.scrollTop;
+		rail.style.scrollSnapType = 'none';
+		// Capture so moves outside the pill keep driving the drag. Guarded: capture can
+		// throw (InvalidPointerId) for already-released or synthetic pointers — the drag
+		// still works while the pointer stays over the (generous ::after) hit area.
+		try {
+			(ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+		} catch {
+			/* non-capturable pointer — proceed uncaptured */
+		}
+	}
+	function onGripPointerMove(ev: PointerEvent): void {
+		if (!dragging) return;
+		const rail = railEl;
+		if (!rail) return;
+		// Dragging the grip UP (clientY decreases) raises the sheet → scrollTop grows.
+		rail.scrollTop = dragStartTop + (dragStartY - ev.clientY);
+	}
+	function onGripPointerEnd(ev: PointerEvent): void {
+		if (!dragging) return;
+		dragging = false;
+		try {
+			(ev.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId);
+		} catch {
+			/* never captured — fine */
+		}
+		const rail = railEl;
+		if (!rail) return;
+		const edges = [...detentEdges(rail)].sort((a, b) => a - b);
+		const top = rail.scrollTop;
+		const delta = top - dragStartTop;
+		// Direction bias: a deliberate drag (>24px) advances to the NEXT detent in the
+		// drag direction from the start; a micro-drag settles on the nearest edge.
+		let target: number;
+		if (Math.abs(delta) > 24) {
+			target =
+				delta > 0
+					? (edges.find((e) => e > dragStartTop + 1) ?? edges[edges.length - 1])
+					: ([...edges].reverse().find((e) => e < dragStartTop - 1) ?? edges[0]);
+		} else {
+			target = edges.reduce((a, b) => (Math.abs(b - top) < Math.abs(a - top) ? b : a));
+		}
+		diagnostics.record('grip-drag-settle', {
+			from: Math.round(dragStartTop),
+			at: Math.round(top),
+			to: Math.round(target),
+		});
+		rail.scrollTop = target;
+		// Restore mandatory snapping a frame later, after the settle write lands.
+		requestAnimationFrame(() => {
+			rail.style.scrollSnapType = '';
+		});
+	}
+	function onGripKeydown(ev: KeyboardEvent): void {
+		const rail = railEl;
+		if (!rail || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+		ev.preventDefault();
+		const edges = [...detentEdges(rail)].sort((a, b) => a - b);
+		const top = rail.scrollTop;
+		rail.scrollTop =
+			ev.key === 'ArrowUp'
+				? (edges.find((e) => e > top + 1) ?? edges[edges.length - 1])
+				: ([...edges].reverse().find((e) => e < top - 1) ?? edges[0]);
+	}
+
 	// The segmented control. Tapping a segment swaps the ONE sheet's content; the
 	// Layers segment additionally opens the (tall) rail drawer — its own height≥500
 	// Both segments stay full-opacity + reachable in every state (progressive
@@ -153,8 +243,20 @@
 		<div class="dock-snap dock-snap-half" aria-hidden="true" bind:this={halfSnapEl}></div>
 
 		<section class="dock-sheet" aria-label="Map dock">
-			<!-- Grab handle — the drag affordance + the visual peek cap. -->
-			<div class="dock-grip" aria-hidden="true"></div>
+			<!-- Grab handle — a REAL drag control (Bug A): pointer-drag moves the sheet
+			     between detents (rail.scrollTop 1:1, engine-deterministic); ArrowUp/Down
+			     step detents for keyboard/AT. -->
+			<button
+				type="button"
+				class="dock-grip"
+				class:dragging
+				aria-label="Resize dock — drag, or press arrow up / arrow down"
+				onpointerdown={onGripPointerDown}
+				onpointermove={onGripPointerMove}
+				onpointerup={onGripPointerEnd}
+				onpointercancel={onGripPointerEnd}
+				onkeydown={onGripKeydown}
+			></button>
 
 			<!-- P6 — the lens strip, docked here on the smallest screens (it floats over
 			     the map at larger tiers). Topmost in the sheet so it's visible at PEEK. -->
@@ -303,11 +405,35 @@
 
 	.dock-grip {
 		flex: 0 0 auto;
+		display: block;
+		position: relative;
 		width: 2.5rem;
 		height: 0.25rem;
 		margin: 0.15rem auto 0.35rem;
+		padding: 0;
+		border: 0;
 		border-radius: 999px;
 		background: rgba(233, 236, 243, 0.32);
+		cursor: grab;
+		/* The drag owns vertical gestures — keep the browser from hijacking the touch
+		   into a page scroll mid-drag. */
+		touch-action: none;
+	}
+	.dock-grip::after {
+		/* Invisible expanded hit target (≈44px tall, wider than the pill) WITHOUT
+		   growing the sheet header — the header is at 88dvh capacity (the AQ-instrument
+		   lesson: any added header height overflows into the gantt/sheet). */
+		content: '';
+		position: absolute;
+		inset: -1.25rem -3rem;
+	}
+	.dock-grip.dragging {
+		cursor: grabbing;
+		background: rgba(233, 236, 243, 0.6);
+	}
+	.dock-grip:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 4px;
 	}
 
 	/* The gantt's OWN thin row, pinned above the tabs + body — always present. The
