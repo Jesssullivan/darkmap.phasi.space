@@ -52,6 +52,13 @@ capture-shipped-ui: build
 capture-breakpoints: build
     cd {{ root }} && node scripts/capture-breakpoints.mjs
 
+# WebKit-engine smoke (RBE-native WebKit wiring): run a smoke scenario on the
+# engine iOS Safari/Chrome actually use (the chromium GF cell is blind to WebKit).
+# Uses Playwright's managed webkit binary (`pnpm exec playwright install webkit`).
+# `just webkit-smoke mobile-hud` etc.; the bazel twin is //:webkit_smoke_suite.
+webkit-smoke scenario='shell': build
+    cd {{ root }} && DARKMAP_RBE_SMOKE_ENGINE=webkit DARKMAP_RBE_SMOKE_SCENARIO={{ scenario }} node scripts/bazel/run-playwright-local-route-smoke.mjs
+
 # Clean then build
 rebuild: clean build
 
