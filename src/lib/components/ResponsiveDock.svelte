@@ -8,6 +8,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { MapPin, Sliders } from '@lucide/svelte';
+	import { diagnostics } from '$lib/diagnostics.svelte';
 
 	interface Props {
 		/** The active swap view. Drives which content the ONE sheet shows. */
@@ -90,6 +91,14 @@
 			const top = rail.scrollTop;
 			const edges = [0, halfTop, maxTop]; // PEEK / HALF / FULL
 			const nearest = edges.reduce((a, b) => (Math.abs(b - top) < Math.abs(a - top) ? b : a));
+			// Diagnostics (no-op unless ?diag=1): the load-bearing capture — does the
+			// programmatic re-pin write below actually move scrollTop on WebKit?
+			diagnostics.record('resettle-pre', {
+				scrollTop: Math.round(top),
+				maxTop: Math.round(maxTop),
+				halfTop: Math.round(halfTop),
+				nearest: Math.round(nearest),
+			});
 			// Double-rAF: let the resized track settle before re-pinning (raiseSoon's idiom).
 			cancelAnimationFrame(raf1);
 			cancelAnimationFrame(raf2);
@@ -97,6 +106,11 @@
 				rail.scrollTop = nearest;
 				raf2 = requestAnimationFrame(() => {
 					rail.scrollTop = nearest;
+					diagnostics.record('resettle-post', {
+						wrote: Math.round(nearest),
+						got: Math.round(rail.scrollTop),
+						honored: Math.abs(rail.scrollTop - nearest) < 2,
+					});
 				});
 			});
 		};

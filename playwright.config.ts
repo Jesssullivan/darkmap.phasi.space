@@ -33,6 +33,22 @@ export default defineConfig({
 						name: 'webkit',
 						use: { ...devices['Desktop Safari'] },
 					},
+					// iPhone SE (375×667) WebKit — the engine + the tightest mobile geometry
+					// where the dock/twilight/AQ bugs reproduce (iOS Safari/Chrome are both
+					// WebKit). hasTouch/isMobile come from the device descriptor, so the
+					// *-webkit.spec.ts dock-gesture assertions exercise real touch scrolling.
+					{
+						name: 'webkit-mobile',
+						use: { ...devices['iPhone SE'] },
+					},
+					// Same iPhone-SE geometry on Chromium — the control for the observe-first
+					// webkit-vs-chromium DIFFERENTIAL (a symptom is "a WebKit bug" only if it
+					// fails here-passes / there-fails). browserName overrides the device's
+					// webkit default while keeping the viewport + touch.
+					{
+						name: 'chromium-mobile',
+						use: { ...devices['iPhone SE'], browserName: 'chromium' as const },
+					},
 				]
 			: []),
 	],
