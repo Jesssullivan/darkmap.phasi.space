@@ -24,6 +24,14 @@ async function pinPoint(page: import('@playwright/test').Page): Promise<void> {
 	await page.waitForTimeout(1500); // auto-raise to HALF + readout lands
 }
 
+// Force the iPhone-SE geometry on EVERY project running this file — including the
+// desktop `webkit` project, which is the one place a REAL mouse drag reaches the
+// WebKit engine (Playwright does not deliver page.mouse input on emulated-touch
+// WebKit, i.e. the webkit-mobile project). Engine truth = webkit@SE-viewport;
+// touch-emulated handler truth = A5's dispatched pointer events; real-touch truth
+// = the ?diag=1 device pass.
+test.use({ viewport: { width: 375, height: 667 } });
+
 const RAIL_METRICS = () => {
 	const rail = document.querySelector('.dock-rail') as HTMLElement | null;
 	const half = document.querySelector('.dock-snap-half') as HTMLElement | null;
@@ -121,5 +129,103 @@ test.describe('Bug A — dock detents on WebKit (observe-first)', () => {
 		// Red here = the re-pin primitive is ignored on this engine (the crux of cause #1).
 		expect(afterProgrammatic, 'programmatic scrollTop→FULL returns a number').not.toBeNull();
 		expect(afterProgrammatic!, 'rail.scrollTop write must land near FULL').toBeGreaterThan((before!.maxTop ?? 0) * 0.5);
+	});
+
+	test('A4: dragging the grip moves the sheet between detents (the fix gate)', async ({
+		page,
+		browserName,
+		hasTouch,
+	}, testInfo) => {
+		test.skip(
+			browserName === 'webkit' && hasTouch,
+			'Playwright does not deliver page.mouse input on emulated-touch WebKit — real-mouse engine coverage runs on the desktop webkit project at the SE viewport (test.use above); the touch handler path is A5; real-touch is the ?diag=1 device pass',
+		);
+		await pinPoint(page); // auto-raises to HALF
+		const start = await page.evaluate(RAIL_METRICS);
+		expect(start, 'rail present').not.toBeNull();
+		console.log(`[A4 ${testInfo.project.name}] start:`, JSON.stringify(start));
+
+		const grip = page.locator('.dock-grip');
+		await expect(grip, 'the grip is a real focusable control now').toBeVisible();
+
+		// Drag UP (HALF → FULL): pointer events drive rail.scrollTop directly — the
+		// engine-deterministic path (no scroll-chaining, no wheel).
+		const b1 = await grip.boundingBox();
+		expect(b1).not.toBeNull();
+		await page.mouse.move(b1!.x + b1!.width / 2, b1!.y + b1!.height / 2);
+		await page.mouse.down();
+		for (let i = 1; i <= 8; i++) await page.mouse.move(b1!.x + b1!.width / 2, b1!.y + b1!.height / 2 - i * 20);
+		await page.mouse.up();
+		await page.waitForTimeout(400);
+		const afterUp = await page.evaluate(RAIL_METRICS);
+		console.log(`[A4 ${testInfo.project.name}] after drag-up:`, JSON.stringify(afterUp));
+		expect(
+			Math.abs((afterUp!.scrollTop ?? 0) - (afterUp!.maxTop ?? -999)),
+			'a deliberate upward grip-drag lands the sheet on FULL',
+		).toBeLessThanOrEqual(8);
+
+		// Drag DOWN (FULL → HALF): direction bias steps one detent back.
+		const b2 = await grip.boundingBox();
+		expect(b2).not.toBeNull();
+		await page.mouse.move(b2!.x + b2!.width / 2, b2!.y + b2!.height / 2);
+		await page.mouse.down();
+		for (let i = 1; i <= 8; i++) await page.mouse.move(b2!.x + b2!.width / 2, b2!.y + b2!.height / 2 + i * 20);
+		await page.mouse.up();
+		await page.waitForTimeout(400);
+		const afterDown = await page.evaluate(RAIL_METRICS);
+		console.log(`[A4 ${testInfo.project.name}] after drag-down:`, JSON.stringify(afterDown));
+		expect(
+			Math.abs((afterDown!.scrollTop ?? 0) - (afterDown!.halfOffsetTop ?? -999)),
+			'a downward grip-drag steps back to HALF',
+		).toBeLessThanOrEqual(8);
+
+		// Keyboard a11y: ArrowUp from HALF steps to FULL.
+		await grip.focus();
+		await page.keyboard.press('ArrowUp');
+		await page.waitForTimeout(250);
+		const afterKey = await page.evaluate(RAIL_METRICS);
+		console.log(`[A4 ${testInfo.project.name}] after ArrowUp:`, JSON.stringify(afterKey));
+		expect(
+			Math.abs((afterKey!.scrollTop ?? 0) - (afterKey!.maxTop ?? -999)),
+			'ArrowUp on the focused grip steps to FULL',
+		).toBeLessThanOrEqual(8);
+	});
+
+	test('A5: the grip handler responds to a pointer-event sequence (touch-emulated engines)', async ({
+		page,
+	}, testInfo) => {
+		// Playwright cannot synthesize real mouse/touch drags on emulated-touch WebKit,
+		// so prove the HANDLER PATH directly: dispatch the pointerdown/move/up sequence
+		// the device's touch→pointer pipeline produces. (Real input: A4 on webkit/
+		// chromium-mobile; real touch: the ?diag=1 device pass.)
+		await pinPoint(page); // HALF
+		const moved = await page.evaluate(() => {
+			const grip = document.querySelector('.dock-grip') as HTMLElement | null;
+			const rail = document.querySelector('.dock-rail') as HTMLElement | null;
+			if (!grip || !rail) return null;
+			const r = grip.getBoundingClientRect();
+			const x = r.x + r.width / 2;
+			const y0 = r.y + r.height / 2;
+			const opts = (y: number): PointerEventInit => ({
+				bubbles: true,
+				cancelable: true,
+				pointerId: 7,
+				pointerType: 'touch',
+				isPrimary: true,
+				clientX: x,
+				clientY: y,
+			});
+			const before = Math.round(rail.scrollTop);
+			grip.dispatchEvent(new PointerEvent('pointerdown', opts(y0)));
+			for (let i = 1; i <= 8; i++) grip.dispatchEvent(new PointerEvent('pointermove', opts(y0 - i * 20)));
+			grip.dispatchEvent(new PointerEvent('pointerup', opts(y0 - 160)));
+			return { before, after: Math.round(rail.scrollTop), maxTop: Math.round(rail.scrollHeight - rail.clientHeight) };
+		});
+		console.log(`[A5 ${testInfo.project.name}] dispatched-drag:`, JSON.stringify(moved));
+		expect(moved, 'grip + rail present').not.toBeNull();
+		expect(
+			Math.abs(moved!.after - moved!.maxTop),
+			'the dispatched pointer drag lands the sheet on FULL (handler path works under this engine build)',
+		).toBeLessThanOrEqual(8);
 	});
 });
