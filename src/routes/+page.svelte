@@ -2796,6 +2796,18 @@
 			/>
 		{/snippet}
 		{#snippet readoutView()}
+			<!-- C (AQ in-view): the in-view AQ gauge, docked at the TOP of the Readout view on
+			     mobile (its WIDE .left-dock home is display:none <1024px). It lives in the
+			     scrollable body — never grows the sheet header, so it can't overflow the 88dvh
+			     sheet into the gantt/transmission (the header placement did). Hidden when the
+			     Tools view is shown, so it never coexists with the transmission sheet. -->
+			<InstrumentColumn
+				compact
+				lens={lensStore.lens}
+				stations={instrumentStations}
+				location={viewCenter}
+				time={ephemerisTime}
+			/>
 			{@render readoutBlock()}
 		{/snippet}
 		{#snippet toolsView()}
