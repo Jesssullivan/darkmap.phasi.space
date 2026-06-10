@@ -70,6 +70,7 @@
 	import TransmissionSheet from '$lib/components/TransmissionSheet.svelte';
 	import AqModal from '$lib/components/AqModal.svelte';
 	import CommandPalette, { type PaletteCommand } from '$lib/components/CommandPalette.svelte';
+	import MobileViewportDiagnostics from '$lib/components/MobileViewportDiagnostics.svelte';
 	import type { AqSeed } from '$lib/components/AqDashboard.svelte';
 
 	// Inline GeoJSON shape — no @types/geojson in deps, and we only need the
@@ -2812,6 +2813,11 @@
 
 <!-- W5e — Cmd/Ctrl-K command palette (focus-trapped transient surface). -->
 <CommandPalette open={paletteOpen} commands={paletteCommands} onClose={() => (paletteOpen = false)} />
+
+<!-- Mobile/browser-permutation diagnostics — self-gated by ?diag=1 (zero render/listeners
+     when off). Device-in-the-loop capture for the iOS URL-bar dock-stranding (A1) that
+     headless WebKit can't reproduce. -->
+<MobileViewportDiagnostics />
 
 {#snippet fieldFloats()}
 	<!-- W3 moved the deep tools (TransmissionSheet / PassPlanPanel) OUT of here into
