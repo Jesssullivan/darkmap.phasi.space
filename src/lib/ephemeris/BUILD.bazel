@@ -72,7 +72,7 @@ vitest.vitest_test(
         # NOTE: vitest runs ONLY the files named here — there is no glob, so a new
         # *.test.ts in this package must be added to this list or it goes dark in
         # CI (it still runs under `just test-local`, masking the gap). Keep this in
-        # sync with `ls src/lib/ephemeris/*.test.ts` (9 files as of 2026-06-06).
+        # sync with `ls src/lib/ephemeris/*.test.ts` (10 files as of 2026-06-10).
         "src/lib/ephemeris/EphemerisClient.test.ts",
         "src/lib/ephemeris/viewportSummaryCache.test.ts",
         "src/lib/ephemeris/viewportSummary.test.ts",
@@ -82,6 +82,7 @@ vitest.vitest_test(
         "src/lib/ephemeris/HorizonProvider.test.ts",
         "src/lib/ephemeris/pinEphemeris.test.ts",
         "src/lib/ephemeris/twilight-phases.test.ts",
+        "src/lib/ephemeris/time-helix.test.ts",
     ],
     log_level = "info",
     tags = [
