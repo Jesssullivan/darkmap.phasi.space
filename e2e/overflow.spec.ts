@@ -112,6 +112,11 @@ for (const bp of breakpoints.filter((bp) => bp.width <= 768)) {
 
 test('twilight rail supports pointer scrubbing', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
+	// The first-visit tour card overlays the dock rail at this viewport (the
+	// helix strip is taller than the old gantt bar, so the rail's center line
+	// sits under the card); seed the tour-seen flag so the drag reaches the
+	// slider (the aq-dashboard spec's idiom — clicking Skip races tour mount).
+	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
 	await page.goto('/');
 	await page.waitForLoadState('networkidle');
 	const bar = page.locator('.gantt .bar');
