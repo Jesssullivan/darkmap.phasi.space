@@ -96,7 +96,7 @@
 		X,
 	} from '@lucide/svelte';
 	import Tour, { type TourStep } from '$lib/components/Tour.svelte';
-	import EphemerisGantt from '$lib/components/EphemerisGantt.svelte';
+	import TimeHelix from '$lib/components/TimeHelix.svelte';
 	import GeocoderSearch from '$lib/components/GeocoderSearch.svelte';
 	import LayerRail, { type LayerState } from '$lib/components/LayerRail.svelte';
 	import LensSwitcher from '$lib/components/LensSwitcher.svelte';
@@ -3080,7 +3080,7 @@
 
 {#snippet ganttBlock()}
 	{#if ephemerisOpen}
-		<EphemerisGantt
+		<TimeHelix
 			location={viewCenter}
 			time={ephemerisTime}
 			bounds={viewBounds}
