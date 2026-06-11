@@ -23,7 +23,7 @@
 			persona: 'Astro instrumentation & astrophotography',
 			question: 'When and where is tonight dark, clear, and steady enough for my target?',
 			tools:
-				'VIIRS + Falchi radiance → Bortle / SQM · ephemeris & twilight gantt · SkyCompass · DEM horizon · T(λ) extinction',
+				'VIIRS + Falchi radiance → Bortle / SQM · ephemeris & time helix · SkyCompass · DEM horizon · T(λ) extinction',
 			cta: 'Open the Sky lens',
 		},
 		{
@@ -121,8 +121,8 @@
 		</p>
 		<ul class="mb-3 list-disc space-y-1 pl-6">
 			<li>
-				<strong>◐ Sky</strong> — astronomers &amp; astrophotographers: VIIRS + Falchi radiance → Bortle / SQM, the twilight
-				gantt + sky compass, and the real DEM horizon for a dark-sky site.
+				<strong>◐ Sky</strong> — astronomers &amp; astrophotographers: VIIRS + Falchi radiance → Bortle / SQM, the time helix
+				+ sky compass, and the real DEM horizon for a dark-sky site.
 			</li>
 			<li>
 				<strong>☁ Air</strong> — weather, pollen &amp; smog analysts: GIBS cloud / aerosol / water-vapor overlays plus a modeled
@@ -164,8 +164,8 @@
 				readout (with Bortle / class mapping)
 			</li>
 			<li>
-				<strong>Per-view ephemeris</strong> — sun + moon position, twilight gantt (astro / nautical / civil), sky compass
-				with sun trajectory arc + moon position + atmospheric airmass
+				<strong>Per-view ephemeris</strong> — sun + moon position, the now-centered time helix (astro / nautical / civil twilight),
+				sky compass with sun trajectory arc + moon position + atmospheric airmass
 			</li>
 			<li>
 				<strong>Real-terrain horizon</strong> — 36-ray, 10-distance raycast over AWS Mapzen Terrarium tiles; sun / moon altitude

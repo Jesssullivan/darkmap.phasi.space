@@ -1,7 +1,8 @@
 /**
  * Viewport sampling helpers.
  *
- * The EphemerisGantt's per-event range pill samples ephemeris at a
+ * The twilight viewport-summary (born as the EphemerisGantt's range
+ * pill; its TimeHelix successor defers the pill UI) samples ephemeris at a
  * 4×4 grid of points inside the visible viewport. The math is in a
  * pure helper here so it can be unit-tested independently from the
  * Svelte component — which matters because the bug it fixes (silent
@@ -28,7 +29,7 @@ const canonicalizeLon = (lon: number): number => ((((lon + 180) % 360) + 360) % 
  * Returns the empty array for degenerate viewports (zero or negative
  * span on either axis).
  *
- * Caller picks N (the EphemerisGantt uses 4 for ephemeris range
+ * Caller picks N (the viewport summary uses 4 for ephemeris range
  * sampling — 16 calls is cheap and covers the variability that
  * matters for state-scale viewports).
  */

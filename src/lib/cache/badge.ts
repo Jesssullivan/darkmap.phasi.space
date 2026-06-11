@@ -3,7 +3,7 @@
  *
  * Field users need to glance at the map and tell whether a given
  * overlay is showing fresh data, cached data, stale data, or nothing
- * at all. The bottom rail in `EphemerisGantt.svelte` already grew a
+ * at all. The old `EphemerisGantt.svelte` bottom rail grew a
  * one-off `RangeBadge` for the twilight viewport-summary; this module
  * generalizes the same idea into a reusable contract so every overlay
  * surface — LayerRail health pills, future per-overlay chips, the
@@ -47,7 +47,8 @@ export interface CacheBadgeInputs {
 
 /**
  * Human "… ago" string for a stored/computed timestamp. Exported so the
- * EphemerisGantt viewport-summary pill (which this module generalizes) shares
+ * twilight viewport-summary pill (the old EphemerisGantt surface this
+ * module generalizes; deferred in TimeHelix V1) shares
  * one age formatter — including the >24h day rollover — instead of its own copy.
  */
 export const fmtAge = (storedAtMs: number, nowMs: number): string => {
@@ -136,8 +137,9 @@ export const buildCacheBadge = (inputs: CacheBadgeInputs, nowMs: number = Date.n
 };
 
 /**
- * Map a `CacheBadgeTone` to the `.cache-pill` modifier classes used by
- * `EphemerisGantt.svelte`. Exported so a Svelte component can apply
+ * Map a `CacheBadgeTone` to the `.cache-pill` modifier classes the old
+ * `EphemerisGantt.svelte` wore (no consumer while TimeHelix V1 defers the
+ * cache pill). Exported so a Svelte component can apply
  * the right tonal class without re-typing the union.
  */
 export const cachePillToneClass = (tone: CacheBadgeTone): string => `cache-pill-${tone}`;

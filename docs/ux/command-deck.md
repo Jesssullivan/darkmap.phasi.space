@@ -66,7 +66,7 @@ never occluded, at every breakpoint.
   lead value** → support sections (full weight) → "More — N sections ▾"
   (collapsed-but-obvious, full contrast) → TOOLS. Deep tools open **inside this
   column** (master-detail) or shrink the stage — never as a `bottom:0 z12` sheet.
-- **DOCK** (bottom, full width): the twilight gantt as its **own reserved row** at
+- **DOCK** (bottom, full width): the time helix (the twilight strip — `TimeHelix.svelte`, née the twilight gantt; the row keeps its `.gantt` smoke contract) as its **own reserved row** at
   every breakpoint — so "X floats over the twilight strip" is structurally
   impossible. Deletes the ~120 lines of `--field-panel-*` math + `!important`
   overrides + the portrait clearance special-case.
@@ -110,7 +110,7 @@ pre-fills the deep tool with `{lat,lon,et,lens,layers,boresight,horizon}` with z
 re-entry. Hover-to-**peek** (ephemeral), click-to-**pin** (commit + enable CTAs);
 value + its one CTA share one large target (Fitts).
 
-- ◐ **Sky** "dark window here" — **≤1 click** (hover=0): inspector leads Bortle + tonight's dark-window inline; full gantt always in the DOCK.
+- ◐ **Sky** "dark window here" — **≤1 click** (hover=0): inspector leads Bortle + tonight's dark-window inline; the full time helix always in the DOCK.
 - ☁ **Air** "AQI here" — **≤1 click**: smog field present on Air-lens entry; inspector leads driving pollutant + NowCast-labeled AQI; AQ summary docked in-inspector.
 - 📡 **Links** "link margin" — **≤2 clicks**: click → path-AOD→T→dB line; "Design a link" → boresight + Tx/Rx + loss breakdown expand *into* the inspector.
 - 🛰 **Orbit** "next pass" — **≤2 clicks**: next DEM-gated pass on pin regardless of lens; "Plan a pass" → polar az/el track + pass list expand in-inspector.

@@ -3,7 +3,7 @@
  *
  * Flat-horizon sunrise = the instant the sun's geocentric altitude
  * crosses 0°. That's what astronomy-engine's `SearchAltitude` /
- * `SearchRiseSet` return — and it's what the EphemerisGantt shows
+ * `SearchRiseSet` return — and it's what the TimeHelix shows
  * today. For dark-sky / spectroscopy field work the answer that
  * actually matters is the instant the sun crosses the *local*
  * horizon at its azimuth, which is what a HorizonPolygon encodes.

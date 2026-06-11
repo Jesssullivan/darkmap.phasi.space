@@ -2,7 +2,8 @@
 	/**
 	 * MapToolbar — vertical stack of map-overlay toggles in the
 	 * bottom-right corner. Replaces the two standalone time / sun-moon
-	 * buttons that fought the EphemerisGantt + TimeDock for the same space.
+	 * buttons that fought the twilight strip (now TimeHelix) + TimeDock for
+	 * the same space.
 	 *
 	 * The toolbar publishes its width via the `--toolbar-w-rem` CSS
 	 * custom property on `:host`. The gantt + dock read that variable

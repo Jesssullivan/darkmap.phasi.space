@@ -441,7 +441,7 @@
 			{:else if moonHorizonDelta}
 				<span class="horizon">h {fmtAlt(moonHorizonDelta.horizonAlt)}</span>
 			{/if}
-			<!-- Moon phase/illumination is shown once, in the EphemerisGantt readout
+			<!-- Moon phase/illumination is shown once, in the TimeHelix moon chip
 			     rendered alongside this compass; the compass row keeps the
 			     position-specific alt/az/horizon and omits the duplicate phase. -->
 		</div>
