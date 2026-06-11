@@ -43,7 +43,7 @@
 		"satellite.js": "^5.0.0"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.60.0",
+		"@playwright/test": "1.59.1",
 		"@skeletonlabs/skeleton": "4.15.2",
 		"@skeletonlabs/skeleton-svelte": "4.15.2",
 		"@sveltejs/adapter-node": "^5.5.4",

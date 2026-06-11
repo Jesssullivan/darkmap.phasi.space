@@ -556,6 +556,8 @@ js_test(
     ],
     entry_point = "scripts/bazel/run-playwright-webkit-shell-smoke.mjs",
     tags = [
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
         "local-server-route-smoke",
         "manual",
         "playwright",
@@ -576,6 +578,8 @@ js_test(
     ],
     entry_point = "scripts/bazel/run-playwright-webkit-mobile-hud-smoke.mjs",
     tags = [
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
         "local-server-route-smoke",
         "manual",
         "playwright",
@@ -589,6 +593,8 @@ js_test(
 test_suite(
     name = "webkit_smoke_suite",
     tags = [
+        "flywheel-eligible",
+        "gloriousflywheel-rbe-candidate",
         "local-server-route-smoke",
         "manual",
         "playwright",
