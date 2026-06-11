@@ -29,8 +29,8 @@ export interface PhaseDefinition {
 
 /**
  * Canonical phase table. Colors mirror the Photographer's Ephemeris
- * palette previously inlined in `EphemerisGantt.svelte` so the visual
- * appearance does not change.
+ * palette inlined in the old `EphemerisGantt.svelte` (the TimeHelix ribbon
+ * consumes it now) so the visual appearance does not change.
  */
 export const PHASE_DEFINITIONS: Readonly<Record<PhaseName, PhaseDefinition>> = {
 	night: {

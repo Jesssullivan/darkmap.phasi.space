@@ -267,7 +267,7 @@
 			{
 				anchor: '[data-tour="toolbar"]',
 				title: 'Twilight & ephemeris',
-				body: 'Open the twilight gantt for sun/moon timing and the sky compass — plan the session around the dark hours.',
+				body: 'Open the time helix for sun/moon timing and the sky compass — now sits at the center; drag the ribbon to plan the session around the dark hours.',
 			},
 		],
 		// Air (weather/smog): atmosphere overlays + PM2.5 field, NowCast vs 24-h, AQ tools.
@@ -436,7 +436,7 @@
 		{
 			id: 'tool-twilight',
 			label: 'Toggle Twilight strip',
-			keywords: 'sun moon timing dark window ephemeris gantt',
+			keywords: 'sun moon timing dark window ephemeris gantt time helix',
 			run: () => (ephemerisOpen = !ephemerisOpen),
 		},
 		{
@@ -2759,7 +2759,7 @@
 		{/if}
 	</aside>
 
-	<!-- DOCK region: the twilight gantt as its OWN reserved bottom row at WIDE — so
+	<!-- DOCK region: the time helix as its OWN reserved bottom row at WIDE — so
 	     "X floats over the twilight strip" is structurally impossible. ≤1023px
 	     display:contents → the gantt keeps its current fixed bottom-strip layout.
 	     W4c — at COMPACT-tall the gantt is the dock sheet's thin top row instead. -->
@@ -3311,7 +3311,7 @@
 		}
 
 		/* De-fix the region children at MEDIUM+WIDE: the lens chips + geocoder
-		   (HEADER), the PointReadout (INSPECTOR), and the twilight gantt (DOCK) drop
+		   (HEADER), the PointReadout (INSPECTOR), and the time helix (DOCK) drop
 		   their own position:fixed/inset/z-index and flow into their grid cells. Their
 		   own <640px float positioning is untouched (the COMPACT fallback). The stage
 		   overlays (toolbar, sky, sheets) stay fixed at COMPACT; here they clip to the

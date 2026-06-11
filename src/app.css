@@ -88,12 +88,15 @@ html {
 	html {
 		--field-bottom-reserve: 8.75rem;
 		--map-toolbar-inset-rem: 5rem;
-		/* The mobile twilight gantt is ~200px tall — taller than --field-bottom-reserve
-		   (8.75rem ≈ 140px), so a tall readout-only state would dip ~60px into it
-		   (TIN-1810). The readout-only portrait rule clears the gantt by anchoring its
-		   bottom at this reserve instead; the gantt/attribution/toolbar keep
-		   --field-bottom-reserve. Tuned against real-font render (the GF cell is
-		   fontless so the overlap never shows in CI). */
+		/* TIN-1810 (gantt era): the old mobile twilight gantt was ~200px tall —
+		   taller than --field-bottom-reserve (8.75rem ≈ 140px) — so a tall
+		   readout-only state dipped ~60px into it. The readout-only portrait rule
+		   clears the strip by anchoring its bottom at this reserve instead; the
+		   strip/attribution/toolbar keep --field-bottom-reserve. The TimeHelix
+		   strip is ~100px (comfortably inside the reserve) but the rule stays —
+		   it is the structural guarantee, not a height tweak. Tuned against
+		   real-font render (the GF cell is fontless so the overlap never shows
+		   in CI). */
 		--gantt-reserve-rem: 13rem;
 	}
 }
@@ -406,7 +409,7 @@ pre.shiki span {
    owns layout. Five named, non-overlapping regions —
    'header header header' / 'rail stage inspector' / 'dock dock dock',
    tracks [20rem][1fr][22rem] — so overlap is impossible by construction: the
-   map (grid-area:stage) + the twilight gantt (its own DOCK row) can only be
+   map (grid-area:stage) + the time helix (its own DOCK row) can only be
    SHRUNK, never occluded. The old z4→z13 ladder + the `.field-hud` scrim are
    deleted; the surfaces flow into grid cells. The only remaining fixed/absolute
    overlays clip to the STAGE cell (toolbar, sky compass, deep-tool sheets,
@@ -420,7 +423,7 @@ pre.shiki span {
      ───────  ───────────────────  ─────────────────────────────
        5      attribution          bottom-left
        6      SkyCompass           top-right (hidden ≤560px)
-       6      EphemerisGantt strip bottom, full width (minus toolbar inset)
+       6      TimeHelix strip     bottom, full width (minus toolbar inset)
        8      MapToolbar           bottom-right
        8      MapErrorToast        bottom-left
        9      LayerRail backdrop   full (mobile drawer only)

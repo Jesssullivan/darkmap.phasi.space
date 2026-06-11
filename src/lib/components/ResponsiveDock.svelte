@@ -229,7 +229,7 @@
      with PEEK / HALF / FULL detents (CSS scroll-snap). The map de-fixes into the
      stage behind it (a map strip is ALWAYS visible at the top — FULL ≈ 88vh, never
      100%). A [Layers · Readout · Tools] segmented control SWAPS the single sheet's
-     content; switching never spawns a 2nd panel. The twilight gantt is a thin
+     content; switching never spawns a 2nd panel. The time helix is a thin
      always-present row ABOVE the sheet peek at every detent. Marked
      .responsive-dock + data-responsive-dock so W4a's tolerant HUD-overlap assertion
      keys off it. -->
@@ -264,7 +264,7 @@
 				<div class="dock-lens-row">{@render lensStrip()}</div>
 			{/if}
 
-			<!-- The twilight gantt: its OWN thin row, always present above everything
+			<!-- The time helix: its OWN thin row, always present above everything
 			     else in the sheet, at every detent. -->
 			{#if ganttRow}
 				<div class="dock-gantt-row">{@render ganttRow()}</div>
@@ -437,7 +437,7 @@
 	}
 
 	/* The gantt's OWN thin row, pinned above the tabs + body — always present. The
-	   EphemerisGantt's COMPACT default is position:fixed at the viewport bottom; here
+	   TimeHelix's COMPACT default is position:fixed at the viewport bottom; here
 	   it must flow inside the sheet as a thin row, so de-float it (it keeps its
 	   .gantt class + aria-label — only positioning changes). */
 	.dock-gantt-row {
