@@ -84,23 +84,43 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Require GF dispatch token
+        id: token
         if: steps.request.outputs.should_run == 'true'
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           GF_REAPI_PROOF_DISPATCH_TOKEN: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${GF_REAPI_PROOF_DISPATCH_TOKEN}" ]; then
+            # Skip-green-until-armed: a pull_request that cannot see the dispatch
+            # secret (dependabot, or a fork) must not hard-block the PR. Surface a
+            # clear notice and soft-skip green; run the workflow_dispatch proof to
+            # actually prove. Only a manual dispatch hard-fails on a missing token.
+            if [ "${EVENT_NAME}" = "pull_request" ]; then
+              echo "armed=false" >> "${GITHUB_OUTPUT}"
+              echo "::notice::Browser RBE proof lane is not armed for this PR (GF_REAPI_PROOF_DISPATCH_TOKEN is unavailable in this context) — soft-skipping green. Run the workflow_dispatch proof to prove."
+              exit 0
+            fi
             {
               echo "::error::GF_REAPI_PROOF_DISPATCH_TOKEN is required to dispatch and verify the GloriousFlywheel proof"
               echo "Configure a repo secret with Actions read/write access to tinyland-inc/GloriousFlywheel, then rerun this workflow."
             } >&2
             exit 1
           fi
+          echo "armed=true" >> "${GITHUB_OUTPUT}"
 
       - name: Dispatch and await GloriousFlywheel proof
         id: proof
-        if: steps.request.outputs.should_run == 'true'
+        if: steps.request.outputs.should_run == 'true' && steps.token.outputs.armed == 'true'
+        # Advisory on pull_request, authoritative on workflow_dispatch. The proof
+        # is pinned to a specific gf-reapi-cell image digest that must match the
+        # live gf-rbe fleet; when the fleet is promoted ahead of this repo's
+        # GF_REAPI_CELL_IMAGE_DIGEST pin the proof legitimately refuses to run.
+        # That must not hard-block every PR on an independently-advancing shared
+        # fleet, so a PR proof failure is non-blocking (green) while a manual
+        # workflow_dispatch proof stays authoritative and hard-fails on any error.
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: tinyland-inc/ci-templates/.github/actions/flywheel-reapi-proof@v2
         with:
           image_digest: ${{ env.GF_REAPI_CELL_IMAGE_DIGEST }}
@@ -114,7 +134,11 @@ jobs:
           dispatch_token: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
 
       - name: Verify GF proof artifact
-        if: steps.request.outputs.should_run == 'true'
+        if: steps.request.outputs.should_run == 'true' && steps.token.outputs.armed == 'true'
+        # Advisory on pull_request, authoritative on workflow_dispatch (see the
+        # dispatch step). If the dispatched proof did not pass, its evidence is
+        # absent; on a PR that is non-blocking, on a manual dispatch it hard-fails.
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
@@ -195,4 +219,25 @@ jobs:
             echo "To make this a live PR signal, configure:"
             echo "- repo variable \`GF_REAPI_PROOF_ENABLED=true\`"
             echo "- repo secret \`GF_REAPI_PROOF_DISPATCH_TOKEN\` with permission to dispatch and read tinyland-inc/GloriousFlywheel Actions runs"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Record PR-advisory proof result
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "### Browser RBE proof is advisory on pull_request"
+            echo
+            echo "This lane is **non-blocking on PRs** and **authoritative on \`workflow_dispatch\`**."
+            echo "A red proof step on a PR does not fail the check: the proof is pinned to a"
+            echo "specific gf-reapi-cell image digest that must match the live gf-rbe fleet, and"
+            echo "the shared fleet advances independently of this repo, so a per-PR hard gate on"
+            echo "an exact digest match cannot stay green on its own."
+            echo
+            echo "To prove this change for real:"
+            echo "- run the proof via \`workflow_dispatch\` (Actions -> Browser RBE proof -> Run workflow), or"
+            echo "- keep repo variable \`GF_REAPI_CELL_IMAGE_DIGEST\` in sync with the live gf-reapi-cell"
+            echo "  image digest so the armed PR proof can pass again."
           } >> "${GITHUB_STEP_SUMMARY}"
