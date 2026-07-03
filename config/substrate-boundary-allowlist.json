@@ -1,22 +1,22 @@
 {
-  "$comment": "TIN-2423 / ledger item 30: named-interface allowlist for the substrate-boundary validator. Every entry carries provenance (TIN-2398 guardrail #2). A blahaj-reach hit under an allowlisted path_prefix is a NAMED INTERFACE, not a bleed.",
-  "schema_version": 1,
-  "allowed": [
-    {
-      "path_prefix": "scripts/lane-dispatch.py",
-      "interface": "ADR-007 generic receiver dispatch: constructs + POSTs the `<spoke>-lane-env` repository_dispatch payload (docs/schemas/blahaj-dispatch.schema.json) to tinyland-inc/blahaj. This is the spoke-side half of the generic PR-env provisioning contract, invoked via `just lane-dispatch` / `just lane-reap` and by .github/workflows/lane-env.yml (ci-templates spoke-lane-env.yml@v2).",
-      "provenance": {
-        "decision": "ledger item 30 (generic deploy-machinery / dynamic-spoke deployment edge) + blahaj ADR-007 generic receiver contract",
-        "date": "2026-07-03"
-      }
-    },
-    {
-      "path_prefix": "tinyland.repo.json",
-      "interface": "Declared `gitops_receiver` manifest field naming tinyland-inc/blahaj as the repository_dispatch receiver, per the tinyland-repo-manifest schema and docs/CI-SCHEMA.md §4/§9 (the wire, not blahaj's implementation).",
-      "provenance": {
-        "decision": "ledger item 30 (generic deploy-machinery / dynamic-spoke deployment edge) + blahaj ADR-007 generic receiver contract",
-        "date": "2026-07-03"
-      }
-    }
-  ]
+	"$comment": "TIN-2423 / ledger item 30: named-interface allowlist for the substrate-boundary validator. Every entry carries provenance (TIN-2398 guardrail #2). A blahaj-reach hit under an allowlisted path_prefix is a NAMED INTERFACE, not a bleed.",
+	"schema_version": 1,
+	"allowed": [
+		{
+			"path_prefix": "scripts/lane-dispatch.py",
+			"interface": "ADR-007 generic receiver dispatch: constructs + POSTs the `<spoke>-lane-env` repository_dispatch payload (docs/schemas/blahaj-dispatch.schema.json) to tinyland-inc/blahaj. This is the spoke-side half of the generic PR-env provisioning contract, invoked via `just lane-dispatch` / `just lane-reap` and by .github/workflows/lane-env.yml (ci-templates spoke-lane-env.yml@v2).",
+			"provenance": {
+				"decision": "ledger item 30 (generic deploy-machinery / dynamic-spoke deployment edge) + blahaj ADR-007 generic receiver contract",
+				"date": "2026-07-03"
+			}
+		},
+		{
+			"path_prefix": "tinyland.repo.json",
+			"interface": "Declared `gitops_receiver` manifest field naming tinyland-inc/blahaj as the repository_dispatch receiver, per the tinyland-repo-manifest schema and docs/CI-SCHEMA.md §4/§9 (the wire, not blahaj's implementation).",
+			"provenance": {
+				"decision": "ledger item 30 (generic deploy-machinery / dynamic-spoke deployment edge) + blahaj ADR-007 generic receiver contract",
+				"date": "2026-07-03"
+			}
+		}
+	]
 }
