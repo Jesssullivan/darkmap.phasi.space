@@ -79,11 +79,17 @@ try {
 					...(browserPath ? { executablePath: browserPath } : {}),
 					headless: true,
 				})
-			: await chromium.launch({
-					executablePath: browserPath,
-					headless: true,
-					args: ['--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--no-sandbox', '--use-gl=swiftshader'],
-				});
+				: await chromium.launch({
+						executablePath: browserPath,
+						headless: true,
+						args: [
+							'--disable-dev-shm-usage',
+							'--enable-unsafe-swiftshader',
+							'--no-sandbox',
+							'--use-gl=angle',
+							'--use-angle=swiftshader',
+						],
+					});
 
 	for (const viewport of SMOKE_VIEWPORTS) {
 		const viewportLabel = `${viewport.width}x${viewport.height}`;
