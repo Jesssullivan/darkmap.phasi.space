@@ -154,6 +154,19 @@ else
   man "AGENTS.md cites the scaffold tag the repo conforms to (pre-D3 PR7 OK)"
 fi
 
+# 13. Substrate-boundary conformance (TIN-2423 / ledger item 30): code-surface
+# reach into the blahaj substrate must go through a named, provenance-carrying
+# interface (config/substrate-boundary-allowlist.json), not an ad-hoc bleed.
+if [[ -f scripts/validate-substrate-boundary.py ]]; then
+  if python3 scripts/validate-substrate-boundary.py >/dev/null 2>&1; then
+    ok "substrate-boundary: blahaj reach is allowlisted or absent (TIN-2423)"
+  else
+    no "substrate-boundary: un-allowlisted blahaj reach — run just substrate-boundary-check for details"
+  fi
+else
+  no "scripts/validate-substrate-boundary.py is missing"
+fi
+
 echo
 echo "summary: ${pass} pass, ${fail} fail, ${manual} manual"
 if (( fail > 0 )); then exit 1; fi

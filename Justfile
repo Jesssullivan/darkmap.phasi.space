@@ -403,6 +403,12 @@ lane-reap pr:
 conformance:
     cd {{ root }} && bash scripts/check-conformance.sh
 
+# Substrate-boundary conformance: blahaj code-reach must be a named,
+# provenance-carrying interface (config/substrate-boundary-allowlist.json),
+# not an ad-hoc bleed (TIN-2423 / ledger item 30).
+substrate-boundary-check:
+    cd {{ root }} && python3 scripts/validate-substrate-boundary.py
+
 # ─────────────────────────────────────────────
 # Flywheel (cache-first; executor opt-in; see docs/CI-SCHEMA.md §5)
 # Env knob: FLYWHEEL=local|cache|executor|auto (default auto)
