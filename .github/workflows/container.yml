@@ -106,7 +106,7 @@ jobs:
         # (the Staging deploy workflow_run is gated on this job's success).
         continue-on-error: true
         if: github.event_name != 'pull_request' && !github.event.repository.private
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
