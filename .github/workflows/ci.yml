@@ -47,6 +47,7 @@ jobs:
           command: |
             nix develop --command just setup
             nix develop --command just check
+            nix develop --command just substrate-boundary-check
             nix develop --command just build
           push-cache: 'false'
 
