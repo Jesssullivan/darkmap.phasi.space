@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -39,7 +39,7 @@ jobs:
     env:
       GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
         with:
@@ -58,7 +58,7 @@ jobs:
     env:
       GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
         with:
