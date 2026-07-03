@@ -1,6 +1,7 @@
 {
 	"$schema": "./docs/schemas/tinyland-repo-manifest.schema.json",
 	"schema_version": 1,
+	"scaffold_tag": "v0.1.0",
 	"repo": {
 		"name": "darkmap.phasi.space",
 		"github": "Jesssullivan/darkmap.phasi.space",

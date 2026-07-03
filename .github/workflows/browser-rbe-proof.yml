@@ -111,6 +111,8 @@ jobs:
           consumer_checkout_authority: github-app
           force_execution: 'true'
           wait: 'true'
+          retry_cancelled_before_start: 'true'
+          max_attempts: '4'
           dispatch_token: ${{ secrets.GF_REAPI_PROOF_DISPATCH_TOKEN }}
 
       - name: Verify GF proof artifact

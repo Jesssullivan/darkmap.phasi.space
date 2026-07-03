@@ -82,7 +82,13 @@ try {
 			: await chromium.launch({
 					executablePath: browserPath,
 					headless: true,
-					args: ['--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--no-sandbox', '--use-gl=swiftshader'],
+					args: [
+						'--disable-dev-shm-usage',
+						'--enable-unsafe-swiftshader',
+						'--no-sandbox',
+						'--use-gl=angle',
+						'--use-angle=swiftshader',
+					],
 				});
 
 	for (const viewport of SMOKE_VIEWPORTS) {
@@ -875,10 +881,15 @@ async function runClickBudgetSmoke(page) {
 	if (!/Bortle/i.test(skyText)) fail(`Sky answer (Bortle) not reachable in ≤1 click: "${skyText}"`);
 
 	// ── Air ≤1 ────────────────────────────────────────────────────────────────
-	// Same pin (no extra map click). AQI is data-gated, not lens-gated.
+	// Same pin (no extra map click). AQI is data-gated, not lens-gated: entering
+	// Air nudges the smog/OpenAQ layer on asynchronously, so wait for the numeric
+	// answer rather than reading the placeholder.
 	await setLens('2', 'Air');
 	const aqiVal = page.locator('.aqi-value').first();
 	await aqiVal.waitFor({ state: 'attached', timeout: 20_000 });
+	await page.waitForFunction(() => /\d/.test(document.querySelector('.aqi-value')?.textContent ?? ''), null, {
+		timeout: 20_000,
+	});
 	const airText = ((await aqiVal.textContent()) ?? '').trim();
 	if (!/\d/.test(airText)) fail(`Air answer (AQI) not reachable in ≤1 click: "${airText}"`);
 
