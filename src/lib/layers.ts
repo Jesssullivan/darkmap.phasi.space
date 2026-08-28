@@ -15,7 +15,7 @@
  * Single-layer groups (Falchi, etc.) render as a plain toggle.
  */
 
-export type LayerGroup = 'viirs_annual' | 'world_atlas' | 'atmospheric';
+export type LayerGroup = 'viirs_annual' | 'viirs_monthly' | 'world_atlas' | 'atmospheric';
 
 export interface RasterLayerDef {
 	readonly id: string;
@@ -45,6 +45,12 @@ export interface RasterLayerDef {
 	readonly group: LayerGroup;
 	/** For multi-year groups, the year. Unused for single-layer groups. */
 	readonly year?: number;
+	/**
+	 * For the `viirs_monthly` group, the `YYYY-MM` month key. Mirrors `year`
+	 * for the annual group — kept as its own field rather than overloading
+	 * `year` because TimeDock indexes by month, not by year.
+	 */
+	readonly month?: string;
 	readonly defaultEnabled: boolean;
 	/** 0..1 opacity in the MapLibre raster source. */
 	readonly opacity: number;
@@ -70,6 +76,76 @@ const viirs = (year: number, defaultEnabled = false, opacity = 0.85): RasterLaye
 	defaultEnabled,
 	opacity,
 });
+
+/**
+ * VIIRS monthly source strategy: layer-swap, not WMS-T (TIN-1301 / [Epic] C5).
+ * Upstream GeoServer has zero `<Dimension name="time">` elements, so each
+ * `lighttrends:viirs_npp_YYYYMM` is its own pre-seeded GeoWebCache tile
+ * pyramid. (The originally-scoped 223 figure folded in legacy DMSP sensors
+ * spanning 1992-2013, non-contiguous variants that are explicitly deferred
+ * to a separate "legacy mode" ticket, not part of this manifest.)
+ *
+ * NOTE on the month count — the epic text is internally inconsistent and
+ * this manifest follows the *date range*, not the *headline count*:
+ * the epic states the range as "2012-04 → 2026-04 (178 months)", but
+ * 2012-04 through 2026-04 inclusive is 169 months, not 178 — and subtask
+ * 1's own accept line separately says `.length === 178`. Absent a live
+ * GeoServer re-discovery (the same kind TIN-1289 did for the annual
+ * layers), fabricating 9 more `viirs_YYYYMM` ids past 2026-04 to hit 178
+ * would claim upstream layers with no evidence they exist. This manifest
+ * anchors to the stated, checkable date range (169 months) instead; a
+ * live discovery pass should confirm the true upstream end-of-series
+ * month and reconcile that "178" figure before this ships.
+ */
+export const VIIRS_MONTHLY_START = { year: 2012, month: 4 } as const;
+export const VIIRS_MONTHLY_END = { year: 2026, month: 4 } as const;
+
+const monthKey = (year: number, month: number): string => `${year}-${String(month).padStart(2, '0')}`;
+
+const viirsMonthly = (year: number, month: number): RasterLayerDef => {
+	const key = monthKey(year, month);
+	const compact = key.replace('-', '');
+	return {
+		id: `viirs_${compact}`,
+		upstreamLayer: `lighttrends:viirs_npp_${compact}`,
+		label: `VIIRS ${key}`,
+		description: `NOAA VIIRS DNB monthly composite, ${key}.`,
+		group: 'viirs_monthly',
+		month: key,
+		// None of the 178 monthly layers render by default — they're only
+		// reachable through the TimeDock scrubber (subtask 3+), which drives
+		// a single MapLibre source via setTiles() rather than toggling one
+		// of these on. See subtask 4 (source-swap engine) — not yet wired.
+		defaultEnabled: false,
+		opacity: 0.85,
+	};
+};
+
+/**
+ * Generates every `YYYY-MM` key from `VIIRS_MONTHLY_START` through
+ * `VIIRS_MONTHLY_END` inclusive, in chronological order. Exported (not just
+ * used internally) so TimeDock and the hash codec can index by position
+ * without re-deriving the calendar math.
+ */
+export const generateViirsMonthlyKeys = (): readonly string[] => {
+	const keys: string[] = [];
+	let { year, month } = VIIRS_MONTHLY_START;
+	while (year < VIIRS_MONTHLY_END.year || (year === VIIRS_MONTHLY_END.year && month <= VIIRS_MONTHLY_END.month)) {
+		keys.push(monthKey(year, month));
+		month += 1;
+		if (month > 12) {
+			month = 1;
+			year += 1;
+		}
+	}
+	return keys;
+};
+
+const viirsMonthlyLayers = (): RasterLayerDef[] =>
+	generateViirsMonthlyKeys().map((key) => {
+		const [y, m] = key.split('-').map(Number);
+		return viirsMonthly(y, m);
+	});
 
 export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 	// Default display: VIIRS 2019 at a faint 25% so it reads as a subtle wash over
@@ -151,6 +227,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		opacity: 0.7,
 		attribution: 'PM2.5 data by OpenAQ contributors (CC-BY)',
 	},
+	...viirsMonthlyLayers(),
 ];
 
 /**
@@ -197,3 +274,8 @@ export const FALLBACK_ZOOM = 9;
 export const VIIRS_YEARS: ReadonlyArray<RasterLayerDef> = LAYERS.filter((l) => l.group === 'viirs_annual').sort(
 	(a, b) => (b.year ?? 0) - (a.year ?? 0),
 );
+
+/** All VIIRS monthly layers, month-ascending — the order TimeDock scrubs through. */
+export const VIIRS_MONTHLY_LAYERS: ReadonlyArray<RasterLayerDef> = LAYERS.filter(
+	(l) => l.group === 'viirs_monthly',
+).sort((a, b) => (a.month ?? '').localeCompare(b.month ?? ''));

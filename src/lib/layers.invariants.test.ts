@@ -20,7 +20,7 @@ import { LAYERS, rasterUrlTemplate, VIIRS_YEARS, type LayerGroup, type RasterLay
 /* row cannot quietly break a contract the rest of the app depends on.     */
 /* ------------------------------------------------------------------------ */
 
-const VALID_GROUPS: ReadonlyArray<LayerGroup> = ['viirs_annual', 'world_atlas', 'atmospheric'];
+const VALID_GROUPS: ReadonlyArray<LayerGroup> = ['viirs_annual', 'viirs_monthly', 'world_atlas', 'atmospheric'];
 
 const ID_RE = /^[a-z][a-z0-9_-]*$/;
 

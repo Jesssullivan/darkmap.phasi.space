@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { LAYERS, rasterUrlTemplate, utcDayKey, VIIRS_YEARS, type RasterLayerDef } from './layers';
+import {
+	generateViirsMonthlyKeys,
+	LAYERS,
+	rasterUrlTemplate,
+	utcDayKey,
+	VIIRS_MONTHLY_LAYERS,
+	VIIRS_YEARS,
+	type RasterLayerDef,
+} from './layers';
 
 describe('layer manifest — VIIRS annual', () => {
 	it('exposes 8 VIIRS annual layers (2012-2019)', () => {
@@ -13,13 +21,59 @@ describe('layer manifest — VIIRS annual', () => {
 	});
 });
 
+describe('layer manifest — VIIRS monthly (TIN-1301 subtask 1)', () => {
+	// 169, not the epic's headline "178" — see the NOTE above VIIRS_MONTHLY_START
+	// in layers.ts. 2012-04 through 2026-04 inclusive is 169 months; the epic
+	// text's own date range and headline count disagree, and this manifest
+	// follows the checkable range rather than fabricating layer ids past it.
+	it('exposes exactly 169 monthly layers, 2012-04 through 2026-04 inclusive', () => {
+		expect(LAYERS.filter((l) => l.group === 'viirs_monthly')).toHaveLength(169);
+		expect(VIIRS_MONTHLY_LAYERS).toHaveLength(169);
+	});
+
+	it('generateViirsMonthlyKeys is chronological, starts 2012-04, ends 2026-04, no gaps/dupes', () => {
+		const keys = generateViirsMonthlyKeys();
+		expect(keys).toHaveLength(169);
+		expect(keys[0]).toBe('2012-04');
+		expect(keys.at(-1)).toBe('2026-04');
+		expect(new Set(keys).size).toBe(keys.length);
+		expect(keys).toEqual([...keys].sort());
+		// No calendar gaps: consecutive keys are always exactly one month apart.
+		for (let i = 1; i < keys.length; i++) {
+			const [py, pm] = keys[i - 1].split('-').map(Number);
+			const [cy, cm] = keys[i].split('-').map(Number);
+			const prevOrdinal = py * 12 + pm;
+			const curOrdinal = cy * 12 + cm;
+			expect(curOrdinal - prevOrdinal).toBe(1);
+		}
+	});
+
+	it('maps monthly ids to lighttrends:viirs_npp_YYYYMM and carries a month key', () => {
+		const july2019 = LAYERS.find((l) => l.id === 'viirs_201907');
+		expect(july2019).toBeDefined();
+		expect(july2019?.group).toBe('viirs_monthly');
+		expect(july2019?.upstreamLayer).toBe('lighttrends:viirs_npp_201907');
+		expect(july2019?.month).toBe('2019-07');
+	});
+
+	it('rasterUrlTemplate proxies a monthly layer like any other GeoServer layer (no atmospheric kind hint)', () => {
+		const url = rasterUrlTemplate('viirs_201907');
+		expect(url).toBe('/api/raster?layer=viirs_201907&z={z}&x={x}&y={y}');
+		expect(url).not.toContain('kind=atmospheric');
+	});
+
+	it('none of the 178 monthly layers are on by default — only reachable via TimeDock', () => {
+		expect(VIIRS_MONTHLY_LAYERS.every((l) => l.defaultEnabled === false)).toBe(true);
+	});
+});
+
 describe('layer manifest — composition', () => {
-	it('LAYERS contains the VIIRS annual union + styled world atlas + atmospheric overlays', () => {
+	it('LAYERS contains the VIIRS annual + monthly union + styled world atlas + atmospheric overlays', () => {
 		const worldAtlas = LAYERS.filter((l) => l.group === 'world_atlas').length;
 		const atmospheric = LAYERS.filter((l) => l.group === 'atmospheric').length;
 		// One styled World Atlas overlay; the raw radiance grid is point-query-only (#247).
 		expect(worldAtlas).toBe(1);
-		expect(LAYERS.length).toBe(VIIRS_YEARS.length + worldAtlas + atmospheric);
+		expect(LAYERS.length).toBe(VIIRS_YEARS.length + VIIRS_MONTHLY_LAYERS.length + worldAtlas + atmospheric);
 	});
 
 	it('all ids are unique', () => {

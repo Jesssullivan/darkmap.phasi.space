@@ -144,9 +144,69 @@ describe('decodeHash', () => {
 		expect(decodeHash('#et=nonsense').time).toBeUndefined();
 	});
 
-	it('ignores legacy &t= and &p= monthly fields without breaking other segments', () => {
+	it('parses &t= and &p= monthly fields alongside other segments (TIN-1301)', () => {
 		const back = decodeHash('#m=42.4434,-76.5019,9&t=2020-07&p=1');
 		expect(back.view).toEqual({ lat: 42.4434, lon: -76.5019, zoom: 9 });
+		expect(back.month).toBe('2020-07');
+		expect(back.autoplay).toBe(true);
+	});
+});
+
+describe('TimeDock month/autoplay segment (TIN-1301 subtask 2)', () => {
+	it('encodes a month cursor without autoplay', () => {
+		expect(encodeHash({ month: '2019-07' })).toBe('#t=2019-07');
+	});
+
+	it('encodes a month cursor with autoplay', () => {
+		expect(encodeHash({ month: '2019-07', autoplay: true })).toBe('#t=2019-07&p=1');
+	});
+
+	it('omits p= when autoplay is false', () => {
+		expect(encodeHash({ month: '2019-07', autoplay: false })).toBe('#t=2019-07');
+	});
+
+	it('round-trips decodeHash(encodeHash(...)) for a month + autoplay state', () => {
+		const state = { month: '2019-07', autoplay: true };
+		expect(decodeHash(encodeHash(state))).toEqual(state);
+	});
+
+	it('round-trips a month without autoplay (autoplay key absent, not false)', () => {
+		const state = { month: '2026-04' };
+		const roundtripped = decodeHash(encodeHash(state));
+		expect(roundtripped.month).toBe('2026-04');
+		expect(roundtripped.autoplay).toBeUndefined();
+	});
+
+	it('falls back to no cursor for a malformed month (bad shape, out-of-range month, garbage)', () => {
+		expect(decodeHash('#t=2019-13').month).toBeUndefined(); // month 13 doesn't exist
+		expect(decodeHash('#t=19-07').month).toBeUndefined(); // 2-digit year
+		expect(decodeHash('#t=2019-7').month).toBeUndefined(); // unpadded month
+		expect(decodeHash('#t=not-a-month').month).toBeUndefined();
+		expect(decodeHash('#t=').month).toBeUndefined();
+	});
+
+	it('accepts every valid month boundary (01 and 12)', () => {
+		expect(decodeHash('#t=2019-01').month).toBe('2019-01');
+		expect(decodeHash('#t=2019-12').month).toBe('2019-12');
+	});
+
+	it('drops a stray p=1 when there is no valid month cursor to pair it with', () => {
+		expect(decodeHash('#p=1').autoplay).toBeUndefined();
+		expect(decodeHash('#t=bad-month&p=1').autoplay).toBeUndefined();
+	});
+
+	it('does not set autoplay for any p= value other than exactly "1"', () => {
+		expect(decodeHash('#t=2019-07&p=true').autoplay).toBeUndefined();
+		expect(decodeHash('#t=2019-07&p=0').autoplay).toBeUndefined();
+	});
+
+	it('combines with view + layers + lens in one hash', () => {
+		const out = decodeHash('#m=42.4434,-76.5019,9&l=viirs_2019:0.85&lens=air&t=2019-07&p=1');
+		expect(out.view).toEqual({ lat: 42.4434, lon: -76.5019, zoom: 9 });
+		expect(out.layers).toEqual(new Map([['viirs_2019', 0.85]]));
+		expect(out.lens).toBe('air');
+		expect(out.month).toBe('2019-07');
+		expect(out.autoplay).toBe(true);
 	});
 });
 
