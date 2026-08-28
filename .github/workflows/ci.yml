@@ -34,40 +34,43 @@ jobs:
 
   build-and-test:
     name: build-and-test
-    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    # R331: legacy tinyland-inc/GloriousFlywheel is private now; the shared
+    # tinyland-nix org pool is also unreachable from this out-of-org personal
+    # account. Runs on the owner-overlay capability class (jesssullivan-nix,
+    # jesssullivan-infra) instead of a GitHub-hosted fallback — v3.0.0
+    # (TIN-3914) retired hosted runners estate-wide, and jesssullivan-nix is
+    # the reviewed replacement for this repo's lane.
+    runs-on: jesssullivan-nix
     timeout-minutes: 30
     env:
-      GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
+      GF_BAZEL_CONFIG: flywheel
     steps:
       - uses: actions/checkout@v6
 
-      - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
-        with:
-          attic-public-key: ${{ vars.ATTIC_PUBLIC_KEY || '' }}
-          command: |
-            nix develop --command just setup
-            nix develop --command just check
-            nix develop --command just substrate-boundary-check
-            nix develop --command just build
-          push-cache: 'false'
+      - name: Set up Nix (ci-templates)
+        uses: tinyland-inc/ci-templates/.github/actions/nix-setup@d8d178c022a0f84853d53a2c8fe0fc90115f0949 # v3.1.0
+
+      - name: Setup, check, build
+        run: |
+          nix develop --command just setup
+          nix develop --command just check
+          nix develop --command just substrate-boundary-check
+          nix develop --command just build
 
   bazel-graph:
     name: bazel-graph
-    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    # R331: see build-and-test above — owner-overlay capability class.
+    runs-on: jesssullivan-nix
     timeout-minutes: 30
     env:
-      GF_BAZEL_CONFIG: ${{ (contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'glorious-flywheel') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'jesssullivan-nix') || contains(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '', 'tinyland-nix')) && 'flywheel' || '' }}
+      GF_BAZEL_CONFIG: flywheel
     steps:
       - uses: actions/checkout@v6
 
-      - uses: tinyland-inc/GloriousFlywheel/.github/actions/nix-job@main
-        with:
-          attic-public-key: ${{ vars.ATTIC_PUBLIC_KEY || '' }}
-          command: |
-            nix develop --command bazelisk mod graph
-            if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then
-              nix develop --command bazelisk build --config=flywheel //:node_modules
-            else
-              nix develop --command bazelisk build //:node_modules
-            fi
-          push-cache: 'false'
+      - name: Set up Nix (ci-templates)
+        uses: tinyland-inc/ci-templates/.github/actions/nix-setup@d8d178c022a0f84853d53a2c8fe0fc90115f0949 # v3.1.0
+
+      - name: Bazel graph + build
+        run: |
+          nix develop --command bazelisk mod graph
+          nix develop --command bazelisk build --config=flywheel //:node_modules
