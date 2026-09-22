@@ -16,10 +16,9 @@
 		/** Active ephemeris cursor time. */
 		time: Date;
 		/**
-		 * Docked COMPACT variant (the ResponsiveDock instrument row). The WIDE left-dock
-		 * row is `display:none` <1024px (it had no mobile home); `compact` overrides that
-		 * so the AQ-in-view + Sky tiles surface in the bottom dock on mobile. Mirrors
-		 * SkyCompass's `embedded` flag.
+		 * Docked COMPACT variant (the ResponsiveDock instrument row). The right
+		 * inspector is not a panel on narrow screens; `compact` gives the Air gauge
+		 * a bottom-dock home without adding a second local-dome renderer.
 		 */
 		compact?: boolean;
 	}
@@ -101,9 +100,8 @@
 			display: flex;
 		}
 	}
-	/* Docked COMPACT variant — surfaces in the ResponsiveDock instrument row on mobile
-	   (overrides the <1024px display:none). Tighter so it fits the bottom-sheet header
-	   without crowding the gantt/tabs below it. */
+	/* Docked COMPACT variant — surfaces in the ResponsiveDock readout on mobile.
+	   Tighter so it fits the bottom sheet without crowding the helix/tabs. */
 	.instrument-column.compact {
 		display: flex;
 		gap: 0.4rem;

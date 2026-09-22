@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"description": "Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and low-light logistics",
-	"homepage": "https://darkmap.phasi.space",
+	"homepage": "https://darkmap.xoxd.ai",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/Jesssullivan/darkmap.phasi.space.git"

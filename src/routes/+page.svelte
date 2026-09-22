@@ -2748,8 +2748,9 @@
 			{/if}
 			<span class="inspector-tab-label">Inspector</span>
 		</button>
-		<!-- The viewport Air and local-dome instruments belong to the right-hand
-		     inspector bay. There is one render site, above the point readout. -->
+		<!-- The desktop Air and local-dome instruments belong to the right-hand
+		     inspector bay, above the point readout. Compact has a separate Air-only
+		     renderer inside its mutually exclusive ResponsiveDock branch. -->
 		<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered
 		     below); the inspector body keeps them for MEDIUM/WIDE (grid) + COMPACT-short
@@ -2800,7 +2801,7 @@
 		{/snippet}
 		{#snippet readoutView()}
 			<!-- C (AQ in-view): the in-view AQ gauge, docked at the TOP of the Readout view on
-			     mobile (its WIDE .left-dock home is display:none <1024px). It lives in the
+			     mobile (the right inspector is not present there). It lives in the
 			     scrollable body — never grows the sheet header, so it can't overflow the 88dvh
 			     sheet into the gantt/transmission (the header placement did). Hidden when the
 			     Tools view is shown, so it never coexists with the transmission sheet. -->
