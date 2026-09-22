@@ -1,4 +1,5 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
+import { nearestForecastHour } from '$lib/atmospheric/provider-http';
 
 /**
  * Open-Meteo `/v1/forecast` proxy for PointReadout's atmospheric section.
@@ -35,10 +36,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!latStr || !lonStr || !timeStr) {
 		error(400, 'missing required params: lat, lon, time');
 	}
-	const lat = Number.parseFloat(latStr);
-	const lon = Number.parseFloat(lonStr);
-	if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-		error(400, 'lat/lon must be finite numbers');
+	const lat = Number(latStr);
+	const lon = Number(lonStr);
+	if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+		error(400, 'lat/lon must be valid WGS84 coordinates');
 	}
 	const requested = new Date(timeStr);
 	if (Number.isNaN(requested.getTime())) {
@@ -51,6 +52,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		hourly:
 			'relative_humidity_2m,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,wind_speed_10m,wind_direction_10m',
 		timezone: 'UTC',
+		wind_speed_unit: 'ms',
 		past_days: '1',
 		forecast_days: '2',
 	});
@@ -59,6 +61,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		upstream = await fetch(`https://api.open-meteo.com/v1/forecast?${upstreamParams}`, {
 			headers: { accept: 'application/json' },
+			signal: AbortSignal.timeout(8_000),
 		});
 	} catch (e) {
 		error(502, `open-meteo fetch failed: ${e instanceof Error ? e.message : 'unknown'}`);
@@ -81,23 +84,21 @@ export const GET: RequestHandler = async ({ url }) => {
 		error(502, 'open-meteo response missing required hourly fields');
 	}
 
-	const targetMs = requested.getTime();
-	let bestIdx = 0;
-	let bestDelta = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < hourly.time.length; i++) {
-		// Open-Meteo emits naive ISO strings in the requested timezone (UTC here).
-		const parsed = Date.parse(`${hourly.time[i]}Z`);
-		if (!Number.isFinite(parsed)) continue;
-		const delta = Math.abs(parsed - targetMs);
-		if (delta < bestDelta) {
-			bestDelta = delta;
-			bestIdx = i;
-		}
-	}
+	const bestIdx = nearestForecastHour(hourly.time, requested.getTime());
+	if (bestIdx === null) error(404, 'requested time is outside available weather forecast coverage');
 
 	const rh = numberAt(hourly.relative_humidity_2m, bestIdx);
 	const visibility = numberAt(hourly.visibility, bestIdx);
-	if (rh === undefined || visibility === undefined) {
+	const cloudLow = numberAt(hourly.cloud_cover_low, bestIdx);
+	const cloudMid = numberAt(hourly.cloud_cover_mid, bestIdx);
+	const cloudHigh = numberAt(hourly.cloud_cover_high, bestIdx);
+	if (
+		rh === undefined ||
+		visibility === undefined ||
+		cloudLow === undefined ||
+		cloudMid === undefined ||
+		cloudHigh === undefined
+	) {
 		error(502, 'open-meteo response missing required hourly values');
 	}
 
@@ -105,12 +106,12 @@ export const GET: RequestHandler = async ({ url }) => {
 		matchedTime: hourly.time[bestIdx],
 		pwv: null,
 		rh,
-		cloudLow: numberAt(hourly.cloud_cover_low, bestIdx) ?? 0,
-		cloudMid: numberAt(hourly.cloud_cover_mid, bestIdx) ?? 0,
-		cloudHigh: numberAt(hourly.cloud_cover_high, bestIdx) ?? 0,
+		cloudLow,
+		cloudMid,
+		cloudHigh,
 		visibility,
 		// AQ-4 — surface 10 m wind so the PM2.5 kernel can orient downwind.
-		// Open-Meteo returns wind_speed_10m in m/s (km/h would need wind_speed_unit).
+		// Explicitly requested m/s above; Open-Meteo defaults to km/h.
 		// Nullable: upstream may omit these for some grids; the client falls back
 		// to isotropic diffusion when either is null.
 		windSpeed: numberAt(hourly.wind_speed_10m, bestIdx) ?? null,

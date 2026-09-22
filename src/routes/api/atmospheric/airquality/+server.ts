@@ -1,4 +1,5 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
+import { nearestForecastHour } from '$lib/atmospheric/provider-http';
 
 /**
  * Open-Meteo Air-Quality (`/v1/air-quality`, CAMS) proxy for PointReadout's
@@ -54,10 +55,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!latStr || !lonStr || !timeStr) {
 		error(400, 'missing required params: lat, lon, time');
 	}
-	const lat = Number.parseFloat(latStr);
-	const lon = Number.parseFloat(lonStr);
-	if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-		error(400, 'lat/lon must be finite numbers');
+	const lat = Number(latStr);
+	const lon = Number(lonStr);
+	if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+		error(400, 'lat/lon must be valid WGS84 coordinates');
 	}
 	const requested = new Date(timeStr);
 	if (Number.isNaN(requested.getTime())) {
@@ -77,6 +78,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		upstream = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${upstreamParams}`, {
 			headers: { accept: 'application/json' },
+			signal: AbortSignal.timeout(8_000),
 		});
 	} catch (e) {
 		error(502, `open-meteo air-quality fetch failed: ${e instanceof Error ? e.message : 'unknown'}`);
@@ -99,18 +101,8 @@ export const GET: RequestHandler = async ({ url }) => {
 		error(502, 'open-meteo air-quality response missing hourly time axis');
 	}
 
-	const targetMs = requested.getTime();
-	let bestIdx = 0;
-	let bestDelta = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < hourly.time.length; i++) {
-		const parsed = Date.parse(`${hourly.time[i]}Z`);
-		if (!Number.isFinite(parsed)) continue;
-		const delta = Math.abs(parsed - targetMs);
-		if (delta < bestDelta) {
-			bestDelta = delta;
-			bestIdx = i;
-		}
-	}
+	const bestIdx = nearestForecastHour(hourly.time, requested.getTime());
+	if (bestIdx === null) error(404, 'requested time is outside available CAMS forecast coverage');
 
 	const reading = {
 		matchedTime: hourly.time[bestIdx],

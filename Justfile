@@ -107,6 +107,14 @@ test-unit:
 test-local:
     cd {{ root }} && pnpm run test:unit
 
+# Narrow local diagnostic; remote Bazel/CI remains the landing proof.
+test-atmospheric-providers-local:
+    cd {{ root }} && pnpm exec vitest run --config vitest.providers.config.ts
+
+# Format only the atmospheric provider changes, never unrelated worktree files.
+format-atmospheric-providers:
+    cd {{ root }} && pnpm exec prettier --write vitest.providers.config.ts src/lib/atmospheric/provider-http.ts src/lib/atmospheric/provider-http.test.ts src/routes/api/atmospheric
+
 # Local Bazel target validation without the in-cluster flywheel cache
 test-bazel-local:
     cd {{ root }} && bazelisk test //src/lib/server/raster:raster_test

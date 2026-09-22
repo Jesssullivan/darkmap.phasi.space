@@ -13,6 +13,28 @@ afterEach(() => {
 });
 
 describe('/api/atmospheric/point', () => {
+	it('rejects invalid coordinates before contacting the provider', async () => {
+		await expect(
+			GET(fakeEvent('https://darkmap.test/api/atmospheric/point?lat=91&lon=0&time=2026-09-22T12:00Z')),
+		).rejects.toMatchObject({ status: 400 });
+	});
+
+	it('does not present a current model hour as historical coverage', async () => {
+		globalThis.fetch = async () =>
+			Response.json({ hourly: { time: ['2026-09-22T12:00'], relative_humidity_2m: [50], visibility: [1000] } });
+		await expect(
+			GET(fakeEvent('https://darkmap.test/api/atmospheric/point?lat=42&lon=-76&time=2026-08-22T12:00Z')),
+		).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('does not fabricate clear skies when cloud fields are unavailable', async () => {
+		globalThis.fetch = async () =>
+			Response.json({ hourly: { time: ['2026-09-22T12:00'], relative_humidity_2m: [50], visibility: [1000] } });
+		await expect(
+			GET(fakeEvent('https://darkmap.test/api/atmospheric/point?lat=42&lon=-76&time=2026-09-22T12:00Z')),
+		).rejects.toMatchObject({ status: 502 });
+	});
+
 	it('does not request unsupported Open-Meteo PWV and returns PWV as unavailable', async () => {
 		let requestedUrl = '';
 		globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -88,6 +110,7 @@ describe('/api/atmospheric/point', () => {
 		expect(res.status).toBe(200);
 		expect(requestedUrl).toContain('wind_speed_10m');
 		expect(requestedUrl).toContain('wind_direction_10m');
+		expect(new URL(requestedUrl).searchParams.get('wind_speed_unit')).toBe('ms');
 		const body = (await res.json()) as {
 			readonly windSpeed: number | null;
 			readonly windDirectionDeg: number | null;
