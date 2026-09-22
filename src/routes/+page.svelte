@@ -177,7 +177,8 @@
 	// they render byte-identical. railExpanded gates the icon-only ↔ full rail;
 	// inspectorOpen gates the thin tab ↔ readout column (auto-opened on pin below).
 	let railExpanded = $state(false);
-	let inspectorOpen = $state(false);
+	// Keep the right-hand instrument bay visible on medium screens by default.
+	let inspectorOpen = $state(true);
 	// W4b — the live layout tier (set by the matchMedia listeners in onMount below).
 	// `compact` (icon-only) rail is MEDIUM-ONLY: at WIDE the rail must render the FULL
 	// panel (byte-identical to before), and at COMPACT it is the mobile drawer (the
@@ -2644,7 +2645,7 @@
 	     at COMPACT the deck is display:contents so both keep their own fixed placement
 	     (byte-identical fallback). -->
 
-	<!-- RAIL region: the per-lens instrument row on top + the LayerRail below. At
+	<!-- RAIL region: LayerRail only. At
 	     WIDE this is the left grid track (20rem) — it PUSHES the stage, never
 	     overlays it. ≤1023px display:contents → LayerRail keeps its mobile-drawer
 	     positioning (the rail-toggle + backdrop live inside LayerRail, fixed). -->
@@ -2668,7 +2669,6 @@
 			{/if}
 			<span class="rail-expand-label">Layers</span>
 		</button>
-		<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 		<div class="left-dock-scroll">
 			<LayerRail
 				lens={lensStore.lens}
@@ -2748,6 +2748,9 @@
 			{/if}
 			<span class="inspector-tab-label">Inspector</span>
 		</button>
+		<!-- The viewport Air and local-dome instruments belong to the right-hand
+		     inspector bay. There is one render site, above the point readout. -->
+		<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered
 		     below); the inspector body keeps them for MEDIUM/WIDE (grid) + COMPACT-short
 		     (the byte-identical float fallback). One render site each — never duplicated. -->
@@ -2844,7 +2847,7 @@
 		<SkyCompass location={viewCenter} time={ephemerisTime} />
 	{/if}
 
-	<!-- idea ① — the deep-tool launchers as compact pills on the map's RIGHT corner
+	<!-- idea ① — deep-tool launchers as compact pills on the map's RIGHT corner
 	     (mirrors the top-left MapToolbar). WIDE/MEDIUM only — COMPACT reaches the tools
 	     via the ResponsiveDock's Tools tab, so no second launcher there. The launch
 	     handlers + the inspector master-detail dock are unchanged from the rail mount. -->
@@ -2858,7 +2861,7 @@
 				if (tool === 'transmission') openTransmissionForPoint();
 				else if (tool === 'passplan') openPassPlanForPoint();
 				else if (tool === 'aq') openAqDashboardForPoint();
-				else ephemerisOpen = !ephemerisOpen;
+				// Twilight lives in the top map toolbar, not this right-edge cluster.
 			}}
 		/>
 	{/if}
@@ -2909,16 +2912,16 @@
 			},
 			{
 				// TIN-1771 — flip the AQI ramp to the colorblind-distinguishable
-				// "ColorVision-Assist" palette. A DISPLAY option only: recolours the
-				// PM2.5 dots + dashboard from one source; categories + labels unchanged.
+				// "ColorVision-Assist" palette. AirNow names the standard AQI COLOR
+				// palette here, not a data provider. Readings/categories never change.
 				id: 'aqi-palette',
 				label:
 					aqiPalette.mode === 'colorvision'
-						? 'AQI palette: color-assist (on) — switch back to AirNow'
-						: 'AQI palette: AirNow — switch to color-assist (colorblind-safe)',
-				shortLabel: aqiPalette.mode === 'colorvision' ? 'AirNow' : 'Color-assist',
+						? 'AQI colors: color-vision assist; switch to AirNow standard colors. Readings do not change.'
+						: 'AQI colors: AirNow standard palette; switch to color-vision assist. Readings do not change.',
+				shortLabel: 'AQI colors',
 				icon: Contrast,
-				title: aqiPalette.mode === 'colorvision' ? 'AQI palette: color-assist (on)' : 'AQI palette: AirNow (default)',
+				title: aqiPalette.mode === 'colorvision' ? 'Color-vision assist colors (on)' : 'AirNow standard colors (on)',
 				pressed: aqiPalette.mode === 'colorvision',
 				onclick: () => aqiPalette.toggle(),
 			},
@@ -3237,6 +3240,16 @@
 			container-type: inline-size;
 			container-name: inspector;
 		}
+		.deck-inspector :global(.instrument-column) {
+			flex: 0 0 auto;
+			max-height: min(38vh, 15rem);
+			overflow-y: auto;
+		}
+		/* A collapsed medium inspector remains a reachable tab, not a clipped
+		   partial Air tile. Opening it reveals the complete right-hand bay. */
+		.command-deck:not([data-inspector-open='true']) .deck-inspector :global(.instrument-column) {
+			display: none;
+		}
 		/* W4b — the MEDIUM inspector tab: a thin, full-opacity vertical handle. Collapsed
 		   the column is 2.5rem (--insp-w) and the "Inspector" label reads bottom-to-top;
 		   opening widens the track to 20rem (push, never overlay) so the readout shows.
@@ -3419,13 +3432,9 @@
 			z-index: 8;
 			max-height: calc(100% - 1.5rem);
 		}
-		/* De-dup: the RAIL instrument column owns the embedded sky dome. The standalone
-		   float is hidden ONLY when that embedded dome is actually visible — i.e. at
-		   MEDIUM when the rail is EXPANDED (the instrument tiles show). At MEDIUM
-		   COLLAPSED the instrument column is icon-hidden, so the standalone float MUST
-		   stay = one dome at every state, never removed (W4b honesty bar). WIDE always
-		   shows the embedded dome, so it hides the float unconditionally (below). */
-		.command-deck[data-rail-expanded='true'] .stage :global(.sky) {
+		/* The embedded dome lives in the right inspector. When it is open, hide
+		   the stage float; when collapsed, preserve the float as the sole dome. */
+		.command-deck[data-inspector-open='true'] .stage :global(.sky) {
 			display: none;
 		}
 		.stage :global(.maplibregl-ctrl-bottom-right) {
@@ -3463,6 +3472,10 @@
 		   is inert at WIDE). One dome, never two. */
 		.stage :global(.sky) {
 			display: none;
+		}
+		/* Wide has a permanent right-hand bay regardless of medium disclosure state. */
+		.command-deck:not([data-inspector-open='true']) .deck-inspector :global(.instrument-column) {
+			display: flex;
 		}
 		/* WIDE — the inspector is the permanent 26rem column: no tab handle, the body
 		   flows from the top of the cell (drop the MEDIUM tab gap). */
@@ -3545,21 +3558,15 @@
 		z-index: 100;
 		pointer-events: none;
 	}
-	/* RAIL region. <640px: display:contents = inert wrapper, so LayerRail +
-	   InstrumentColumn fall back to their OWN positioning (the mobile drawer stays
-	   unchanged). At MEDIUM+WIDE: the left grid cell — a real region that PUSHES the
-	   stage, never overlays it. Instrument row pinned on top (flex:0 0 auto); the
-	   rail scrolls below (.left-dock-scroll owns the scroll; the re-homed .layer-rail
-	   goes position:static + overflow:visible at ≥640px). The card chrome moves here
-	   from the rail. */
+	/* RAIL region. The left grid cell owns layers only; Air and the local dome
+	   live in the right inspector. At compact the LayerRail retains its drawer. */
 	.left-dock {
 		display: contents;
 	}
 	/* MEDIUM + WIDE shared: the rail card. At MEDIUM the column track is 4.5rem
 	   (collapsed icon column) or 16rem (expanded) — set on .command-deck via --rail-w;
 	   this card just fills it (overflow:hidden clips the wide content while collapsed).
-	   The rail-expand toggle is pinned on top; below it the instrument row + the
-	   scrolling rail body. WIDE overrides the padding + always shows everything. */
+	   The rail-expand toggle is pinned on top; the rail body scrolls below. */
 	@media (min-width: 640px) and (min-height: 501px) {
 		.left-dock {
 			grid-area: rail;
@@ -3574,18 +3581,11 @@
 			padding: 0.6rem 0.55rem;
 			box-sizing: border-box;
 			overflow: hidden;
-			/* W5g — establish the RAIL as a query container so its instrument row reveals
-			   based on the rail's OWN width (collapsed 4.5rem icon column vs expanded 16rem
-			   vs WIDE 19rem), not the viewport tier + disclosure attribute. container-type
-			   subsumes the prior contain:layout. (The LayerRail's icon-vs-panel swap stays
-			   on the `railCompact` rune — it's a structural {#if} render-branch a container
-			   query can't replace.) */
-			container-type: inline-size;
-			container-name: rail;
-		}
-		.left-dock :global(.instrument-column) {
-			flex: 0 0 auto;
-		}
+		/* Retain the rail query container for its own layout. LayerRail's compact
+		   swap is a structural render branch controlled by railCompact. */
+		container-type: inline-size;
+		container-name: rail;
+	}
 		.left-dock-scroll {
 			flex: 1 1 auto;
 			min-height: 0;
@@ -3630,23 +3630,7 @@
 			display: inline;
 		}
 	}
-	/* W5g — the instrument row reveals on the RAIL's own width, not the viewport tier +
-	   disclosure attribute. Collapsed (4.5rem icon column) the InstrumentColumn is below
-	   its own 1024px display:none floor and the rail container is far under 8rem, so it
-	   stays hidden; expanding the rail to 16rem (or WIDE's 19rem) crosses 8rem and reveals
-	   it. Full-opacity + reachable — progressive disclosure, NOT display:none-as-disable.
-	   The old MEDIUM-collapse ToolsCluster rules were dead (idea ① re-homed the cluster to
-	   the map's right-edge overlay, out of .left-dock) and are removed. */
-	@container rail (min-width: 8rem) {
-		.left-dock :global(.instrument-column) {
-			display: flex;
-		}
-	}
-	/* WIDE-only: the rail is the permanent 20rem column — roomier padding, no MEDIUM
-	   icon-toggle. The instrument row + full rail + full ToolsCluster all render via
-	   their own defaults: the MEDIUM-collapse rules above are gated on
-	   html[data-layout-tier='medium'], so they never fire at WIDE — WIDE is
-	   byte-identical with no re-override needed. */
+	/* WIDE-only: the rail is the permanent 20rem layers column. */
 	@media (min-width: 1024px) and (min-height: 501px) {
 		.left-dock {
 			padding: 0.85rem 0.9rem;

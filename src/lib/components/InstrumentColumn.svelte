@@ -86,11 +86,8 @@
 </aside>
 
 <style>
-	/* Command Deck RAIL instrument row (W1). A flex-row header band INSIDE +page's
-	   .left-dock grid cell (the re-homed rail sits below). Static, full width — the
-	   dock owns positioning + the card chrome. Off (display:none) until the WIDE
-	   grid engages (≥1024px), so the COMPACT + MEDIUM fallback never shows a loose
-	   instrument row under .left-dock{display:contents}. */
+	/* Right-inspector instrument row. Compact retains the standalone sky float;
+	   the medium/wide inspector owns a single embedded dome and viewport Air tile. */
 	.instrument-column {
 		display: none;
 		flex-direction: row;
@@ -99,7 +96,7 @@
 		font-family: var(--font-mono, ui-monospace, monospace);
 		color: #e9ecf3;
 	}
-	@media (min-width: 1024px) {
+	@media (min-width: 640px) and (min-height: 501px) {
 		.instrument-column {
 			display: flex;
 		}

@@ -48,6 +48,9 @@
 		{ id: 'aq', label: 'Air Quality', sub: 'pollutants · NowCast AQI', icon: Wind, lens: 'air', key: 'A' },
 		{ id: 'twilight', label: 'Twilight', sub: 'sun/moon timing · dark window', icon: SunMoon, lens: 'sky' },
 	];
+	// The map's top toolbar owns Twilight. Keep it in the mobile/rail Tools view,
+	// but never render a duplicate toggle in the right-edge overlay.
+	const visibleTools = $derived(variant === 'overlay' ? TOOLS.filter((tool) => tool.id !== 'twilight') : TOOLS);
 
 	// Flex order: the active lens's tool floats to the top (-1); the rest hold their
 	// declared order at full strength. No reordering of the others, no dimming.
@@ -57,7 +60,7 @@
 <section class="tools-cluster" class:overlay={variant === 'overlay'} aria-label="Deep tools">
 	{#if variant === 'rail'}<h2 class="cluster-title">Tools</h2>{/if}
 	<div class="cluster-grid">
-		{#each TOOLS as t (t.id)}
+		{#each visibleTools as t (t.id)}
 			{@const Icon = t.icon}
 			{@const lead = t.lens === lens}
 			<button

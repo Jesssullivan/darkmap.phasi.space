@@ -525,8 +525,34 @@ async function runToolbarLabelsSmoke(page) {
 	// every viewport — what AT and the existing role-name queries depend on.
 	await page.getByRole('button', { name: /twilight strip/i }).waitFor({ timeout: 20_000 });
 	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
+	if ((await page.locator('.toolbar .tool[aria-label*="twilight strip"]').count()) !== 1) {
+		throw new Error('top map toolbar must own exactly one twilight-strip toggle');
+	}
+	if ((await page.locator('.tools-cluster.overlay .tool-tile').filter({ hasText: /Twilight/i }).count()) !== 0) {
+		throw new Error('right-edge deep-tool cluster must not duplicate the twilight toggle');
+	}
 
 	const width = (page.viewportSize() ?? { width: 0 }).width;
+	const height = (page.viewportSize() ?? { height: 0 }).height;
+	if (width >= 640 && height >= 501) {
+		const bay = await page.evaluate(() => {
+			const instruments = document.querySelector('.deck-inspector .instrument-column');
+			const stage = document.querySelector('.stage');
+			if (!instruments || !stage) return null;
+			const instrumentBox = instruments.getBoundingClientRect();
+			const stageBox = stage.getBoundingClientRect();
+			return {
+				visible: getComputedStyle(instruments).display !== 'none',
+				rightOfStage: instrumentBox.left >= stageBox.right - 1,
+				tiles: instruments.querySelectorAll('.tile').length,
+			};
+		});
+		if (!bay?.visible || !bay.rightOfStage || bay.tiles !== 2) {
+			throw new Error(`Air and local dome must be visible in right-hand inspector: ${JSON.stringify(bay)}`);
+		}
+	} else if (await page.locator('.instrument-column').isVisible()) {
+		throw new Error('compact/short viewport must not leave loose instrument tiles over the map');
+	}
 	// No hover is issued before this read — the mouse sits at its default
 	// position. The contract is font-independent: the desktop media query
 	// renders the label (display != none, real text), ≤820px collapses it to
