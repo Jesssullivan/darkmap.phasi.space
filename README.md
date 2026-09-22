@@ -1,8 +1,9 @@
 # darkmap
 
 An ad-free dark-sky and atmosphere planning map for the work that happens above the
-horizon — astronomy, air quality, atmospheric optics, and satellite passes. Live at
-<https://darkmap.phasi.space>.
+horizon — astronomy, air quality, atmospheric optics, and satellite passes. The
+canonical hostname is <https://darkmap.xoxd.ai>; the existing public
+<https://darkmap.phasi.space> route remains available during cutover.
 
 darkmap re-presents open public datasets on one shared map, re-weighted for four
 kinds of user — and it never hides a feature behind a mode you have to discover.
@@ -39,7 +40,9 @@ affiliation or primary attribution.
 - **Spectral bands** — a curated HITRAN2020 line subset
 - **Geocoding & elevation** — OpenStreetMap via Photon + AWS Terrarium terrain tiles
 
-See [`/docs`](https://darkmap.phasi.space/docs) for the full, canonical attribution.
+See [`/docs`](https://darkmap.xoxd.ai/docs) for the full attribution once the new
+hostname is live. During cutover, use
+[`/docs`](https://darkmap.phasi.space/docs) on the existing public route.
 
 ## Run it
 

@@ -1,5 +1,17 @@
 # Agent Notes — darkmap.phasi.space
 
+## Canonical-host migration (2026-09-22)
+
+`darkmap.xoxd.ai` is the chosen canonical web hostname. The existing public
+`darkmap.phasi.space` and tailnet `darkmap.tinyland.dev` routes must remain
+available during migration; do not redirect or remove either until the new
+route is live and an operator explicitly chooses retirement. The repository,
+GHCR image, Kubernetes selector, and OpenTofu state identities do not rename
+with the web hostname. See `docs/DARKMAP_XOXD_CUTOVER.md` for owner and proof
+gates. In particular, the current cert-manager issuer does not cover `xoxd.ai`;
+the preferred Cloudflare Tunnel-to-Service path does not require changing the
+old ingress certificate.
+
 This file is the working contract for coding agents and LLMs operating in any
 sister site spawned from this scaffold.
 
