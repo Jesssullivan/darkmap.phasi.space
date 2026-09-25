@@ -2,6 +2,7 @@
 	import { Cause, Effect, Layer, Option } from 'effect';
 	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 	import { basemapById, BASEMAPS, DEFAULT_BASEMAP_ID } from '$lib/basemaps';
 	import {
 		classifyPositionFreshness,
@@ -48,7 +49,8 @@
 	import { aggregatePath, type PathProfile } from '$lib/atmospheric/path-constituents';
 	import { layerHealth } from '$lib/layers/HealthRegistry.svelte';
 	import { parseLayerIdFromSourceId } from '$lib/layers/source-id';
-	import { applyBasemapTimed, BASEMAP_LAYER_ID, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
+	import { applyBasemapTimed, BASEMAP_SOURCE_ID } from '$lib/map/BasemapController';
+	import { createMapLibreMap } from '$lib/map/maplibre-runtime';
 	import { pm25CircleColorExpression, pm25HeatmapWeightExpression } from '$lib/map/pm25-style';
 	import { buildAqiField } from '$lib/atmospheric/aqi-field';
 	import { computeAqi, type AqiPollutant } from '$lib/atmospheric/aqi';
@@ -2340,6 +2342,7 @@
 		// TIN-1771 — resolve the remembered AQI palette (display option only).
 		aqiPalette.init();
 		if (!mapEl) return;
+		mapEl.removeAttribute('data-maplibre-basemap-rendered');
 		const maplibre = await import('maplibre-gl');
 		maplibreLib = maplibre;
 		// #248 — register the atmospheric tile protocol so GIBS tiles fetch
@@ -2356,26 +2359,18 @@
 		);
 		const { center, zoom } = await getInitialView();
 		const bm = basemapById(activeBasemap);
-		mapInstance = new maplibre.Map({
+		mapInstance = createMapLibreMap({
+			maplibre,
+			workerUrl: maplibreWorkerUrl,
 			container: mapEl,
-			style: {
-				version: 8,
-				sources: {
-					[BASEMAP_SOURCE_ID]: {
-						type: 'raster',
-						tiles: [...bm.tiles],
-						tileSize: 256,
-						attribution: bm.attribution,
-						maxzoom: bm.maxZoom,
-					},
-				},
-				layers: [{ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }],
-			},
+			basemap: bm,
 			center,
 			zoom,
-			attributionControl: false,
 		});
-		mapInstance.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
+		let basemapTileLoaded = false;
+		mapInstance.on('render', () => {
+			if (basemapTileLoaded) mapEl?.setAttribute('data-maplibre-basemap-rendered', 'true');
+		});
 		controllerLayer = makeMapLayerControllerLive(mapInstance);
 		// Locator marker — anchors each readout's numbers to a visible point.
 		pointMarker = new PointMarkerController({ maplibre, map: mapInstance });
@@ -2486,6 +2481,9 @@
 			if (evt.tile === undefined) return; // Style or attribution event, not a tile load.
 			// Basemap source dispatches under the active basemap id (#235).
 			if (evt.sourceId === BASEMAP_SOURCE_ID) {
+				// The tile-specific event follows raster upload; only mark the
+				// browser proof ready once the basemap source has settled.
+				if (evt.isSourceLoaded === true) basemapTileLoaded = true;
 				const current = layerHealth.getHealth(activeBasemap);
 				if (current.tag === 'loading') {
 					layerHealth.dispatch(activeBasemap, { type: 'tile-ok' });
@@ -2616,7 +2614,6 @@
 		name="description"
 		content="Dark-sky planning map with VIIRS, Falchi 2016 World Atlas, terrain horizon, geocoder, and sun/moon timing."
 	/>
-	<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
 </svelte:head>
 
 <!-- W1 — the Command Deck (docs/ux/command-deck.md §2). ONE CSS-grid app shell of

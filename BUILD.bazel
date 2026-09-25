@@ -309,6 +309,26 @@ js_test(
 )
 
 js_test(
+    name = "playwright_maplibre_runtime_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-maplibre-runtime-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-maplibre-runtime-smoke.mjs",
+    tags = [
+        "chromium",
+        "local-server-route-smoke",
+        "manual",
+        "maplibre-runtime-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
     name = "playwright_point_readout_smoke",
     data = [
         ":app_build",

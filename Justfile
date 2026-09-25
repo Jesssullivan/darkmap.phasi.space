@@ -22,6 +22,12 @@ setup:
     cd {{ root }} && pnpm install --frozen-lockfile
     @echo "Setup complete. Run 'just dev' to start."
 
+# PR-only lock preparation. The ordinary CI workflow uploads the result for review;
+# it never commits, publishes, or runs dependency lifecycle scripts.
+lockfile-prepare:
+    cd {{ root }} && test "$(corepack pnpm --version)" = "10.13.1"
+    cd {{ root }} && corepack pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+
 # Start the Vite dev server
 dev:
     cd {{ root }} && pnpm run dev
@@ -102,6 +108,13 @@ format-check:
 # GloriousFlywheel runners to attach to the shared in-cluster Bazel cache.
 test-unit:
     cd {{ root }} && if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then bazelisk test --config=flywheel //...; else bazelisk test //...; fi
+
+# Strict MapLibre v6 browser proof on the configured ordinary CI runner.
+# Invoke inside `nix develop --no-write-lock-file .#browser`; this target is
+# deliberately direct/local, not a GloriousFlywheel RBE qualification.
+test-maplibre-runtime:
+    cd {{ root }} && test -x "${CHROME_BIN:?use the locked browser devShell}"
+    cd {{ root }} && bazelisk test --test_strategy=local --test_env=CHROME_BIN="${CHROME_BIN}" //:playwright_maplibre_runtime_smoke
 
 # Local Vitest fallback for workstations without cluster cache reachability
 test-local:

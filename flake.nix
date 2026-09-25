@@ -12,9 +12,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-      in
-      {
-        devShells.default = pkgs.mkShell {
+        baseShell = pkgs.mkShell {
           buildInputs = with pkgs; [
             # Core JS toolchain
             nodejs_22
@@ -60,6 +58,19 @@
             echo "  python   $(python3 --version)"
             echo "  jq       $(jq --version)"
           '';
+        };
+      in
+      {
+        devShells = {
+          default = baseShell;
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # Browser proof uses the same locked toolchain plus an explicit
+          # Chromium store executable; it is not an RBE or release shell.
+          browser = pkgs.mkShell {
+            inputsFrom = [ baseShell ];
+            buildInputs = [ pkgs.chromium ];
+            CHROME_BIN = "${pkgs.chromium}/bin/chromium";
+          };
         };
 
         formatter = pkgs.nixpkgs-fmt;

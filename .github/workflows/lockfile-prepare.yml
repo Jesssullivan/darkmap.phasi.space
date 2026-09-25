@@ -1,0 +1,72 @@
+name: Prepare dependency lockfile
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - package.json
+      - pnpm-lock.yaml
+      - Justfile
+      - .github/workflows/lockfile-prepare.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lockfile-prepare-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare-lockfile:
+    name: prepare-lockfile-artifact
+    # Source preparation only: no Bazel/RBE, build, publication, or release proof.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ fromJSON(vars.BAZEL_LINUX_RUNNER_LABELS_JSON || vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Generate reviewed lockfile candidate
+        run: nix develop --no-write-lock-file --command just lockfile-prepare
+
+      - name: Verify changed-file boundary and record source hashes
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          changes="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$changes" ] && [ "$changes" != ' M pnpm-lock.yaml' ]; then
+            printf 'Unexpected files changed during lock preparation:\n%s\n' "$changes" >&2
+            exit 1
+          fi
+          git diff --check
+          {
+            printf 'source_sha=%s\n' "$EXPECTED_SOURCE_SHA"
+            printf 'pnpm_version=10.13.1\n'
+            printf 'lock_changed=%s\n' "$([ -n "$changes" ] && printf true || printf false)"
+            sha256sum package.json pnpm-lock.yaml
+          } > "$RUNNER_TEMP/lockfile-receipt.txt"
+
+      - name: Upload lockfile for reviewed application
+        uses: actions/upload-artifact@v4
+        with:
+          name: lockfile-${{ github.event.pull_request.head.sha }}
+          path: pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload source/hash receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: lockfile-receipt-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/lockfile-receipt.txt
+          if-no-files-found: error
+          retention-days: 7

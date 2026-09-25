@@ -101,6 +101,13 @@ try {
 		const page = await context.newPage();
 		const pageErrors = [];
 		const consoleErrors = [];
+		const basemapTileRequests = [];
+		page.on('request', (request) => {
+			const url = new URL(request.url());
+			if (/^[abc]\.tile\.openstreetmap\.org$/.test(url.hostname) && /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) {
+				basemapTileRequests.push(request.url());
+			}
+		});
 		page.on('pageerror', (err) => {
 			pageErrors.push(err.message);
 			console.log(`darkmap pageerror observed at ${viewportLabel}: ${err.message}`);
@@ -149,11 +156,11 @@ try {
 				);
 				throw gotoErr;
 			}
-			await runSmokeScenario(page, SMOKE_SCENARIO);
+			await runSmokeScenario(page, SMOKE_SCENARIO, basemapTileRequests);
 
 			if (pageErrors.length > 0) {
 				throw new Error(
-					`page errors during browser-RBE ${SMOKE_SCENARIO} smoke at ${viewportLabel}: ${pageErrors.join(' | ')}`,
+					`page errors during browser ${SMOKE_SCENARIO} smoke at ${viewportLabel}: ${pageErrors.join(' | ')}`,
 				);
 			}
 			if (consoleErrors.length > 0) {
@@ -174,7 +181,7 @@ try {
 	await stopServer(server);
 }
 
-async function runSmokeScenario(page, scenario) {
+async function runSmokeScenario(page, scenario, basemapTileRequests) {
 	switch (scenario) {
 		case 'shell':
 			await runShellSmoke(page);
@@ -184,6 +191,9 @@ async function runSmokeScenario(page, scenario) {
 			return;
 		case 'map-canvas':
 			await runMapCanvasSmoke(page);
+			return;
+		case 'maplibre-runtime':
+			await runMapLibreRuntimeSmoke(page, basemapTileRequests);
 			return;
 		case 'point-readout':
 			await runPointReadoutSmoke(page);
@@ -343,8 +353,72 @@ async function runMapCanvasSmoke(page) {
 	if (metrics.canvasBackingWidth <= 0 || metrics.canvasBackingHeight <= 0) {
 		throw new Error(`MapLibre canvas has no backing store: ${JSON.stringify(metrics)}`);
 	}
-
 	console.log(`darkmap map-canvas smoke observed ${JSON.stringify(metrics)}`);
+}
+
+async function runMapLibreRuntimeSmoke(page, basemapTileRequests) {
+	await runMapCanvasSmoke(page);
+	await page.waitForFunction(
+		() => document.querySelector('[data-tour="map"]')?.getAttribute('data-maplibre-basemap-rendered') === 'true',
+		undefined,
+		{ timeout: 30_000 },
+	);
+	if (basemapTileRequests.length === 0) {
+		throw new Error('MapLibre rendered without an observed OpenStreetMap raster tile request');
+	}
+	const glVersion = await page
+		.locator(MAP_CANVAS_SELECTOR)
+		.first()
+		.evaluate((canvas) => {
+			const gl = canvas instanceof HTMLCanvasElement ? canvas.getContext('webgl2') : null;
+			return gl?.getParameter(gl.VERSION) ?? null;
+		});
+	if (typeof glVersion !== 'string' || !glVersion.startsWith('WebGL 2')) {
+		throw new Error(`MapLibre v6 did not render with WebGL2: ${JSON.stringify(glVersion)}`);
+	}
+
+	await page.waitForFunction(
+		() => document.querySelector('.maplibregl-ctrl-attrib')?.textContent?.includes('OpenStreetMap') ?? false,
+		undefined,
+		{ timeout: 20_000 },
+	);
+	const attribution = await page.locator('.maplibregl-ctrl-attrib').textContent();
+	if (!attribution?.includes('OpenStreetMap')) {
+		throw new Error(`MapLibre basemap attribution missing: ${JSON.stringify(attribution)}`);
+	}
+	if ((await page.locator('link[href*="unpkg.com/maplibre-gl"]').count()) !== 0) {
+		throw new Error('MapLibre CSS still depends on the v5 unpkg stylesheet');
+	}
+
+	// The URL may be an emitted asset or blob wrapper. Identify MapLibre's own
+	// initialized worker by the v6.4.1 Worker globals, not an arbitrary worker.
+	let mapWorkerUrl;
+	const workerDeadline = Date.now() + 10_000;
+	while (!mapWorkerUrl && Date.now() < workerDeadline) {
+		for (const worker of page.workers()) {
+			const initialized = await worker
+				.evaluate(
+					() =>
+						typeof self.addProtocol === 'function' &&
+						typeof self.registerWorkerSource === 'function' &&
+						Boolean(self.worker),
+				)
+				.catch(() => false);
+			if (initialized) {
+				mapWorkerUrl = worker.url();
+				break;
+			}
+		}
+		if (mapWorkerUrl) break;
+		await delay(250);
+	}
+	if (!mapWorkerUrl) {
+		throw new Error(`MapLibre v6 worker did not initialize: ${JSON.stringify(page.workers().map((w) => w.url()))}`);
+	}
+
+	console.log(
+		`darkmap MapLibre runtime smoke observed ${JSON.stringify({ glVersion, mapWorkerUrl, basemapTileRequests: basemapTileRequests.length, attribution })}`,
+	);
 }
 
 async function runPointReadoutSmoke(page) {
