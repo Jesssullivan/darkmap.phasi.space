@@ -560,7 +560,46 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 		undefined,
 		{ timeout: 20_000 },
 	);
-	await airInstrument.waitFor({ state: 'visible', timeout: 20_000 });
+	try {
+		await airInstrument.waitFor({ state: 'visible', timeout: 20_000 });
+	} catch (error) {
+		const visibilityChain = await page
+			.evaluate(() => {
+				const fixedClasses = new Set([
+					'aqi-value',
+					'compact',
+					'dock-body',
+					'dock-pane',
+					'dock-rail',
+					'dock-sheet',
+					'instrument-column',
+					'responsive-dock',
+					'tile',
+				]);
+				const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
+				let node = pane?.querySelector('.instrument-column.compact .aqi-value') ?? pane;
+				const chain = [];
+				for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+					const style = getComputedStyle(node);
+					const rect = node.getBoundingClientRect();
+					chain.push({
+						tag: node.tagName.toLowerCase(),
+						classes: [...node.classList].filter((name) => fixedClasses.has(name)),
+						display: style.display,
+						visibility: style.visibility,
+						opacity: style.opacity,
+						width: Number(rect.width.toFixed(2)),
+						height: Number(rect.height.toFixed(2)),
+						hidden: node instanceof HTMLElement ? node.hidden : false,
+					});
+					if (node.matches('.responsive-dock')) break;
+				}
+				return chain;
+			})
+			.catch(() => []);
+		console.error(`darkmap AQI visibility diagnostic ${JSON.stringify(visibilityChain)}`);
+		throw error;
+	}
 	await airRule.waitFor({ state: 'visible', timeout: 20_000 });
 	const airAqi = ((await airInstrument.textContent()) ?? '').trim();
 	const airSummary = ((await dockReadout.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim();
