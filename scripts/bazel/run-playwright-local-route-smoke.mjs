@@ -4,6 +4,7 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, statSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { chromium, webkit } from '@playwright/test';
 
 process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
@@ -19,10 +20,85 @@ const SMOKE_SCENARIO = process.env.DARKMAP_RBE_SMOKE_SCENARIO ?? 'shell';
 const SMOKE_ENGINE = process.env.DARKMAP_RBE_SMOKE_ENGINE === 'webkit' ? 'webkit' : 'chromium';
 const SMOKE_VIEWPORTS = parseViewportList(process.env.DARKMAP_RBE_SMOKE_VIEWPORTS);
 const MAP_CANVAS_SELECTOR = '[data-tour="map"] canvas, canvas.maplibregl-canvas';
-const TRANSPARENT_PNG = Buffer.from(
-	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-	'base64',
-);
+const PNG_TILE_SIZE = 256;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const TRANSPARENT_PNG = createTransparentPng();
+validateTransparentPng(TRANSPARENT_PNG);
+
+function pngCrc32(bytes) {
+	let crc = 0xffffffff;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit++) {
+			crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+	const chunk = Buffer.alloc(12 + data.length);
+	chunk.writeUInt32BE(data.length, 0);
+	chunk.write(type, 4, 4, 'ascii');
+	data.copy(chunk, 8);
+	chunk.writeUInt32BE(pngCrc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
+	return chunk;
+}
+
+function createTransparentPng() {
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(PNG_TILE_SIZE, 0);
+	header.writeUInt32BE(PNG_TILE_SIZE, 4);
+	header.set([8, 6, 0, 0, 0], 8); // 8-bit RGBA, no interlace.
+	// Each all-zero scanline starts with PNG filter 0 and contains transparent RGBA pixels.
+	const scanlines = Buffer.alloc(PNG_TILE_SIZE * (1 + PNG_TILE_SIZE * 4));
+	return Buffer.concat([
+		PNG_SIGNATURE,
+		pngChunk('IHDR', header),
+		pngChunk('IDAT', deflateSync(scanlines)),
+		pngChunk('IEND', Buffer.alloc(0)),
+	]);
+}
+
+function validateTransparentPng(png) {
+	if (pngCrc32(Buffer.from('123456789')) !== 0xcbf43926) {
+		throw new Error('transparent PNG fixture: invalid CRC implementation');
+	}
+	if (!png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+		throw new Error('transparent PNG fixture: invalid signature');
+	}
+	let offset = PNG_SIGNATURE.length;
+	const chunks = [];
+	for (const expectedType of ['IHDR', 'IDAT', 'IEND']) {
+		if (offset + 12 > png.length) throw new Error(`transparent PNG fixture: missing ${expectedType}`);
+		const length = png.readUInt32BE(offset);
+		const end = offset + 12 + length;
+		if (end > png.length) throw new Error(`transparent PNG fixture: truncated ${expectedType}`);
+		const type = png.toString('ascii', offset + 4, offset + 8);
+		if (type !== expectedType) throw new Error(`transparent PNG fixture: expected ${expectedType}, got ${type}`);
+		const actualCrc = png.readUInt32BE(end - 4);
+		const expectedCrc = pngCrc32(png.subarray(offset + 4, end - 4));
+		if (actualCrc !== expectedCrc) throw new Error(`transparent PNG fixture: invalid ${type} CRC`);
+		chunks.push(png.subarray(offset + 8, end - 4));
+		offset = end;
+	}
+	if (offset !== png.length || chunks[2].length !== 0) {
+		throw new Error('transparent PNG fixture: invalid IEND');
+	}
+	const header = chunks[0];
+	if (
+		header.length !== 13 ||
+		header.readUInt32BE(0) !== PNG_TILE_SIZE ||
+		header.readUInt32BE(4) !== PNG_TILE_SIZE ||
+		!header.subarray(8).equals(Buffer.from([8, 6, 0, 0, 0]))
+	) {
+		throw new Error('transparent PNG fixture: invalid RGBA header');
+	}
+	const scanlines = inflateSync(chunks[1]);
+	if (scanlines.length !== PNG_TILE_SIZE * (1 + PNG_TILE_SIZE * 4) || scanlines.some((byte) => byte !== 0)) {
+		throw new Error('transparent PNG fixture: nontransparent or invalid scanlines');
+	}
+}
 
 const buildDir = findBuildDir();
 const chromiumRuntimeDir = mkdtempSync(join(tmpdir(), 'darkmap-playwright-rbe-'));
