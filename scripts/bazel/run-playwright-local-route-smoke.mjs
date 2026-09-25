@@ -102,10 +102,35 @@ try {
 		const pageErrors = [];
 		const consoleErrors = [];
 		const basemapTileRequests = [];
+		const basemapNetwork = {
+			osm: 0,
+			carto: 0,
+			satellite: 0,
+			okResponses: 0,
+			errorResponses: 0,
+			requestFailures: 0,
+			lastErrorStatus: 'none',
+		};
 		page.on('request', (request) => {
 			const url = new URL(request.url());
-			if (/^[abc]\.tile\.openstreetmap\.org$/.test(url.hostname) && /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) {
+			const provider = classifyKnownBasemapTile(url);
+			if (provider) basemapNetwork[provider] = Math.min(basemapNetwork[provider] + 1, 99);
+			if (provider === 'osm') {
 				basemapTileRequests.push(request.url());
+			}
+		});
+		page.on('response', (response) => {
+			if (!classifyKnownBasemapTile(new URL(response.url()))) return;
+			const status = response.status();
+			if (status >= 200 && status < 400) basemapNetwork.okResponses = Math.min(basemapNetwork.okResponses + 1, 99);
+			else {
+				basemapNetwork.errorResponses = Math.min(basemapNetwork.errorResponses + 1, 99);
+				basemapNetwork.lastErrorStatus = String(status);
+			}
+		});
+		page.on('requestfailed', (request) => {
+			if (classifyKnownBasemapTile(new URL(request.url()))) {
+				basemapNetwork.requestFailures = Math.min(basemapNetwork.requestFailures + 1, 99);
 			}
 		});
 		page.on('pageerror', (err) => {
@@ -124,7 +149,10 @@ try {
 			console.log(`darkmap RENDERER CRASH observed at ${viewportLabel}`);
 		});
 		await installNetworkGuards(page, baseURL);
-		await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
+		await page.addInitScript(() => {
+			localStorage.setItem('darkmap-tour-v1', '1');
+			localStorage.setItem('darkmap-aqi-palette', 'airnow');
+		});
 
 		try {
 			try {
@@ -156,7 +184,7 @@ try {
 				);
 				throw gotoErr;
 			}
-			await runSmokeScenario(page, SMOKE_SCENARIO, basemapTileRequests);
+			await runSmokeScenario(page, SMOKE_SCENARIO, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors);
 
 			if (pageErrors.length > 0) {
 				throw new Error(
@@ -181,7 +209,7 @@ try {
 	await stopServer(server);
 }
 
-async function runSmokeScenario(page, scenario, basemapTileRequests) {
+async function runSmokeScenario(page, scenario, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors) {
 	switch (scenario) {
 		case 'shell':
 			await runShellSmoke(page);
@@ -193,7 +221,7 @@ async function runSmokeScenario(page, scenario, basemapTileRequests) {
 			await runMapCanvasSmoke(page);
 			return;
 		case 'maplibre-runtime':
-			await runMapLibreRuntimeSmoke(page, basemapTileRequests);
+			await runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors);
 			return;
 		case 'point-readout':
 			await runPointReadoutSmoke(page);
@@ -356,13 +384,46 @@ async function runMapCanvasSmoke(page) {
 	console.log(`darkmap map-canvas smoke observed ${JSON.stringify(metrics)}`);
 }
 
-async function runMapLibreRuntimeSmoke(page, basemapTileRequests) {
+function classifyKnownBasemapTile(url) {
+	if (/^[abc]\.tile\.openstreetmap\.org$/.test(url.hostname) && /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) {
+		return 'osm';
+	}
+	if (/^[abcd]\.basemaps\.cartocdn\.com$/.test(url.hostname) && /^\/dark_all\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) {
+		return 'carto';
+	}
+	if (
+		url.hostname === 'server.arcgisonline.com' &&
+		/^\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/\d+\/\d+\/\d+$/.test(url.pathname)
+	) {
+		return 'satellite';
+	}
+	return null;
+}
+
+async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors) {
 	await runMapCanvasSmoke(page);
-	await page.waitForFunction(
-		() => document.querySelector('[data-tour="map"]')?.getAttribute('data-maplibre-basemap-rendered') === 'true',
-		undefined,
-		{ timeout: 30_000 },
-	);
+	try {
+		await page.waitForFunction(
+			() => document.querySelector('[data-tour="map"]')?.getAttribute('data-maplibre-basemap-rendered') === 'true',
+			undefined,
+			{ timeout: 30_000 },
+		);
+	} catch (error) {
+		const mapState = await page
+			.evaluate(() => {
+				const map = document.querySelector('[data-tour="map"]');
+				const raw = map?.getAttribute('data-maplibre-runtime-diagnostic');
+				return {
+					rendered: map?.getAttribute('data-maplibre-basemap-rendered') === 'true',
+					proof: raw ? JSON.parse(raw) : null,
+				};
+			})
+			.catch(() => ({ unavailable: true }));
+		console.error(
+			`darkmap MapLibre render-marker diagnostic ${JSON.stringify({ mapState, basemapNetwork, pageErrorCount: Math.min(pageErrors.length, 99), consoleErrorCount: Math.min(consoleErrors.length, 99) })}`,
+		);
+		throw error;
+	}
 	if (basemapTileRequests.length === 0) {
 		throw new Error('MapLibre rendered without an observed OpenStreetMap raster tile request');
 	}
@@ -388,6 +449,66 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests) {
 	}
 	if ((await page.locator('link[href*="unpkg.com/maplibre-gl"]').count()) !== 0) {
 		throw new Error('MapLibre CSS still depends on the v5 unpkg stylesheet');
+	}
+
+	// The Air instrument uses the real viewport OpenAQ fixture in this strict
+	// MapLibre/WebGL scenario. Select Air to trigger its existing valued-station
+	// fetch, then verify the global palette toggle recolors the docked Air gauge.
+	const airLens = page.getByRole('navigation', { name: 'Map lens' }).getByRole('button', { name: 'Air' });
+	const airInstrument = page.locator('.instrument-column.compact .aqi-value');
+	const airRule = page.locator('.instrument-column.compact .aqi-rule');
+	const openaqRequest = page.waitForRequest(
+		(req) => {
+			const url = new URL(req.url());
+			return url.pathname === '/api/atmospheric/openaq' && !url.searchParams.has('markers');
+		},
+		{ timeout: 20_000 },
+	);
+	await airLens.click();
+	await openaqRequest;
+	await page.waitForFunction(
+		() => {
+			const value = document.querySelector('.instrument-column.compact .aqi-value');
+			return value instanceof HTMLElement && !value.classList.contains('empty') && /\d/.test(value.textContent ?? '');
+		},
+		undefined,
+		{ timeout: 20_000 },
+	);
+	await airInstrument.waitFor({ state: 'visible', timeout: 20_000 });
+	await airRule.waitFor({ state: 'visible', timeout: 20_000 });
+	const airAqi = ((await airInstrument.textContent()) ?? '').trim();
+	const airSummary = ((await page.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim();
+	const airTally = ((await page.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim();
+	const airNowColor = await airInstrument.evaluate((node) => getComputedStyle(node).color);
+	const airNowRuleColor = await airRule.evaluate((node) => getComputedStyle(node).backgroundColor);
+	if (airNowColor !== 'rgb(0, 228, 0)' || airNowRuleColor !== 'rgb(0, 228, 0)') {
+		throw new Error(
+			`AirNow AQI palette should color the Good-category Air gauge and bar green, got ${JSON.stringify({ airNowColor, airNowRuleColor })}`,
+		);
+	}
+	await page.locator('.toolbar .tool').filter({ hasText: 'AQI colors' }).click();
+	await page.waitForFunction(
+		() => {
+			const value = document.querySelector('.instrument-column.compact .aqi-value');
+			const rule = document.querySelector('.instrument-column.compact .aqi-rule');
+			return (
+				value instanceof HTMLElement &&
+				rule instanceof HTMLElement &&
+				getComputedStyle(value).color === 'rgb(74, 144, 217)' &&
+				getComputedStyle(rule).backgroundColor === 'rgb(74, 144, 217)'
+			);
+		},
+		undefined,
+		{ timeout: 10_000 },
+	);
+	if (
+		((await airInstrument.textContent()) ?? '').trim() !== airAqi ||
+		((await page.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim() !== airSummary ||
+		((await page.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim() !== airTally
+	) {
+		throw new Error(
+			'switching to ColorVision-Assist must recolor the Air gauge without changing its AQI readings/counts',
+		);
 	}
 
 	// The URL may be an emitted asset or blob wrapper. Identify MapLibre's own
@@ -613,6 +734,23 @@ async function runToolbarLabelsSmoke(page) {
 
 	const width = (page.viewportSize() ?? { width: 0 }).width;
 	const height = (page.viewportSize() ?? { height: 0 }).height;
+	if (width < 640 && height >= 501) {
+		await page.getByRole('button', { name: 'Show tools' }).click();
+		await page.locator('.dock-tools-launcher').waitFor({ state: 'visible', timeout: 20_000 });
+		if (
+			(await page
+				.locator('.dock-tools-launcher .tool-tile')
+				.filter({ hasText: /Twilight/i })
+				.count()) !== 0
+		) {
+			throw new Error('compact dock Tools view must not duplicate the top map Twilight toggle');
+		}
+		const topTwilight = page.locator('.toolbar .tool[aria-label*="twilight strip"]');
+		if ((await topTwilight.count()) !== 1 || !(await topTwilight.isVisible())) {
+			throw new Error('compact dock Tools view must preserve exactly one visible top map Twilight toggle');
+		}
+	}
+
 	if (width >= 640 && height >= 501) {
 		const bay = await page.evaluate(() => {
 			const instruments = document.querySelector('.deck-inspector .instrument-column');
@@ -629,7 +767,7 @@ async function runToolbarLabelsSmoke(page) {
 		if (!bay?.visible || !bay.rightOfStage || bay.tiles !== 2) {
 			throw new Error(`Air and local dome must be visible in right-hand inspector: ${JSON.stringify(bay)}`);
 		}
-	} else if (await page.locator('.instrument-column').isVisible()) {
+	} else if (await page.locator('.deck-inspector .instrument-column').isVisible()) {
 		throw new Error('compact/short viewport must not leave loose instrument tiles over the map');
 	}
 	// No hover is issued before this read — the mouse sits at its default

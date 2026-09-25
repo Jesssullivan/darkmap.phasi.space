@@ -2367,9 +2367,41 @@
 			center,
 			zoom,
 		});
+		// Numeric/enum-only browser-proof diagnostics. No coordinates, URLs,
+		// error messages, or mutable Map instance are exposed in the DOM.
+		const basemapProof = {
+			basemap: bm.id,
+			sourceEvents: 0,
+			tileEvents: 0,
+			loadedTileEvents: 0,
+			settledTileEvents: 0,
+			renderEvents: 0,
+			renderAfterReady: 0,
+			mapErrors: 0,
+			basemapErrors: 0,
+			lastSourceLoaded: 'missing',
+			lastTileState: 'missing',
+			lastSourceDataType: 'missing',
+			lastBasemapErrorClass: 'none',
+			lastBasemapErrorStatus: 'none',
+		};
+		let lastPublishedBasemapProof = '';
+		const publishBasemapProof = (): void => {
+			basemapProof.basemap = activeBasemap;
+			const serialized = JSON.stringify(basemapProof);
+			if (serialized === lastPublishedBasemapProof) return;
+			lastPublishedBasemapProof = serialized;
+			mapEl?.setAttribute('data-maplibre-runtime-diagnostic', serialized);
+		};
+		publishBasemapProof();
 		let basemapTileLoaded = false;
 		mapInstance.on('render', () => {
-			if (basemapTileLoaded) mapEl?.setAttribute('data-maplibre-basemap-rendered', 'true');
+			basemapProof.renderEvents = Math.min(basemapProof.renderEvents + 1, 99);
+			if (basemapTileLoaded) {
+				basemapProof.renderAfterReady = Math.min(basemapProof.renderAfterReady + 1, 99);
+				mapEl?.setAttribute('data-maplibre-basemap-rendered', 'true');
+			}
+			publishBasemapProof();
 		});
 		controllerLayer = makeMapLayerControllerLive(mapInstance);
 		// Locator marker — anchors each readout's numbers to a visible point.
@@ -2430,10 +2462,23 @@
 			const sourceId = (ev as { sourceId?: string }).sourceId ?? (ev as { source?: { id?: string } }).source?.id;
 			const err = (ev as { error?: { message?: string; status?: number } }).error;
 			if (!err) return;
+			basemapProof.mapErrors = Math.min(basemapProof.mapErrors + 1, 99);
 			// Basemap errors route to the active basemap id (#235). Toast is
 			// suppressed because basemap failures are usually noisy retries
 			// and the LayerRail pill carries the same information.
 			if (sourceId === BASEMAP_SOURCE_ID) {
+				basemapProof.basemapErrors = Math.min(basemapProof.basemapErrors + 1, 99);
+				const message = (err.message ?? '').toLowerCase();
+				basemapProof.lastBasemapErrorClass = /png|image|bitmap|decod/.test(message)
+					? 'image-decode'
+					: /texture|webgl|gl error/.test(message)
+						? 'texture-webgl'
+						: /fetch|network|http|tile/.test(message)
+							? 'network-tile'
+							: 'other';
+				basemapProof.lastBasemapErrorStatus =
+					typeof err.status === 'number' && err.status >= 100 && err.status <= 599 ? String(err.status) : 'none';
+				publishBasemapProof();
 				layerHealth.dispatch(activeBasemap, {
 					type: 'tile-error',
 					reason: err.message ?? 'tile load failed',
@@ -2441,6 +2486,7 @@
 				});
 				return;
 			}
+			publishBasemapProof();
 			// #196 — dispatch a tile-error health event for the matching LAYERS row.
 			// Helper skips point-source overlays (which use a -pt-src suffix and
 			// dispatch health explicitly from refreshPointLayer).
@@ -2476,8 +2522,32 @@
 			const evt = ev as {
 				sourceId?: string;
 				isSourceLoaded?: boolean;
-				tile?: unknown;
+				sourceDataType?: string;
+				tile?: { state?: unknown };
 			};
+			if (evt.sourceId === BASEMAP_SOURCE_ID) {
+				basemapProof.sourceEvents = Math.min(basemapProof.sourceEvents + 1, 99);
+				basemapProof.lastSourceLoaded =
+					evt.isSourceLoaded === true ? 'true' : evt.isSourceLoaded === false ? 'false' : 'missing';
+				basemapProof.lastSourceDataType =
+					evt.sourceDataType && ['metadata', 'content', 'visibility', 'idle'].includes(evt.sourceDataType)
+						? evt.sourceDataType
+						: 'other';
+				if (evt.tile !== undefined) {
+					basemapProof.tileEvents = Math.min(basemapProof.tileEvents + 1, 99);
+					const state = evt.tile?.state;
+					basemapProof.lastTileState =
+						typeof state === 'string' &&
+						['loaded', 'loading', 'errored', 'unloaded', 'reloading', 'expired'].includes(state)
+							? state
+							: 'other';
+					if (state === 'loaded') basemapProof.loadedTileEvents = Math.min(basemapProof.loadedTileEvents + 1, 99);
+					if (evt.isSourceLoaded === true) {
+						basemapProof.settledTileEvents = Math.min(basemapProof.settledTileEvents + 1, 99);
+					}
+				}
+				publishBasemapProof();
+			}
 			if (evt.tile === undefined) return; // Style or attribution event, not a tile load.
 			// Basemap source dispatches under the active basemap id (#235).
 			if (evt.sourceId === BASEMAP_SOURCE_ID) {
@@ -2854,12 +2924,10 @@
 			variant="overlay"
 			lens={lensStore.lens}
 			hasPoint={!!readout}
-			{ephemerisOpen}
 			onlaunch={(tool) => {
 				if (tool === 'transmission') openTransmissionForPoint();
 				else if (tool === 'passplan') openPassPlanForPoint();
 				else if (tool === 'aq') openAqDashboardForPoint();
-				// Twilight lives in the top map toolbar, not this right-edge cluster.
 			}}
 		/>
 	{/if}
@@ -3007,12 +3075,10 @@
 				variant="rail"
 				lens={lensStore.lens}
 				hasPoint={!!readout}
-				{ephemerisOpen}
 				onlaunch={(tool) => {
 					if (tool === 'transmission') openTransmissionForPoint();
 					else if (tool === 'passplan') openPassPlanForPoint();
 					else if (tool === 'aq') openAqDashboardForPoint();
-					else ephemerisOpen = !ephemerisOpen;
 				}}
 			/>
 		</div>

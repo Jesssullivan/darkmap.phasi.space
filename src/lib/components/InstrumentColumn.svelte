@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Lens } from '$lib/lens';
+	import { paletteColorFor } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
 	import type { Pm25Station } from '$lib/atmospheric/pm25-diffusion';
 	import { buildViewportSummary } from '$lib/atmospheric/viewport-summary';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
@@ -28,6 +30,7 @@
 	// Air tile — honest area rollup of the in-view PM2.5 stations (reuses the
 	// tested pure helper; null AQI ⇒ no PM2.5 reporting, never a fabricated 0).
 	const air = $derived(buildViewportSummary(stations));
+	const airAqiColor = $derived(air.aqi ? paletteColorFor(air.aqi.maxCategory, aqiPalette.mode) : null);
 
 	// Re-weight, never gate: each tile is always present. The lens-matched tile is
 	// Tier-2 (full); the off-lens tile dims to Tier-3 (still focusable + tooltip-
@@ -57,8 +60,8 @@
 			</HelpTooltip>
 		</div>
 		{#if air.aqi}
-			<div class="aqi-rule" style:background={air.aqi.maxCategory.color}></div>
-			<p class="aqi-value" style:color={air.aqi.maxCategory.color}>{air.aqi.median}</p>
+			<div class="aqi-rule" style:background={airAqiColor}></div>
+			<p class="aqi-value" style:color={airAqiColor}>{air.aqi.median}</p>
 			<p class="aqi-sub">{air.aqi.min}–{air.aqi.max} AQI</p>
 			<p class="tile-tally">{air.pm25StationCount}/{air.stationCount} stns</p>
 		{:else if air.stationCount > 0}

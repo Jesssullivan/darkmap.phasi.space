@@ -1,17 +1,15 @@
 <script lang="ts">
 	import type { Lens } from '$lib/lens';
-	import { Radio, Satellite, Wind, SunMoon } from '@lucide/svelte';
+	import { Radio, Satellite, Wind } from '@lucide/svelte';
 
 	/** A deep-tool launcher this cluster can open. */
-	export type ToolId = 'transmission' | 'passplan' | 'aq' | 'twilight';
+	export type ToolId = 'transmission' | 'passplan' | 'aq';
 
 	interface Props {
 		/** Active persona lens — re-weights ORDER + accent only (never dims/disables). */
 		lens: Lens;
 		/** Whether a map point is pinned — drives the carry-the-query affordance hint. */
 		hasPoint: boolean;
-		/** Twilight strip (DOCK gantt) open state — the Twilight tile reflects it. */
-		ephemerisOpen: boolean;
 		/** Launch the chosen tool (the page wires this to the open*ForPoint handlers). */
 		onlaunch: (tool: ToolId) => void;
 		/** 'rail' = labelled tiles in the rail; 'overlay' = compact pills on the map's
@@ -19,15 +17,16 @@
 		variant?: 'rail' | 'overlay';
 	}
 
-	let { lens, hasPoint, ephemerisOpen, onlaunch, variant = 'rail' }: Props = $props();
+	let { lens, hasPoint, onlaunch, variant = 'rail' }: Props = $props();
 
-	// The four deep tools, each as an ALWAYS-PRESENT, full-opacity launcher. `lens`
+	// The three deep tools, each as an ALWAYS-PRESENT, full-opacity launcher. `lens`
 	// is the persona this tool leads for — used ONLY to sort it first + accent it
 	// when that lens is active. Every tile stays opacity:1 + clickable in every lens
 	// (command-deck.md §4 — promote by order/accent, never dim/disable/hide).
 	// `key` is the keyboard accelerator (W5d) that mirrors this launcher — surfaced in
-	// the button title for discoverability. Twilight has none (V was dropped); it stays
-	// a click/disclosure toggle. The chords themselves live in +page.svelte's onDeckKey.
+	// the button title for discoverability. The map toolbar owns Twilight across
+	// responsive states; the command palette retains its separate command action.
+	// The chords themselves live in +page.svelte's onDeckKey.
 	const TOOLS: { id: ToolId; label: string; sub: string; icon: typeof Radio; lens: Lens; key?: string }[] = [
 		{
 			id: 'transmission',
@@ -46,11 +45,7 @@
 			key: 'P',
 		},
 		{ id: 'aq', label: 'Air Quality', sub: 'pollutants · NowCast AQI', icon: Wind, lens: 'air', key: 'A' },
-		{ id: 'twilight', label: 'Twilight', sub: 'sun/moon timing · dark window', icon: SunMoon, lens: 'sky' },
 	];
-	// The map's top toolbar owns Twilight. Keep it in the mobile/rail Tools view,
-	// but never render a duplicate toggle in the right-edge overlay.
-	const visibleTools = $derived(variant === 'overlay' ? TOOLS.filter((tool) => tool.id !== 'twilight') : TOOLS);
 
 	// Flex order: the active lens's tool floats to the top (-1); the rest hold their
 	// declared order at full strength. No reordering of the others, no dimming.
@@ -60,7 +55,7 @@
 <section class="tools-cluster" class:overlay={variant === 'overlay'} aria-label="Deep tools">
 	{#if variant === 'rail'}<h2 class="cluster-title">Tools</h2>{/if}
 	<div class="cluster-grid">
-		{#each visibleTools as t (t.id)}
+		{#each TOOLS as t (t.id)}
 			{@const Icon = t.icon}
 			{@const lead = t.lens === lens}
 			<button
@@ -76,13 +71,10 @@
 				<span class="tool-text">
 					<span class="tool-label">
 						{t.label}
-						{#if t.id === 'twilight' && ephemerisOpen}<span class="on-dot" aria-label="open" title="open"></span>{/if}
 					</span>
 					{#if variant === 'rail'}<span class="tool-sub">{t.sub}</span>{/if}
 				</span>
-				{#if variant === 'rail'}<span class="tool-go" aria-hidden="true"
-						>{hasPoint || t.id === 'twilight' ? 'Open' : 'Pin →'}</span
-					>{/if}
+				{#if variant === 'rail'}<span class="tool-go" aria-hidden="true">{hasPoint ? 'Open' : 'Pin →'}</span>{/if}
 			</button>
 		{/each}
 	</div>
@@ -90,7 +82,7 @@
 
 <style>
 	/* Pinned to the bottom of the RAIL (.left-dock). The persistent Level-1 launcher
-	   cluster (command-deck.md §2): all four deep tools are always one click away. */
+	   cluster (command-deck.md §2): all three deep tools are always one click away. */
 	.tools-cluster {
 		flex: 0 0 auto;
 		display: flex;
@@ -188,14 +180,6 @@
 		opacity: 0.55;
 		letter-spacing: 0.04em;
 	}
-	.on-dot {
-		width: 0.4rem;
-		height: 0.4rem;
-		border-radius: 50%;
-		background: var(--lens-accent, var(--accent-amber));
-		box-shadow: 0 0 4px var(--lens-accent, var(--accent-amber));
-	}
-
 	/* OVERLAY variant (idea ①) — compact rounded pills hugging the map's right edge.
 	   +page positions the cluster absolute in the stage cell; these pills echo the
 	   top-left MapToolbar's pill vocabulary so both stage corners speak one control
