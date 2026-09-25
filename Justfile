@@ -114,7 +114,8 @@ test-unit:
 # deliberately direct/local, not a GloriousFlywheel RBE qualification.
 test-maplibre-runtime:
     cd {{ root }} && test -x "${CHROME_BIN:?use the locked browser devShell}"
-    cd {{ root }} && bazelisk test --test_strategy=standalone --test_env=CHROME_BIN="${CHROME_BIN}" //:playwright_maplibre_runtime_smoke
+    cd {{ root }} && test -r "${FONTCONFIG_FILE:?use the locked browser devShell}"
+    cd {{ root }} && bazelisk test --test_strategy=standalone --test_env=CHROME_BIN="${CHROME_BIN}" --test_env=FONTCONFIG_FILE="${FONTCONFIG_FILE}" //:playwright_maplibre_runtime_smoke
 
 # Local Vitest fallback for workstations without cluster cache reachability
 test-local:

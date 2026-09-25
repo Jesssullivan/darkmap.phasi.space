@@ -68,8 +68,17 @@
           # Chromium store executable; it is not an RBE or release shell.
           browser = pkgs.mkShell {
             inputsFrom = [ baseShell ];
-            buildInputs = [ pkgs.chromium ];
+            buildInputs = [
+              pkgs.chromium
+              pkgs.fontconfig
+              pkgs.dejavu_fonts
+            ];
             CHROME_BIN = "${pkgs.chromium}/bin/chromium";
+            FONTCONFIG_FILE = pkgs.makeFontsConf {
+              fontDirectories = [ pkgs.dejavu_fonts ];
+              impureFontDirectories = [ ];
+              includes = [ "${pkgs.fontconfig.out}/etc/fonts/conf.d" ];
+            };
           };
         };
 
