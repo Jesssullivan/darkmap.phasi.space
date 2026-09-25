@@ -530,9 +530,18 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 	// The Air instrument uses the real viewport OpenAQ fixture in this strict
 	// MapLibre/WebGL scenario. Select Air to trigger its existing valued-station
 	// fetch, then verify the global palette toggle recolors the docked Air gauge.
+	// Use the visible dock control to activate its Readout pane first; the compact
+	// gauge remains mounted inside that pane while Tools is active, but is correctly
+	// hidden until the user returns to Readout.
+	const dockReadout = page.locator('.responsive-dock .dock-pane[data-pane="readout"]');
+	await page
+		.getByRole('group', { name: 'Dock view' })
+		.getByRole('button', { name: /^Show (point )?readout$/i })
+		.click();
+	await dockReadout.waitFor({ state: 'visible', timeout: 10_000 });
 	const airLens = page.getByRole('navigation', { name: 'Map lens' }).getByRole('button', { name: 'Air' });
-	const airInstrument = page.locator('.instrument-column.compact .aqi-value');
-	const airRule = page.locator('.instrument-column.compact .aqi-rule');
+	const airInstrument = dockReadout.locator('.instrument-column.compact .aqi-value');
+	const airRule = dockReadout.locator('.instrument-column.compact .aqi-rule');
 	const openaqRequest = page.waitForRequest(
 		(req) => {
 			const url = new URL(req.url());
@@ -544,7 +553,8 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 	await openaqRequest;
 	await page.waitForFunction(
 		() => {
-			const value = document.querySelector('.instrument-column.compact .aqi-value');
+			const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
+			const value = pane?.querySelector('.instrument-column.compact .aqi-value');
 			return value instanceof HTMLElement && !value.classList.contains('empty') && /\d/.test(value.textContent ?? '');
 		},
 		undefined,
@@ -553,8 +563,8 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 	await airInstrument.waitFor({ state: 'visible', timeout: 20_000 });
 	await airRule.waitFor({ state: 'visible', timeout: 20_000 });
 	const airAqi = ((await airInstrument.textContent()) ?? '').trim();
-	const airSummary = ((await page.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim();
-	const airTally = ((await page.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim();
+	const airSummary = ((await dockReadout.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim();
+	const airTally = ((await dockReadout.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim();
 	const airNowColor = await airInstrument.evaluate((node) => getComputedStyle(node).color);
 	const airNowRuleColor = await airRule.evaluate((node) => getComputedStyle(node).backgroundColor);
 	if (airNowColor !== 'rgb(0, 228, 0)' || airNowRuleColor !== 'rgb(0, 228, 0)') {
@@ -565,8 +575,9 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 	await page.locator('.toolbar .tool').filter({ hasText: 'AQI colors' }).click();
 	await page.waitForFunction(
 		() => {
-			const value = document.querySelector('.instrument-column.compact .aqi-value');
-			const rule = document.querySelector('.instrument-column.compact .aqi-rule');
+			const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
+			const value = pane?.querySelector('.instrument-column.compact .aqi-value');
+			const rule = pane?.querySelector('.instrument-column.compact .aqi-rule');
 			return (
 				value instanceof HTMLElement &&
 				rule instanceof HTMLElement &&
@@ -579,8 +590,8 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 	);
 	if (
 		((await airInstrument.textContent()) ?? '').trim() !== airAqi ||
-		((await page.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim() !== airSummary ||
-		((await page.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim() !== airTally
+		((await dockReadout.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim() !== airSummary ||
+		((await dockReadout.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim() !== airTally
 	) {
 		throw new Error(
 			'switching to ColorVision-Assist must recolor the Air gauge without changing its AQI readings/counts',
