@@ -1,4 +1,5 @@
 import { Context, Data, Effect, Layer } from 'effect';
+import { deflateSync } from 'node:zlib';
 import {
 	capabilityFor,
 	defaultTimeForCapability,
@@ -77,12 +78,42 @@ const NO_DATA_CACHE = 'public, max-age=600, s-maxage=3600';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const FRESH_CACHE = 'public, max-age=3600, s-maxage=86400';
 const DAY_MS = 24 * 3600 * 1000;
-const TRANSPARENT_PNG = Uint8Array.from([
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
-	0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49,
-	0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00, 0xef, 0xbf, 0xa7, 0xdb, 0x00,
-	0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-]);
+const PNG_TILE_SIZE = 256;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+const pngCrc32 = (bytes: Uint8Array): number => {
+	let crc = 0xffffffff;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+};
+
+const pngChunk = (type: 'IHDR' | 'IDAT' | 'IEND', data: Uint8Array): Buffer => {
+	const chunk = Buffer.alloc(12 + data.length);
+	chunk.writeUInt32BE(data.length, 0);
+	chunk.write(type, 4, 4, 'ascii');
+	chunk.set(data, 8);
+	chunk.writeUInt32BE(pngCrc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
+	return chunk;
+};
+
+// Only the adapter-node raster route imports this service at runtime. Generate
+// one bounded, fully transparent RGBA tile rather than serving unverified bytes.
+const TRANSPARENT_PNG = (() => {
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(PNG_TILE_SIZE, 0);
+	header.writeUInt32BE(PNG_TILE_SIZE, 4);
+	header.set([8, 6, 0, 0, 0], 8); // 8-bit RGBA, no interlace.
+	const scanlines = Buffer.alloc(PNG_TILE_SIZE * (1 + PNG_TILE_SIZE * 4)); // filter 0 + transparent pixels per row.
+	return Buffer.concat([
+		PNG_SIGNATURE,
+		pngChunk('IHDR', header),
+		pngChunk('IDAT', deflateSync(scanlines)),
+		pngChunk('IEND', Buffer.alloc(0)),
+	]);
+})();
 
 type AtmosphericTileStatus = 'ok' | 'ok-fallback' | 'no-data';
 
