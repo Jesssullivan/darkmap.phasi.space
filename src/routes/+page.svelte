@@ -3582,11 +3582,11 @@
 			padding: 0.6rem 0.55rem;
 			box-sizing: border-box;
 			overflow: hidden;
-		/* Retain the rail query container for its own layout. LayerRail's compact
+			/* Retain the rail query container for its own layout. LayerRail's compact
 		   swap is a structural render branch controlled by railCompact. */
-		container-type: inline-size;
-		container-name: rail;
-	}
+			container-type: inline-size;
+			container-name: rail;
+		}
 		.left-dock-scroll {
 			flex: 1 1 auto;
 			min-height: 0;

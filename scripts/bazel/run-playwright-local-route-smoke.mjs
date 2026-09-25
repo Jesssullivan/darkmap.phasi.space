@@ -528,7 +528,12 @@ async function runToolbarLabelsSmoke(page) {
 	if ((await page.locator('.toolbar .tool[aria-label*="twilight strip"]').count()) !== 1) {
 		throw new Error('top map toolbar must own exactly one twilight-strip toggle');
 	}
-	if ((await page.locator('.tools-cluster.overlay .tool-tile').filter({ hasText: /Twilight/i }).count()) !== 0) {
+	if (
+		(await page
+			.locator('.tools-cluster.overlay .tool-tile')
+			.filter({ hasText: /Twilight/i })
+			.count()) !== 0
+	) {
 		throw new Error('right-edge deep-tool cluster must not duplicate the twilight toggle');
 	}
 
