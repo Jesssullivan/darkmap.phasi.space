@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 
-const SITE = 'https://darkmap.phasi.space';
+const SITE = 'https://darkmap.xoxd.ai';
 const PAGES: string[] = ['/'];
 
 export const prerender = true;

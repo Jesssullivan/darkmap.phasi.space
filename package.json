@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"description": "Public dark-sky planning map for astronomy, field sensing, cycling, hiking, and low-light logistics",
-	"homepage": "https://darkmap.phasi.space",
+	"homepage": "https://darkmap.xoxd.ai",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/Jesssullivan/darkmap.phasi.space.git"
@@ -39,7 +39,7 @@
 		"@tummycrypt/tinyvectors": "0.3.0",
 		"astronomy-engine": "^2.1.19",
 		"effect": "^3.21.2",
-		"maplibre-gl": "^5.5.0",
+		"maplibre-gl": "6.4.1",
 		"satellite.js": "^5.0.0"
 	},
 	"devDependencies": {

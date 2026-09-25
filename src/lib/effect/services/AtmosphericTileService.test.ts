@@ -1,10 +1,12 @@
 import { Effect, Exit } from 'effect';
+import { inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { LAYERS, type RasterLayerDef } from '$lib/layers';
 import {
 	AtmosphericTileService,
 	makeAtmosphericTileServiceLive,
 	type AtmosphericTileFetcher,
+	type AtmosphericTileOutcome,
 } from './AtmosphericTileService';
 
 const modisTerra = LAYERS.find((l) => l.id === 'clouds-modis-terra')! as RasterLayerDef;
@@ -60,6 +62,27 @@ const runFetch = (fetcher: AtmosphericTileFetcher, layerDef = modisTerra, time?:
 			return yield* svc.fetchTile({ layerDef, tile, time });
 		}).pipe(Effect.provide(makeAtmosphericTileServiceLive(fetcher, FIXED_CLOCK))),
 	);
+
+const expectNoDataOutcome = (outcome: AtmosphericTileOutcome) => {
+	if (outcome.tag !== 'no-data') throw new Error(`expected no-data, got ${outcome.tag}`);
+	expect(outcome.status).toBe(200);
+	expect(outcome.contentType).toBe('image/png');
+	expect(outcome.cacheControl).toContain('max-age=600');
+	expect(outcome.body.byteLength).toBeGreaterThan(0);
+	expect(outcome.debugHeaders['x-darkmap-atmospheric-outcome']).toBe('no-data');
+	expect(outcome.debugHeaders['x-darkmap-atmospheric-status']).toBe('no-data');
+	return outcome;
+};
+
+// Independent parser for the actual service response, with a known CRC32 vector.
+const pngCrc32ForTest = (bytes: Uint8Array): number => {
+	let crc = 0xffffffff;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+};
 
 describe('AtmosphericTileService — happy path', () => {
 	it('returns ok with content-type + cache headers for a healthy upstream response', async () => {
@@ -120,26 +143,59 @@ describe('AtmosphericTileService — no-data classification', () => {
 	it('upstream 404 → no-data transparent tile, not 502', async () => {
 		const exit = await runFetch(fakeFetcher(status404()));
 		if (exit._tag !== 'Success') throw new Error('expected Success');
-		expect(exit.value.tag).toBe('no-data');
-		if (exit.value.tag !== 'no-data') return;
-		expect(exit.value.status).toBe(200);
-		expect(exit.value.contentType).toBe('image/png');
-		expect(exit.value.body.byteLength).toBeGreaterThan(0);
-		expect(exit.value.debugHeaders['x-darkmap-atmospheric-outcome']).toBe('no-data');
-		expect(exit.value.debugHeaders['x-darkmap-atmospheric-status']).toBe('no-data');
-		expect(exit.value.debugHeaders['x-darkmap-atmospheric-upstream-status']).toBe('404');
+		const outcome = expectNoDataOutcome(exit.value);
+		expect(outcome.debugHeaders['x-darkmap-atmospheric-upstream-status']).toBe('404');
 	});
 
 	it('upstream 204 → no-data, preserves debug headers', async () => {
 		const exit = await runFetch(fakeFetcher(status204()));
 		if (exit._tag !== 'Success') throw new Error('expected Success');
-		expect(exit.value.tag).toBe('no-data');
+		const outcome = expectNoDataOutcome(exit.value);
+		expect(outcome.debugHeaders['x-darkmap-atmospheric-upstream-status']).toBe('204');
 	});
 
 	it('upstream 200 with tiny empty image → no-data', async () => {
 		const exit = await runFetch(fakeFetcher(emptyPng()));
 		if (exit._tag !== 'Success') throw new Error('expected Success');
-		expect(exit.value.tag).toBe('no-data');
+		const outcome = expectNoDataOutcome(exit.value);
+		expect(outcome.debugHeaders['x-darkmap-atmospheric-upstream-status']).toBe('200');
+	});
+
+	it('serves a complete, CRC-valid, transparent RGBA PNG for no-data', async () => {
+		const exit = await runFetch(fakeFetcher(status404()));
+		if (exit._tag !== 'Success') throw new Error('expected Success');
+		const outcome = expectNoDataOutcome(exit.value);
+		const png = Buffer.from(outcome.body);
+		expect(pngCrc32ForTest(Buffer.from('123456789'))).toBe(0xcbf43926);
+		expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+		let offset = 8;
+		const chunks: Buffer[] = [];
+		for (const expectedType of ['IHDR', 'IDAT', 'IEND']) {
+			expect(offset + 12).toBeLessThanOrEqual(png.length);
+			const length = png.readUInt32BE(offset);
+			const dataStart = offset + 8;
+			const crcAt = dataStart + length;
+			const end = crcAt + 4;
+			expect(end).toBeLessThanOrEqual(png.length);
+			expect(png.toString('ascii', offset + 4, dataStart)).toBe(expectedType);
+			expect(png.readUInt32BE(crcAt)).toBe(pngCrc32ForTest(png.subarray(offset + 4, crcAt)));
+			chunks.push(png.subarray(dataStart, crcAt));
+			offset = end;
+		}
+		expect(offset).toBe(png.length);
+		expect(chunks[2].length).toBe(0);
+
+		const header = chunks[0];
+		expect(header.length).toBe(13);
+		expect(header.readUInt32BE(0)).toBe(256);
+		expect(header.readUInt32BE(4)).toBe(256);
+		expect([...header.subarray(8)]).toEqual([8, 6, 0, 0, 0]); // RGBA, noninterlaced.
+		const scanlines = inflateSync(chunks[1]);
+		const rowBytes = 1 + 256 * 4;
+		expect(scanlines.length).toBe(256 * rowBytes);
+		for (let row = 0; row < 256; row++) expect(scanlines[row * rowBytes]).toBe(0); // filter 0.
+		expect(scanlines.every((byte) => byte === 0)).toBe(true); // RGBA(0, 0, 0, 0) at every pixel.
 	});
 
 	it('no-data response uses a short cache window so retries can re-check soon', async () => {

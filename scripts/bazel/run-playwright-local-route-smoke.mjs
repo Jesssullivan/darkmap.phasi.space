@@ -4,6 +4,7 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, statSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { chromium, webkit } from '@playwright/test';
 
 process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
@@ -19,10 +20,85 @@ const SMOKE_SCENARIO = process.env.DARKMAP_RBE_SMOKE_SCENARIO ?? 'shell';
 const SMOKE_ENGINE = process.env.DARKMAP_RBE_SMOKE_ENGINE === 'webkit' ? 'webkit' : 'chromium';
 const SMOKE_VIEWPORTS = parseViewportList(process.env.DARKMAP_RBE_SMOKE_VIEWPORTS);
 const MAP_CANVAS_SELECTOR = '[data-tour="map"] canvas, canvas.maplibregl-canvas';
-const TRANSPARENT_PNG = Buffer.from(
-	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-	'base64',
-);
+const PNG_TILE_SIZE = 256;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const TRANSPARENT_PNG = createTransparentPng();
+validateTransparentPng(TRANSPARENT_PNG);
+
+function pngCrc32(bytes) {
+	let crc = 0xffffffff;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit++) {
+			crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+	const chunk = Buffer.alloc(12 + data.length);
+	chunk.writeUInt32BE(data.length, 0);
+	chunk.write(type, 4, 4, 'ascii');
+	data.copy(chunk, 8);
+	chunk.writeUInt32BE(pngCrc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
+	return chunk;
+}
+
+function createTransparentPng() {
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(PNG_TILE_SIZE, 0);
+	header.writeUInt32BE(PNG_TILE_SIZE, 4);
+	header.set([8, 6, 0, 0, 0], 8); // 8-bit RGBA, no interlace.
+	// Each all-zero scanline starts with PNG filter 0 and contains transparent RGBA pixels.
+	const scanlines = Buffer.alloc(PNG_TILE_SIZE * (1 + PNG_TILE_SIZE * 4));
+	return Buffer.concat([
+		PNG_SIGNATURE,
+		pngChunk('IHDR', header),
+		pngChunk('IDAT', deflateSync(scanlines)),
+		pngChunk('IEND', Buffer.alloc(0)),
+	]);
+}
+
+function validateTransparentPng(png) {
+	if (pngCrc32(Buffer.from('123456789')) !== 0xcbf43926) {
+		throw new Error('transparent PNG fixture: invalid CRC implementation');
+	}
+	if (!png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+		throw new Error('transparent PNG fixture: invalid signature');
+	}
+	let offset = PNG_SIGNATURE.length;
+	const chunks = [];
+	for (const expectedType of ['IHDR', 'IDAT', 'IEND']) {
+		if (offset + 12 > png.length) throw new Error(`transparent PNG fixture: missing ${expectedType}`);
+		const length = png.readUInt32BE(offset);
+		const end = offset + 12 + length;
+		if (end > png.length) throw new Error(`transparent PNG fixture: truncated ${expectedType}`);
+		const type = png.toString('ascii', offset + 4, offset + 8);
+		if (type !== expectedType) throw new Error(`transparent PNG fixture: expected ${expectedType}, got ${type}`);
+		const actualCrc = png.readUInt32BE(end - 4);
+		const expectedCrc = pngCrc32(png.subarray(offset + 4, end - 4));
+		if (actualCrc !== expectedCrc) throw new Error(`transparent PNG fixture: invalid ${type} CRC`);
+		chunks.push(png.subarray(offset + 8, end - 4));
+		offset = end;
+	}
+	if (offset !== png.length || chunks[2].length !== 0) {
+		throw new Error('transparent PNG fixture: invalid IEND');
+	}
+	const header = chunks[0];
+	if (
+		header.length !== 13 ||
+		header.readUInt32BE(0) !== PNG_TILE_SIZE ||
+		header.readUInt32BE(4) !== PNG_TILE_SIZE ||
+		!header.subarray(8).equals(Buffer.from([8, 6, 0, 0, 0]))
+	) {
+		throw new Error('transparent PNG fixture: invalid RGBA header');
+	}
+	const scanlines = inflateSync(chunks[1]);
+	if (scanlines.length !== PNG_TILE_SIZE * (1 + PNG_TILE_SIZE * 4) || scanlines.some((byte) => byte !== 0)) {
+		throw new Error('transparent PNG fixture: nontransparent or invalid scanlines');
+	}
+}
 
 const buildDir = findBuildDir();
 const chromiumRuntimeDir = mkdtempSync(join(tmpdir(), 'darkmap-playwright-rbe-'));
@@ -101,6 +177,38 @@ try {
 		const page = await context.newPage();
 		const pageErrors = [];
 		const consoleErrors = [];
+		const basemapTileRequests = [];
+		const basemapNetwork = {
+			osm: 0,
+			carto: 0,
+			satellite: 0,
+			okResponses: 0,
+			errorResponses: 0,
+			requestFailures: 0,
+			lastErrorStatus: 'none',
+		};
+		page.on('request', (request) => {
+			const url = new URL(request.url());
+			const provider = classifyKnownBasemapTile(url);
+			if (provider) basemapNetwork[provider] = Math.min(basemapNetwork[provider] + 1, 99);
+			if (provider === 'osm') {
+				basemapTileRequests.push(request.url());
+			}
+		});
+		page.on('response', (response) => {
+			if (!classifyKnownBasemapTile(new URL(response.url()))) return;
+			const status = response.status();
+			if (status >= 200 && status < 400) basemapNetwork.okResponses = Math.min(basemapNetwork.okResponses + 1, 99);
+			else {
+				basemapNetwork.errorResponses = Math.min(basemapNetwork.errorResponses + 1, 99);
+				basemapNetwork.lastErrorStatus = String(status);
+			}
+		});
+		page.on('requestfailed', (request) => {
+			if (classifyKnownBasemapTile(new URL(request.url()))) {
+				basemapNetwork.requestFailures = Math.min(basemapNetwork.requestFailures + 1, 99);
+			}
+		});
 		page.on('pageerror', (err) => {
 			pageErrors.push(err.message);
 			console.log(`darkmap pageerror observed at ${viewportLabel}: ${err.message}`);
@@ -117,7 +225,10 @@ try {
 			console.log(`darkmap RENDERER CRASH observed at ${viewportLabel}`);
 		});
 		await installNetworkGuards(page, baseURL);
-		await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
+		await page.addInitScript(() => {
+			localStorage.setItem('darkmap-tour-v1', '1');
+			localStorage.setItem('darkmap-aqi-palette', 'airnow');
+		});
 
 		try {
 			try {
@@ -149,11 +260,11 @@ try {
 				);
 				throw gotoErr;
 			}
-			await runSmokeScenario(page, SMOKE_SCENARIO);
+			await runSmokeScenario(page, SMOKE_SCENARIO, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors);
 
 			if (pageErrors.length > 0) {
 				throw new Error(
-					`page errors during browser-RBE ${SMOKE_SCENARIO} smoke at ${viewportLabel}: ${pageErrors.join(' | ')}`,
+					`page errors during browser ${SMOKE_SCENARIO} smoke at ${viewportLabel}: ${pageErrors.join(' | ')}`,
 				);
 			}
 			if (consoleErrors.length > 0) {
@@ -174,7 +285,7 @@ try {
 	await stopServer(server);
 }
 
-async function runSmokeScenario(page, scenario) {
+async function runSmokeScenario(page, scenario, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors) {
 	switch (scenario) {
 		case 'shell':
 			await runShellSmoke(page);
@@ -184,6 +295,9 @@ async function runSmokeScenario(page, scenario) {
 			return;
 		case 'map-canvas':
 			await runMapCanvasSmoke(page);
+			return;
+		case 'maplibre-runtime':
+			await runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors);
 			return;
 		case 'point-readout':
 			await runPointReadoutSmoke(page);
@@ -343,8 +457,309 @@ async function runMapCanvasSmoke(page) {
 	if (metrics.canvasBackingWidth <= 0 || metrics.canvasBackingHeight <= 0) {
 		throw new Error(`MapLibre canvas has no backing store: ${JSON.stringify(metrics)}`);
 	}
-
 	console.log(`darkmap map-canvas smoke observed ${JSON.stringify(metrics)}`);
+}
+
+function classifyKnownBasemapTile(url) {
+	if (/^[abc]\.tile\.openstreetmap\.org$/.test(url.hostname) && /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) {
+		return 'osm';
+	}
+	if (/^[abcd]\.basemaps\.cartocdn\.com$/.test(url.hostname) && /^\/dark_all\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) {
+		return 'carto';
+	}
+	if (
+		url.hostname === 'server.arcgisonline.com' &&
+		/^\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/\d+\/\d+\/\d+$/.test(url.pathname)
+	) {
+		return 'satellite';
+	}
+	return null;
+}
+
+async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork, pageErrors, consoleErrors) {
+	await runMapCanvasSmoke(page);
+	try {
+		await page.waitForFunction(
+			() => document.querySelector('[data-tour="map"]')?.getAttribute('data-maplibre-basemap-rendered') === 'true',
+			undefined,
+			{ timeout: 30_000 },
+		);
+	} catch (error) {
+		const mapState = await page
+			.evaluate(() => {
+				const map = document.querySelector('[data-tour="map"]');
+				const raw = map?.getAttribute('data-maplibre-runtime-diagnostic');
+				return {
+					rendered: map?.getAttribute('data-maplibre-basemap-rendered') === 'true',
+					proof: raw ? JSON.parse(raw) : null,
+				};
+			})
+			.catch(() => ({ unavailable: true }));
+		console.error(
+			`darkmap MapLibre render-marker diagnostic ${JSON.stringify({ mapState, basemapNetwork, pageErrorCount: Math.min(pageErrors.length, 99), consoleErrorCount: Math.min(consoleErrors.length, 99) })}`,
+		);
+		throw error;
+	}
+	if (basemapTileRequests.length === 0) {
+		throw new Error('MapLibre rendered without an observed OpenStreetMap raster tile request');
+	}
+	const glVersion = await page
+		.locator(MAP_CANVAS_SELECTOR)
+		.first()
+		.evaluate((canvas) => {
+			const gl = canvas instanceof HTMLCanvasElement ? canvas.getContext('webgl2') : null;
+			return gl?.getParameter(gl.VERSION) ?? null;
+		});
+	if (typeof glVersion !== 'string' || !glVersion.startsWith('WebGL 2')) {
+		throw new Error(`MapLibre v6 did not render with WebGL2: ${JSON.stringify(glVersion)}`);
+	}
+
+	await page.waitForFunction(
+		() => document.querySelector('.maplibregl-ctrl-attrib')?.textContent?.includes('OpenStreetMap') ?? false,
+		undefined,
+		{ timeout: 20_000 },
+	);
+	const attribution = await page.locator('.maplibregl-ctrl-attrib').textContent();
+	if (!attribution?.includes('OpenStreetMap')) {
+		throw new Error(`MapLibre basemap attribution missing: ${JSON.stringify(attribution)}`);
+	}
+	if ((await page.locator('link[href*="unpkg.com/maplibre-gl"]').count()) !== 0) {
+		throw new Error('MapLibre CSS still depends on the v5 unpkg stylesheet');
+	}
+
+	// The Air instrument uses the real viewport OpenAQ fixture in this strict
+	// MapLibre/WebGL scenario. Select Air to trigger its existing valued-station
+	// fetch, then verify the global palette toggle recolors the docked Air gauge.
+	// Use the visible dock control to activate its Readout pane first; the compact
+	// gauge remains mounted inside that pane while Tools is active, but is correctly
+	// hidden until the user returns to Readout.
+	const dockReadout = page.locator('.responsive-dock .dock-pane[data-pane="readout"]');
+	await page
+		.getByRole('group', { name: 'Dock view' })
+		.getByRole('button', { name: /^Show (point )?readout$/i })
+		.click();
+	await dockReadout.waitFor({ state: 'visible', timeout: 10_000 });
+	const airLens = page.getByRole('navigation', { name: 'Map lens' }).getByRole('button', { name: 'Air' });
+	const airInstrument = dockReadout.locator('.instrument-column.compact .aqi-value');
+	const airRule = dockReadout.locator('.instrument-column.compact .aqi-rule');
+	const openaqRequest = page.waitForRequest(
+		(req) => {
+			const url = new URL(req.url());
+			return url.pathname === '/api/atmospheric/openaq' && !url.searchParams.has('markers');
+		},
+		{ timeout: 20_000 },
+	);
+	await airLens.click();
+	await openaqRequest;
+	await page.waitForFunction(
+		() => {
+			const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
+			const value = pane?.querySelector('.instrument-column.compact .aqi-value');
+			return value instanceof HTMLElement && !value.classList.contains('empty') && /\d/.test(value.textContent ?? '');
+		},
+		undefined,
+		{ timeout: 20_000 },
+	);
+	try {
+		await airInstrument.waitFor({ state: 'visible', timeout: 20_000 });
+	} catch (error) {
+		const visibilityDiagnostics = await page
+			.evaluate(() => {
+				const fixedClasses = new Set([
+					'aqi-value',
+					'compact',
+					'dock-body',
+					'dock-pane',
+					'dock-rail',
+					'dock-sheet',
+					'instrument-column',
+					'responsive-dock',
+					'tile',
+				]);
+				const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
+				const aqiValue = pane?.querySelector('.instrument-column.compact .aqi-value') ?? null;
+				let node = aqiValue ?? pane;
+				const chain = [];
+				for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+					const style = getComputedStyle(node);
+					const rect = node.getBoundingClientRect();
+					chain.push({
+						tag: node.tagName.toLowerCase(),
+						classes: [...node.classList].filter((name) => fixedClasses.has(name)),
+						display: style.display,
+						visibility: style.visibility,
+						opacity: style.opacity,
+						width: Number(rect.width.toFixed(2)),
+						height: Number(rect.height.toFixed(2)),
+						hidden: node instanceof HTMLElement ? node.hidden : false,
+					});
+					if (node.matches('.responsive-dock')) break;
+				}
+
+				const round = (value) => (Number.isFinite(value) ? Number(value.toFixed(2)) : null);
+				const boxSize = (rect) => ({ width: round(rect.width), height: round(rect.height) });
+				const rangeSize = (element) => {
+					if (!element) return { width: null, height: null };
+					const range = document.createRange();
+					range.selectNodeContents(element);
+					return boxSize(range.getBoundingClientRect());
+				};
+				const knownFamilies = new Map([
+					['firacode nerd font mono', 'fira-code-nerd-font-mono'],
+					['inter', 'inter'],
+					['ui-monospace', 'ui-monospace'],
+					['sfmono-regular', 'sfmono-regular'],
+					['menlo', 'menlo'],
+					['monaco', 'monaco'],
+					['consolas', 'consolas'],
+					['liberation mono', 'liberation-mono'],
+					['dejavu sans mono', 'dejavu-sans-mono'],
+					['monospace', 'monospace'],
+					['sans-serif', 'sans-serif'],
+				]);
+				const fontTags = (fontFamily) =>
+					fontFamily
+						.split(',')
+						.map((family) => {
+							const tag = knownFamilies.get(family.trim().replaceAll(/["']/g, '').toLowerCase());
+							return tag ?? 'other';
+						})
+						.filter((tag, index, all) => all.indexOf(tag) === index);
+				const measure = (context, font) => {
+					if (!context) return { width: null, ascent: null, descent: null };
+					context.font = font;
+					const metrics = context.measureText('20');
+					return {
+						width: round(metrics.width),
+						ascent: round(metrics.actualBoundingBoxAscent),
+						descent: round(metrics.actualBoundingBoxDescent),
+					};
+				};
+				const canvas = document.createElement('canvas');
+				const context = canvas.getContext('2d');
+				const aqiStyle = aqiValue ? getComputedStyle(aqiValue) : null;
+				const families = aqiStyle ? fontTags(aqiStyle.fontFamily) : ['other'];
+				const computedFont = aqiStyle
+					? `${aqiStyle.fontWeight} ${aqiStyle.fontSize} ${aqiStyle.fontFamily}`
+					: '16px monospace';
+				const fontChecks = [
+					['inter', '16px Inter'],
+					['fira-code-nerd-font-mono', '16px "FiraCode Nerd Font Mono"'],
+					['ui-monospace', '16px ui-monospace'],
+					['sfmono-regular', '16px SFMono-Regular'],
+					['menlo', '16px Menlo'],
+					['monaco', '16px Monaco'],
+					['consolas', '16px Consolas'],
+					['liberation-mono', '16px "Liberation Mono"'],
+					['dejavu-sans-mono', '16px "DejaVu Sans Mono"'],
+					['monospace', '16px monospace'],
+				].map(([family, font]) => ({
+					family,
+					// `check` means no pending matching web-font load; it does not prove
+					// that a system family exists or rendered the tested glyphs.
+					check: document.fonts?.check(font, '20') ?? false,
+				}));
+				const control = document.querySelector('.responsive-dock .dock-tab[aria-pressed="true"]');
+				const controlMetrics = control
+					? {
+							box: boxSize(control.getBoundingClientRect()),
+							textRange: rangeSize(control.querySelector('span')),
+						}
+					: { box: { width: null, height: null }, textRange: { width: null, height: null } };
+				return {
+					chain,
+					aqiTypography: aqiStyle
+						? {
+								fontSize: aqiStyle.fontSize,
+								lineHeight: aqiStyle.lineHeight,
+								fontWeight: aqiStyle.fontWeight,
+								fontFamily: families,
+								textRange: rangeSize(aqiValue),
+							}
+						: null,
+					fontSetStatus: document.fonts?.status ?? 'unsupported',
+					fontChecks,
+					canvasTextMetrics: {
+						computedFont: measure(context, computedFont),
+						fixed16px: [
+							['monospace', '16px monospace'],
+							['inter', '16px Inter'],
+							['fira-code-nerd-font-mono', '16px "FiraCode Nerd Font Mono"'],
+						].map(([family, font]) => ({ family, ...measure(context, font) })),
+					},
+					controlMetrics,
+				};
+			})
+			.catch(() => ({ diagnosticUnavailable: true }));
+		console.error(`darkmap AQI visibility diagnostic ${JSON.stringify(visibilityDiagnostics)}`);
+		throw error;
+	}
+	await airRule.waitFor({ state: 'visible', timeout: 20_000 });
+	const airAqi = ((await airInstrument.textContent()) ?? '').trim();
+	const airSummary = ((await dockReadout.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim();
+	const airTally = ((await dockReadout.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim();
+	const airNowColor = await airInstrument.evaluate((node) => getComputedStyle(node).color);
+	const airNowRuleColor = await airRule.evaluate((node) => getComputedStyle(node).backgroundColor);
+	if (airNowColor !== 'rgb(0, 228, 0)' || airNowRuleColor !== 'rgb(0, 228, 0)') {
+		throw new Error(
+			`AirNow AQI palette should color the Good-category Air gauge and bar green, got ${JSON.stringify({ airNowColor, airNowRuleColor })}`,
+		);
+	}
+	await page.locator('.toolbar .tool').filter({ hasText: 'AQI colors' }).click();
+	await page.waitForFunction(
+		() => {
+			const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
+			const value = pane?.querySelector('.instrument-column.compact .aqi-value');
+			const rule = pane?.querySelector('.instrument-column.compact .aqi-rule');
+			return (
+				value instanceof HTMLElement &&
+				rule instanceof HTMLElement &&
+				getComputedStyle(value).color === 'rgb(74, 144, 217)' &&
+				getComputedStyle(rule).backgroundColor === 'rgb(74, 144, 217)'
+			);
+		},
+		undefined,
+		{ timeout: 10_000 },
+	);
+	if (
+		((await airInstrument.textContent()) ?? '').trim() !== airAqi ||
+		((await dockReadout.locator('.instrument-column.compact .aqi-sub').textContent()) ?? '').trim() !== airSummary ||
+		((await dockReadout.locator('.instrument-column.compact .tile-tally').textContent()) ?? '').trim() !== airTally
+	) {
+		throw new Error(
+			'switching to ColorVision-Assist must recolor the Air gauge without changing its AQI readings/counts',
+		);
+	}
+
+	// The URL may be an emitted asset or blob wrapper. Identify MapLibre's own
+	// initialized worker by the v6.4.1 Worker globals, not an arbitrary worker.
+	let mapWorkerUrl;
+	const workerDeadline = Date.now() + 10_000;
+	while (!mapWorkerUrl && Date.now() < workerDeadline) {
+		for (const worker of page.workers()) {
+			const initialized = await worker
+				.evaluate(
+					() =>
+						typeof self.addProtocol === 'function' &&
+						typeof self.registerWorkerSource === 'function' &&
+						Boolean(self.worker),
+				)
+				.catch(() => false);
+			if (initialized) {
+				mapWorkerUrl = worker.url();
+				break;
+			}
+		}
+		if (mapWorkerUrl) break;
+		await delay(250);
+	}
+	if (!mapWorkerUrl) {
+		throw new Error(`MapLibre v6 worker did not initialize: ${JSON.stringify(page.workers().map((w) => w.url()))}`);
+	}
+
+	console.log(
+		`darkmap MapLibre runtime smoke observed ${JSON.stringify({ glVersion, mapWorkerUrl, basemapTileRequests: basemapTileRequests.length, attribution })}`,
+	);
 }
 
 async function runPointReadoutSmoke(page) {
@@ -525,8 +940,56 @@ async function runToolbarLabelsSmoke(page) {
 	// every viewport — what AT and the existing role-name queries depend on.
 	await page.getByRole('button', { name: /twilight strip/i }).waitFor({ timeout: 20_000 });
 	await page.getByRole('button', { name: /take the guided tour/i }).waitFor({ timeout: 20_000 });
+	if ((await page.locator('.toolbar .tool[aria-label*="twilight strip"]').count()) !== 1) {
+		throw new Error('top map toolbar must own exactly one twilight-strip toggle');
+	}
+	if (
+		(await page
+			.locator('.tools-cluster.overlay .tool-tile')
+			.filter({ hasText: /Twilight/i })
+			.count()) !== 0
+	) {
+		throw new Error('right-edge deep-tool cluster must not duplicate the twilight toggle');
+	}
 
 	const width = (page.viewportSize() ?? { width: 0 }).width;
+	const height = (page.viewportSize() ?? { height: 0 }).height;
+	if (width < 640 && height >= 501) {
+		await page.getByRole('button', { name: 'Show tools' }).click();
+		await page.locator('.dock-tools-launcher').waitFor({ state: 'visible', timeout: 20_000 });
+		if (
+			(await page
+				.locator('.dock-tools-launcher .tool-tile')
+				.filter({ hasText: /Twilight/i })
+				.count()) !== 0
+		) {
+			throw new Error('compact dock Tools view must not duplicate the top map Twilight toggle');
+		}
+		const topTwilight = page.locator('.toolbar .tool[aria-label*="twilight strip"]');
+		if ((await topTwilight.count()) !== 1 || !(await topTwilight.isVisible())) {
+			throw new Error('compact dock Tools view must preserve exactly one visible top map Twilight toggle');
+		}
+	}
+
+	if (width >= 640 && height >= 501) {
+		const bay = await page.evaluate(() => {
+			const instruments = document.querySelector('.deck-inspector .instrument-column');
+			const stage = document.querySelector('.stage');
+			if (!instruments || !stage) return null;
+			const instrumentBox = instruments.getBoundingClientRect();
+			const stageBox = stage.getBoundingClientRect();
+			return {
+				visible: getComputedStyle(instruments).display !== 'none',
+				rightOfStage: instrumentBox.left >= stageBox.right - 1,
+				tiles: instruments.querySelectorAll('.tile').length,
+			};
+		});
+		if (!bay?.visible || !bay.rightOfStage || bay.tiles !== 2) {
+			throw new Error(`Air and local dome must be visible in right-hand inspector: ${JSON.stringify(bay)}`);
+		}
+	} else if (await page.locator('.deck-inspector .instrument-column').isVisible()) {
+		throw new Error('compact/short viewport must not leave loose instrument tiles over the map');
+	}
 	// No hover is issued before this read — the mouse sits at its default
 	// position. The contract is font-independent: the desktop media query
 	// renders the label (display != none, real text), ≤820px collapses it to

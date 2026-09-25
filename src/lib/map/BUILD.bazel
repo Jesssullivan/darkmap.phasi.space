@@ -49,6 +49,7 @@ vitest.vitest_test(
         "src/lib/map/beam-footprint.test.ts",
         "src/lib/map/MapLayerController.cancellation.test.ts",
         "src/lib/map/MapLayerController.test.ts",
+        "src/lib/map/maplibre-runtime.test.ts",
         "src/lib/map/atmosphericTileProtocol.test.ts",
         "src/lib/map/orbit-footprint.test.ts",
         "src/lib/map/pm25-style.test.ts",

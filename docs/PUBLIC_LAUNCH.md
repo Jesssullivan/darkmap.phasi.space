@@ -1,5 +1,10 @@
 # Public Launch Runbook
 
+> This records the 2026-05-27 `darkmap.phasi.space` launch. For the new
+> `darkmap.xoxd.ai` canonical-host migration, see
+> [DARKMAP_XOXD_CUTOVER.md](DARKMAP_XOXD_CUTOVER.md). The old public host and
+> `darkmap.tinyland.dev` tailnet host remain during that cutover.
+
 This document tracks the public-repo and public-service launch state for
 `darkmap.phasi.space`.
 It is intentionally public-safe: no secret values, private key material, or

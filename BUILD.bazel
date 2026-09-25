@@ -10,6 +10,19 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
+# Provider route proof includes the real adapters, not only response-shaping fixtures.
+vitest.vitest_test(
+    name = "atmospheric_provider_routes_test",
+    data = glob(["src/routes/api/atmospheric/**/*.ts"]) + [
+        "vitest.providers.config.ts",
+        "//src/lib/atmospheric:atmospheric_app_srcs",
+        ":node_modules",
+        ":package_json",
+    ],
+    args = ["run", "--config", "vitest.providers.config.ts", "src/routes/api/atmospheric"],
+    tags = ["flywheel-eligible", "vitest"],
+)
+
 npm_link_all_packages(name = "node_modules")
 
 js_library(
@@ -289,6 +302,26 @@ js_test(
         "local-server-route-smoke",
         "manual",
         "map-canvas-smoke",
+        "playwright",
+    ],
+    timeout = "moderate",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "playwright_maplibre_runtime_smoke",
+    data = [
+        ":app_build",
+        ":node_modules",
+        "scripts/bazel/run-playwright-local-route-smoke.mjs",
+        "scripts/bazel/run-playwright-maplibre-runtime-smoke.mjs",
+    ],
+    entry_point = "scripts/bazel/run-playwright-maplibre-runtime-smoke.mjs",
+    tags = [
+        "chromium",
+        "local-server-route-smoke",
+        "manual",
+        "maplibre-runtime-smoke",
         "playwright",
     ],
     timeout = "moderate",

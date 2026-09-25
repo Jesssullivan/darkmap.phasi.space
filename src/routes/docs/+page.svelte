@@ -393,7 +393,7 @@
 		<h2 class="mb-3 font-mono text-lg font-bold">Tech stack</h2>
 		<ul class="list-disc space-y-2 pl-6">
 			<li>SvelteKit (adapter-node), Svelte 5 runes, Skeleton 4.15.2, Tailwind v4</li>
-			<li>MapLibre GL JS 5 for the map surface</li>
+			<li>MapLibre GL JS 6 for the map surface</li>
 			<li>Effect.ts service layers — RasterClient, EphemerisClient, HorizonProvider, GeocoderClient</li>
 			<li>astronomy-engine (cosinekitty) for sun / moon math; satellite.js (SGP4) for LEO orbit propagation</li>
 			<li>

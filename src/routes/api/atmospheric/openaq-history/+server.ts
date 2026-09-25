@@ -1,5 +1,6 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { openAQJson, type ProviderFailure } from '$lib/atmospheric/provider-http';
 import {
 	HISTORY_POLLUTANT_NAMES,
 	shapeHistory,
@@ -25,7 +26,7 @@ import {
  *      `$lib/atmospheric/openaq-history-shape`).
  *
  * Missing key / 401 → empty `degraded:true` (the sparkline simply doesn't
- * render, not an error). License: OpenAQ CC-BY 4.0.
+ * render, not an error). Attribution follows OpenAQ and its upstream providers.
  */
 
 const OPENAQ = 'https://api.openaq.org/v3';
@@ -46,25 +47,15 @@ const FLAT_BAND: Record<HistoryPollutantName, number> = {
 
 const POLLUTANT_SET = new Set<string>(HISTORY_POLLUTANT_NAMES);
 
-const emptyDegraded = (): Response =>
-	new Response(JSON.stringify({ series: null, degraded: true }), {
+const emptyResult = (reason: ProviderFailure | 'not-configured' | 'no-coverage'): Response =>
+	new Response(JSON.stringify({ series: null, degraded: reason !== 'no-coverage', reason }), {
 		status: 200,
 		headers: {
 			'content-type': 'application/json',
 			'cache-control': 'public, max-age=60',
-			'x-openaq-degraded': 'true',
+			'x-openaq-degraded': String(reason !== 'no-coverage'),
 		},
 	});
-
-const authedJson = async (url: string, apiKey: string): Promise<unknown | null> => {
-	try {
-		const r = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': apiKey } });
-		if (!r.ok) return null;
-		return await r.json();
-	} catch {
-		return null;
-	}
-};
 
 interface V3LocationLite {
 	readonly id?: number;
@@ -85,8 +76,8 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	let hours = DEFAULT_HOURS;
 	if (hoursRaw !== null) {
-		const h = Number.parseInt(hoursRaw, 10);
-		if (!Number.isFinite(h) || h <= 0) error(400, 'hours must be a positive integer');
+		const h = Number(hoursRaw);
+		if (!Number.isInteger(h) || h <= 0) error(400, 'hours must be a positive integer');
 		hours = Math.min(h, MAX_HOURS);
 	}
 
@@ -97,18 +88,26 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const apiKey = env.OPENAQ_API_KEY;
-	if (!apiKey) return emptyDegraded();
+	if (!apiKey) return emptyResult('not-configured');
 
 	// 1. Resolve a location id.
 	let locationId: number | null = null;
 	if (haveLocationId) {
-		const n = Number.parseInt(locationIdStr as string, 10);
-		if (!Number.isFinite(n)) error(400, 'locationId must be an integer');
+		const n = Number(locationIdStr);
+		if (!Number.isInteger(n) || n <= 0) error(400, 'locationId must be a positive integer');
 		locationId = n;
 	} else {
-		const lat = Number.parseFloat(latStr as string);
-		const lon = Number.parseFloat(lonStr as string);
-		if (!Number.isFinite(lat) || !Number.isFinite(lon)) error(400, 'lat/lon must be finite numbers');
+		const lat = Number(latStr);
+		const lon = Number(lonStr);
+		if (
+			!latStr?.trim() ||
+			!lonStr?.trim() ||
+			!Number.isFinite(lat) ||
+			!Number.isFinite(lon) ||
+			Math.abs(lat) > 90 ||
+			Math.abs(lon) > 180
+		)
+			error(400, 'lat/lon must be valid WGS84 coordinates');
 		const nearParams = new URLSearchParams({
 			coordinates: `${lat.toFixed(5)},${lon.toFixed(5)}`,
 			radius: String(RADIUS_M),
@@ -116,35 +115,33 @@ export const GET: RequestHandler = async ({ url }) => {
 			parameters_id: '', // left blank; we filter by sensor parameter after fetch
 		});
 		nearParams.delete('parameters_id');
-		const nearBody = (await authedJson(`${OPENAQ}/locations?${nearParams}`, apiKey)) as {
-			results?: V3LocationLite[];
-		} | null;
-		const first = nearBody?.results?.[0];
-		if (typeof first?.id !== 'number') return emptyDegraded(); // no station nearby → nothing to chart
+		const nearBody = await openAQJson<V3LocationLite>(`${OPENAQ}/locations?${nearParams}`, apiKey);
+		if (!nearBody.ok) return emptyResult(nearBody.reason);
+		const first = nearBody.results[0];
+		if (typeof first?.id !== 'number') return emptyResult('no-coverage');
 		locationId = first.id;
 	}
 
 	// 2. Read the location's sensors and pick the one matching the requested pollutant.
-	const locBody = (await authedJson(`${OPENAQ}/locations/${locationId}`, apiKey)) as {
-		results?: V3LocationLite[];
-	} | null;
-	const loc = locBody?.results?.[0];
+	const locBody = await openAQJson<V3LocationLite>(`${OPENAQ}/locations/${locationId}`, apiKey);
+	if (!locBody.ok) return emptyResult(locBody.reason);
+	const loc = locBody.results[0];
 	const sensor = (loc?.sensors ?? []).find((s) => s.parameter?.name === param && typeof s.id === 'number');
-	if (!sensor || typeof sensor.id !== 'number') return emptyDegraded(); // station doesn't measure this pollutant
+	if (!sensor || typeof sensor.id !== 'number') return emptyResult('no-coverage');
 
 	// 3. Fetch the hourly aggregates over the window.
 	const now = Date.now();
-	const windowFrom = new Date(now - hours * 60 * 60 * 1000).toISOString();
-	const windowTo = new Date(now).toISOString();
+	// Stable five-minute windows let simultaneous visitors share the response cache.
+	const windowEnd = Math.floor(now / (5 * 60_000)) * 5 * 60_000;
+	const windowFrom = new Date(windowEnd - hours * 60 * 60 * 1000).toISOString();
+	const windowTo = new Date(windowEnd).toISOString();
 	const hoursParams = new URLSearchParams({
 		datetime_from: windowFrom,
 		datetime_to: windowTo,
 		limit: String(MAX_HOURS),
 	});
-	const hoursBody = (await authedJson(`${OPENAQ}/sensors/${sensor.id}/hours?${hoursParams}`, apiKey)) as {
-		results?: V3HourlyResult[];
-	} | null;
-	if (hoursBody === null) return emptyDegraded(); // upstream hiccup — degrade, don't error the readout
+	const hoursBody = await openAQJson<V3HourlyResult>(`${OPENAQ}/sensors/${sensor.id}/hours?${hoursParams}`, apiKey);
+	if (!hoursBody.ok) return emptyResult(hoursBody.reason);
 
 	// 4. Shape into an honest series (gaps stay gaps; mean over real samples only).
 	const series = shapeHistory({

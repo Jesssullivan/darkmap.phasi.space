@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Lens } from '$lib/lens';
+	import { paletteColorFor } from '$lib/atmospheric/aqi';
+	import { aqiPalette } from '$lib/atmospheric/aqiPalette.svelte';
 	import type { Pm25Station } from '$lib/atmospheric/pm25-diffusion';
 	import { buildViewportSummary } from '$lib/atmospheric/viewport-summary';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
@@ -16,10 +18,9 @@
 		/** Active ephemeris cursor time. */
 		time: Date;
 		/**
-		 * Docked COMPACT variant (the ResponsiveDock instrument row). The WIDE left-dock
-		 * row is `display:none` <1024px (it had no mobile home); `compact` overrides that
-		 * so the AQ-in-view + Sky tiles surface in the bottom dock on mobile. Mirrors
-		 * SkyCompass's `embedded` flag.
+		 * Docked COMPACT variant (the ResponsiveDock instrument row). The right
+		 * inspector is not a panel on narrow screens; `compact` gives the Air gauge
+		 * a bottom-dock home without adding a second local-dome renderer.
 		 */
 		compact?: boolean;
 	}
@@ -29,6 +30,7 @@
 	// Air tile — honest area rollup of the in-view PM2.5 stations (reuses the
 	// tested pure helper; null AQI ⇒ no PM2.5 reporting, never a fabricated 0).
 	const air = $derived(buildViewportSummary(stations));
+	const airAqiColor = $derived(air.aqi ? paletteColorFor(air.aqi.maxCategory, aqiPalette.mode) : null);
 
 	// Re-weight, never gate: each tile is always present. The lens-matched tile is
 	// Tier-2 (full); the off-lens tile dims to Tier-3 (still focusable + tooltip-
@@ -58,8 +60,8 @@
 			</HelpTooltip>
 		</div>
 		{#if air.aqi}
-			<div class="aqi-rule" style:background={air.aqi.maxCategory.color}></div>
-			<p class="aqi-value" style:color={air.aqi.maxCategory.color}>{air.aqi.median}</p>
+			<div class="aqi-rule" style:background={airAqiColor}></div>
+			<p class="aqi-value" style:color={airAqiColor}>{air.aqi.median}</p>
 			<p class="aqi-sub">{air.aqi.min}–{air.aqi.max} AQI</p>
 			<p class="tile-tally">{air.pm25StationCount}/{air.stationCount} stns</p>
 		{:else if air.stationCount > 0}
@@ -86,11 +88,8 @@
 </aside>
 
 <style>
-	/* Command Deck RAIL instrument row (W1). A flex-row header band INSIDE +page's
-	   .left-dock grid cell (the re-homed rail sits below). Static, full width — the
-	   dock owns positioning + the card chrome. Off (display:none) until the WIDE
-	   grid engages (≥1024px), so the COMPACT + MEDIUM fallback never shows a loose
-	   instrument row under .left-dock{display:contents}. */
+	/* Right-inspector instrument row. Compact retains the standalone sky float;
+	   the medium/wide inspector owns a single embedded dome and viewport Air tile. */
 	.instrument-column {
 		display: none;
 		flex-direction: row;
@@ -99,14 +98,13 @@
 		font-family: var(--font-mono, ui-monospace, monospace);
 		color: #e9ecf3;
 	}
-	@media (min-width: 1024px) {
+	@media (min-width: 640px) and (min-height: 501px) {
 		.instrument-column {
 			display: flex;
 		}
 	}
-	/* Docked COMPACT variant — surfaces in the ResponsiveDock instrument row on mobile
-	   (overrides the <1024px display:none). Tighter so it fits the bottom-sheet header
-	   without crowding the gantt/tabs below it. */
+	/* Docked COMPACT variant — surfaces in the ResponsiveDock readout on mobile.
+	   Tighter so it fits the bottom sheet without crowding the helix/tabs. */
 	.instrument-column.compact {
 		display: flex;
 		gap: 0.4rem;

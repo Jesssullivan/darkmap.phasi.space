@@ -10,6 +10,15 @@ on:
       - 'docs/SMOKE.md'
       - 'docs/PUBLIC_LAUNCH.md'
   workflow_dispatch:
+    inputs:
+      host:
+        description: 'Public hostname to smoke (xoxd.ai requires operator DNS/tunnel cutover first)'
+        required: true
+        type: choice
+        default: darkmap.phasi.space
+        options:
+          - darkmap.phasi.space
+          - darkmap.xoxd.ai
   schedule:
     - cron: '43 */6 * * *'
 
@@ -22,21 +31,30 @@ concurrency:
 
 jobs:
   public-smoke:
-    name: darkmap.phasi.space edge
+    name: public edge
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 5
     steps:
       - name: Smoke public Cloudflare edge
+        env:
+          TARGET_HOST: ${{ inputs.host || 'darkmap.phasi.space' }}
         run: |
           set -euo pipefail
+
+          case "$TARGET_HOST" in
+            darkmap.phasi.space|darkmap.xoxd.ai) ;;
+            *) echo "::error::unexpected public smoke host"; exit 1 ;;
+          esac
+
+          base_url="https://${TARGET_HOST}"
 
           index_headers="$(mktemp)"
           raster_headers="$(mktemp)"
           index_body="$(mktemp)"
 
-          curl -fsSIL https://darkmap.phasi.space/ -o "$index_headers"
-          curl -fsSL https://darkmap.phasi.space/ -o "$index_body"
-          curl -fsSIL 'https://darkmap.phasi.space/api/raster?layer=viirs_2019&z=8&x=74&y=96' -o "$raster_headers"
+          curl -fsSIL "${base_url}/" -o "$index_headers"
+          curl -fsSL "${base_url}/" -o "$index_body"
+          curl -fsSIL "${base_url}/api/raster?layer=viirs_2019&z=8&x=74&y=96" -o "$raster_headers"
 
           if ! grep -qi '^server: cloudflare' "$index_headers"; then
             echo "::error::homepage did not return through Cloudflare"
@@ -65,6 +83,7 @@ jobs:
           {
             echo "### Public smoke"
             echo
+            echo "- Host: ${TARGET_HOST}"
             echo "- Homepage: 200 via Cloudflare"
             echo "- Raster endpoint: image/png"
             echo "- No ad/tracking headers or ad_prebid marker"

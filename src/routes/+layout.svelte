@@ -82,7 +82,7 @@
 	];
 
 	const SITE_NAME = 'darkmap';
-	const SITE_URL = 'https://darkmap.phasi.space';
+	const SITE_URL = 'https://darkmap.xoxd.ai';
 	const SITE_TITLE = 'darkmap — dark-sky planning map';
 	const SITE_DESCRIPTION =
 		'Dark-sky planning map with VIIRS DNB, Falchi 2016 World Atlas, terrain horizon, OSM search, and sun/moon timing.';
