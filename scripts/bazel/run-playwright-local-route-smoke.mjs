@@ -563,7 +563,7 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 	try {
 		await airInstrument.waitFor({ state: 'visible', timeout: 20_000 });
 	} catch (error) {
-		const visibilityChain = await page
+		const visibilityDiagnostics = await page
 			.evaluate(() => {
 				const fixedClasses = new Set([
 					'aqi-value',
@@ -577,7 +577,8 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 					'tile',
 				]);
 				const pane = document.querySelector('.responsive-dock .dock-pane[data-pane="readout"]');
-				let node = pane?.querySelector('.instrument-column.compact .aqi-value') ?? pane;
+				const aqiValue = pane?.querySelector('.instrument-column.compact .aqi-value') ?? null;
+				let node = aqiValue ?? pane;
 				const chain = [];
 				for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
 					const style = getComputedStyle(node);
@@ -594,10 +595,103 @@ async function runMapLibreRuntimeSmoke(page, basemapTileRequests, basemapNetwork
 					});
 					if (node.matches('.responsive-dock')) break;
 				}
-				return chain;
+
+				const round = (value) => (Number.isFinite(value) ? Number(value.toFixed(2)) : null);
+				const boxSize = (rect) => ({ width: round(rect.width), height: round(rect.height) });
+				const rangeSize = (element) => {
+					if (!element) return { width: null, height: null };
+					const range = document.createRange();
+					range.selectNodeContents(element);
+					return boxSize(range.getBoundingClientRect());
+				};
+				const knownFamilies = new Map([
+					['firacode nerd font mono', 'fira-code-nerd-font-mono'],
+					['inter', 'inter'],
+					['ui-monospace', 'ui-monospace'],
+					['sfmono-regular', 'sfmono-regular'],
+					['menlo', 'menlo'],
+					['monaco', 'monaco'],
+					['consolas', 'consolas'],
+					['liberation mono', 'liberation-mono'],
+					['dejavu sans mono', 'dejavu-sans-mono'],
+					['monospace', 'monospace'],
+					['sans-serif', 'sans-serif'],
+				]);
+				const fontTags = (fontFamily) =>
+					fontFamily
+						.split(',')
+						.map((family) => {
+							const tag = knownFamilies.get(family.trim().replaceAll(/["']/g, '').toLowerCase());
+							return tag ?? 'other';
+						})
+						.filter((tag, index, all) => all.indexOf(tag) === index);
+				const measure = (context, font) => {
+					if (!context) return { width: null, ascent: null, descent: null };
+					context.font = font;
+					const metrics = context.measureText('20');
+					return {
+						width: round(metrics.width),
+						ascent: round(metrics.actualBoundingBoxAscent),
+						descent: round(metrics.actualBoundingBoxDescent),
+					};
+				};
+				const canvas = document.createElement('canvas');
+				const context = canvas.getContext('2d');
+				const aqiStyle = aqiValue ? getComputedStyle(aqiValue) : null;
+				const families = aqiStyle ? fontTags(aqiStyle.fontFamily) : ['other'];
+				const computedFont = aqiStyle
+					? `${aqiStyle.fontWeight} ${aqiStyle.fontSize} ${aqiStyle.fontFamily}`
+					: '16px monospace';
+				const fontChecks = [
+					['inter', '16px Inter'],
+					['fira-code-nerd-font-mono', '16px "FiraCode Nerd Font Mono"'],
+					['ui-monospace', '16px ui-monospace'],
+					['sfmono-regular', '16px SFMono-Regular'],
+					['menlo', '16px Menlo'],
+					['monaco', '16px Monaco'],
+					['consolas', '16px Consolas'],
+					['liberation-mono', '16px "Liberation Mono"'],
+					['dejavu-sans-mono', '16px "DejaVu Sans Mono"'],
+					['monospace', '16px monospace'],
+				].map(([family, font]) => ({
+					family,
+					// `check` means no pending matching web-font load; it does not prove
+					// that a system family exists or rendered the tested glyphs.
+					check: document.fonts?.check(font, '20') ?? false,
+				}));
+				const control = document.querySelector('.responsive-dock .dock-tab[aria-pressed="true"]');
+				const controlMetrics = control
+					? {
+							box: boxSize(control.getBoundingClientRect()),
+							textRange: rangeSize(control.querySelector('span')),
+						}
+					: { box: { width: null, height: null }, textRange: { width: null, height: null } };
+				return {
+					chain,
+					aqiTypography: aqiStyle
+						? {
+								fontSize: aqiStyle.fontSize,
+								lineHeight: aqiStyle.lineHeight,
+								fontWeight: aqiStyle.fontWeight,
+								fontFamily: families,
+								textRange: rangeSize(aqiValue),
+							}
+						: null,
+					fontSetStatus: document.fonts?.status ?? 'unsupported',
+					fontChecks,
+					canvasTextMetrics: {
+						computedFont: measure(context, computedFont),
+						fixed16px: [
+							['monospace', '16px monospace'],
+							['inter', '16px Inter'],
+							['fira-code-nerd-font-mono', '16px "FiraCode Nerd Font Mono"'],
+						].map(([family, font]) => ({ family, ...measure(context, font) })),
+					},
+					controlMetrics,
+				};
 			})
-			.catch(() => []);
-		console.error(`darkmap AQI visibility diagnostic ${JSON.stringify(visibilityChain)}`);
+			.catch(() => ({ diagnosticUnavailable: true }));
+		console.error(`darkmap AQI visibility diagnostic ${JSON.stringify(visibilityDiagnostics)}`);
 		throw error;
 	}
 	await airRule.waitFor({ state: 'visible', timeout: 20_000 });
