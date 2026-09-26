@@ -151,9 +151,18 @@ test-bazel-local:
 
 # Run Playwright E2E tests. Remote-first: browserful e2e (full adapter-node
 # build + chromium) belongs in CI's e2e lane, which is the source of truth.
-# Set LOCAL=1 to force a local browserful run.
+# Set LOCAL=1 to force a local browserful run. PLAYWRIGHT_SPEC and
+# PLAYWRIGHT_WORKERS optionally narrow local diagnostics without changing CI.
 test-e2e:
-    cd {{ root }} && if [ "${LOCAL:-}" = "1" ]; then pnpm run test:e2e; else echo "e2e is remote-first — CI's e2e lane is the source of truth. Run 'LOCAL=1 just test-e2e' to force a local browserful run."; fi
+    cd {{ root }} && if [ "${LOCAL:-}" = "1" ]; then \
+        args=(); \
+        if [ -n "${PLAYWRIGHT_SPEC:-}" ]; then args+=("${PLAYWRIGHT_SPEC}"); fi; \
+        if [ -n "${PLAYWRIGHT_WORKERS:-}" ]; then \
+            [[ "${PLAYWRIGHT_WORKERS}" =~ ^[1-9][0-9]*$ ]] || { echo 'PLAYWRIGHT_WORKERS must be a positive integer' >&2; exit 2; }; \
+            args+=(--workers "${PLAYWRIGHT_WORKERS}"); \
+        fi; \
+        if [ "${#args[@]}" -eq 0 ]; then pnpm run test:e2e; else pnpm exec playwright test "${args[@]}"; fi; \
+    else echo "e2e is remote-first — CI's e2e lane is the source of truth. Run 'LOCAL=1 just test-e2e' to force a local browserful run."; fi
 
 # Run all tests (Bazel unit + e2e)
 test: test-unit test-e2e
