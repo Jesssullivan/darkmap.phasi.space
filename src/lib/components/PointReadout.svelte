@@ -26,6 +26,8 @@
 	import type { HistorySeries } from '$lib/effect/services/OpenAQHistoryService';
 
 	export interface ReadoutData {
+		/** The raster point source failed; no VIIRS or World Atlas value was returned. */
+		readonly rasterUnavailable?: boolean;
 		readonly viirs?: {
 			readonly layer: string;
 			readonly red: number;
@@ -477,6 +479,9 @@
 		{:else if error}
 			<p class="error">Error: {error}</p>
 		{:else if data}
+			{#if data.rasterUnavailable}
+				<p class="error">VIIRS and World Atlas readings are unavailable from their source.</p>
+			{/if}
 			{#if data.viirs}
 				<section
 					data-section="viirs"
@@ -532,7 +537,7 @@
 					<p class="note">Forecast hour {data.atmospheric.matchedTime}Z · CC-BY Open-Meteo</p>
 				</section>
 			{/if}
-			{#if !data.viirs && !data.worldAtlas && !data.atmospheric}
+			{#if !data.viirs && !data.worldAtlas && !data.atmospheric && !data.rasterUnavailable}
 				<p class="loading">No data at this point.</p>
 			{/if}
 		{/if}

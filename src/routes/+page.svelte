@@ -1346,6 +1346,12 @@
 		readoutInflight = controller;
 		const activeViirs = VIIRS_YEARS.find((l) => layerState[l.id]?.on)?.id ?? VIIRS_YEARS[0].id;
 		readout = { lat, lon, loading: true };
+		pm25Estimate = null;
+		aqEstimates = null;
+		pollutantUnits = {};
+		airQualityReading = null;
+		stationHistory = null;
+		stationHistoryLoading = false;
 		// W4b — pinning a point auto-opens the MEDIUM inspector column so the readout
 		// is visible without a second click (the tab handle stays the manual toggle).
 		// Goes through setInspectorOpen so the rail collapses to its icon column (mutual
@@ -1401,14 +1407,19 @@
 		});
 
 		try {
-			const [featureinfo, atmosphericExit, airQualityExit] = await Promise.all([
-				featureinfoPromise,
+			const [featureinfoResult, atmosphericExit, airQualityExit] = await Promise.all([
+				featureinfoPromise.then(
+					(data) => ({ ok: true as const, data }),
+					() => ({ ok: false as const }),
+				),
 				atmosphericPromise,
 				airQualityPromise,
 			]);
 			if (myGen !== readoutGen || controller.signal.aborted) return;
-			const data: ReadoutData =
-				atmosphericExit._tag === 'Success' ? { ...featureinfo, atmospheric: atmosphericExit.value } : featureinfo;
+			const data: ReadoutData = {
+				...(featureinfoResult.ok ? featureinfoResult.data : { rasterUnavailable: true }),
+				...(atmosphericExit._tag === 'Success' ? { atmospheric: atmosphericExit.value } : {}),
+			};
 			readout = { lat, lon, loading: false, data };
 			airQualityReading = airQualityExit._tag === 'Success' ? airQualityExit.value : null;
 			// #275 — local PM2.5 estimate for the readout + the modeled AOD fallback.

@@ -50,7 +50,7 @@ const labelForLayerId = (id: string): string => {
  *      explicit explanations.
  *   2. Status codes drive everything else:
  *        - 502/503/504 → "upstream temporarily unavailable"
- *        - 401/403     → "credentials missing or expired"
+ *        - 401/403     → "source denied access"
  *        - 404          → "no tile for this view"
  *        - 429          → "rate-limited"
  *        - 5xx (other)  → "upstream error"
@@ -67,7 +67,7 @@ export const reasonForLayer = (input: LayerErrorInput): string => {
 
 	const status = input.status ?? 0;
 	if (status === 502 || status === 503 || status === 504) return 'upstream temporarily unavailable';
-	if (status === 401 || status === 403) return 'credentials missing or expired';
+	if (status === 401 || status === 403) return 'source denied access';
 	if (status === 404) return 'no tile for this view';
 	if (status === 429) return 'upstream rate-limited; backing off';
 	if (status >= 500 && status < 600) return `upstream error ${status}`;
