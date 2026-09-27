@@ -66,9 +66,16 @@ reviewed static snapshots from `tinyland.dev`.
 
 ## Theme & Skeleton
 
-- **Skeleton 4.15.2** (pinned). Do not upgrade casually.
-- Tailwind v4 + the `skeletonTailwindV4Compat()` shim plugin in `vite.config.ts`
-  rewrites `@variant` / `@apply variant-` to stable equivalents. Do not remove.
+- **Skeleton 5.0.1** is the explicitly requested, source-only candidate in this
+  branch; main's checked-in baseline remains 4.15.2 until a reviewed lock and
+  build/browser evidence exist. `package.json` selects 5.0.1, but the retained
+  main lock still selects 4.15.2. Do not describe this candidate as installable,
+  qualified, or merge-ready until the lock is regenerated through the existing
+  guarded `just lockfile-prepare` recipe and reviewed with the full graph.
+- Tailwind v4 consumes Skeleton 5 component utilities through the `@source`
+  directive in `src/app.css`. The Skeleton-4-only
+  `skeletonTailwindV4Compat()` Vite shim is intentionally removed in this
+  candidate; this CSS/build behavior remains unverified.
 - Theme cascade lives in `src/app.css`. Per-site brand themes go under
   `src/lib/styles/themes/`.
 
@@ -111,7 +118,8 @@ After creating a new sister site from this scaffold:
 - Don't fork tinyland-color-utils / tinyvectors / vite plugins per-site.
   Pin via the BCR.
 - Don't bypass `Justfile` in CI or local — DX/AX must stay homogenous.
-- Don't unpin Skeleton or Tailwind v4-compat shim without coordination.
+- Don't change Skeleton or the Tailwind compatibility path beyond this
+  explicitly requested, unqualified candidate without coordination.
 
 ## Multi-Lane Posture
 
