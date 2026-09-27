@@ -32,15 +32,45 @@
 	//   unknown      — pre-mount / SSR
 	//   unsupported  — no DeviceOrientationEvent
 	//   needs-permission — iOS Safari path; show "Enable compass" button
-	//   granted      — desktop/Android path; start watch immediately
-	//   active       — watch running, heading flowing
+	//   granted      — listening, waiting for a usable absolute heading
+	//   active       — heading flowing
+	//   stale        — no usable heading for 15 seconds
 	//   denied       — user denied the permission prompt
 	//   error        — watch start failed for another reason
-	type CompassStatus = 'unknown' | 'unsupported' | 'needs-permission' | 'granted' | 'active' | 'denied' | 'error';
+	type CompassStatus =
+		| 'unknown'
+		| 'unsupported'
+		| 'needs-permission'
+		| 'granted'
+		| 'active'
+		| 'stale'
+		| 'denied'
+		| 'error';
+	const HEADING_STALE_MS = 15_000;
 	let compassStatus = $state<CompassStatus>('unknown');
 	let headingDeg = $state<number | null>(null);
 	let compassWatch: OrientationWatch | undefined;
 	let lastHeadingTs = 0;
+	let staleTimer: ReturnType<typeof setTimeout> | undefined;
+	let destroyed = false;
+	let watchStarting = false;
+
+	function clearCompassWatch(): void {
+		clearTimeout(staleTimer);
+		staleTimer = undefined;
+		compassWatch?.stop();
+		compassWatch = undefined;
+	}
+
+	function acceptHeading(heading: number): void {
+		if (destroyed) return;
+		headingDeg = heading;
+		compassStatus = 'active';
+		clearTimeout(staleTimer);
+		staleTimer = setTimeout(() => {
+			if (!destroyed && compassStatus === 'active') compassStatus = 'stale';
+		}, HEADING_STALE_MS);
+	}
 
 	onMount(() => {
 		const capability = orientationCapabilityFor({
@@ -55,11 +85,13 @@
 	});
 
 	onDestroy(() => {
-		compassWatch?.stop();
-		compassWatch = undefined;
+		destroyed = true;
+		clearCompassWatch();
 	});
 
 	async function startCompassWatch(): Promise<void> {
+		if (destroyed || watchStarting || compassWatch) return;
+		watchStarting = true;
 		const layer = makeOrientationServiceLive({
 			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
 				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -76,10 +108,15 @@
 					const now = Date.now();
 					if (now - lastHeadingTs < 125) return;
 					lastHeadingTs = now;
-					headingDeg = reading.headingDeg;
+					acceptHeading(reading.headingDeg);
 				});
 			}).pipe(Effect.provide(layer)),
 		);
+		watchStarting = false;
+		if (destroyed) {
+			if (exit._tag === 'Success') exit.value.stop();
+			return;
+		}
 		if (exit._tag === 'Failure') {
 			// Cause.failureOption extracts the typed failure for any cause shape
 			// (Fail/Sequential/Parallel); the old `cause.error` cast only worked
@@ -89,10 +126,14 @@
 			return;
 		}
 		compassWatch = exit.value;
-		compassStatus = 'active';
+		// The listener can be installed without ever receiving a usable heading.
+		// Keep the pending state visible until the first absolute reading arrives.
+		if (headingDeg === null) compassStatus = 'granted';
 	}
 
 	async function enableCompass(): Promise<void> {
+		if (compassStatus !== 'needs-permission') return;
+		compassStatus = 'granted';
 		const layer = makeOrientationServiceLive({
 			DeviceOrientationEvent: window.DeviceOrientationEvent as unknown as {
 				readonly requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -106,6 +147,7 @@
 				return yield* svc.requestPermission();
 			}).pipe(Effect.provide(layer)),
 		);
+		if (destroyed) return;
 		if (exit._tag === 'Failure') {
 			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
 			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
@@ -124,6 +166,12 @@
 				return 'Compass error';
 			case 'active':
 				return `Compass on${headingDeg !== null ? ` (${Math.round(headingDeg)}°)` : ''}`;
+			case 'stale':
+				return 'Heading stale';
+			case 'granted':
+				return 'Waiting for heading';
+			case 'unsupported':
+				return 'Compass unavailable';
 			default:
 				return '';
 		}
@@ -337,6 +385,16 @@
 </script>
 
 <div class="sky" class:embedded aria-label="Sky compass at viewport center">
+	<div class="phone-compass" data-testid="phone-compass" aria-live={compassStatus === 'active' ? 'off' : 'polite'}>
+		{#if compassStatus === 'needs-permission'}
+			<button type="button" class="compass-btn" onclick={enableCompass}>
+				<Compass size={14} aria-hidden="true" /> Enable compass
+			</button>
+		{:else}
+			<Compass size={14} aria-hidden="true" />
+			<span>{compassButtonLabel() || 'Compass loading'}</span>
+		{/if}
+	</div>
 	<svg viewBox="0 0 200 200" role="img" aria-label="Sun and moon positions on local sky dome">
 		<defs>
 			<radialGradient id="sky-bg" cx="50%" cy="50%" r="50%">
@@ -455,7 +513,7 @@
 					{compassButtonLabel()}
 				</button>
 			</div>
-		{:else if compassStatus === 'active'}
+		{:else if compassStatus === 'active' || compassStatus === 'stale' || compassStatus === 'granted'}
 			<div class="row compass-row" aria-live="polite">
 				<span class="compass-status">
 					<Compass size={14} aria-hidden="true" />
@@ -507,12 +565,35 @@
 		backdrop-filter: none;
 		z-index: auto;
 	}
-	/* Hide the dome on phone widths; the gantt + readout still cover
-	   the use case. Future ticket: collapse into a tappable badge. The
-	   embedded instance opts out — its column already hides ≤820px. */
+	.phone-compass {
+		display: none;
+	}
+	/* The phone keeps the heading status visible while the richer dome stays
+	   in the medium/wide instrument layout. */
 	@media (max-width: 560px) {
 		.sky:not(.embedded) {
+			top: max(8rem, calc(env(safe-area-inset-top) + 7rem));
+			left: max(0.75rem, env(safe-area-inset-left));
+			right: auto;
+			width: auto;
+			max-width: min(10rem, calc(100vw - 1.5rem));
+			padding: 0.25rem;
+		}
+		.sky:not(.embedded) > svg,
+		.sky:not(.embedded) > .readout {
 			display: none;
+		}
+		.sky:not(.embedded) > .phone-compass {
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
+			font-size: 0.7rem;
+			font-variant-numeric: tabular-nums;
+			white-space: nowrap;
+		}
+		.phone-compass .compass-btn {
+			min-height: 2.25rem;
+			padding: 0.25rem 0.5rem;
 		}
 	}
 	svg {
