@@ -207,6 +207,30 @@ describe('cacheFirst — response freshness', () => {
 		expect(await (await (await storage.open(name)).match(req(url)))?.text()).toBe('old');
 	});
 
+	it('preserves upstream Age and decoded cache body headers', async () => {
+		const { storage } = makeCaches();
+		const fetchImpl = vi.fn().mockImplementation(
+			async () =>
+				new Response('decoded', {
+					headers: {
+						'cache-control': 'max-age=60',
+						age: '90',
+						'content-encoding': 'gzip',
+						'content-length': '999',
+					},
+				}),
+		);
+		const deps = { caches: storage, fetch: fetchImpl, now: () => now };
+		await cacheFirst(deps, req(url), name, options);
+		const stored = await (await storage.open(name)).match(req(url));
+		expect(stored?.headers.get('age')).toBe('90');
+		expect(stored?.headers.get('content-encoding')).toBeNull();
+		expect(stored?.headers.get('content-length')).toBe('7');
+		expect(stored?.headers.get('x-darkmap-cache-bytes')).toBe('7');
+		await cacheFirst(deps, req(url), name, options);
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+	});
+
 	it('shares one refresh for normalized concurrent requests and returns independently readable bodies', async () => {
 		const { storage } = makeCaches();
 		await seed(storage);
