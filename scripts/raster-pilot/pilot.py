@@ -12,6 +12,7 @@ import numpy as np
 from osgeo import gdal, osr
 
 gdal.UseExceptions()
+osr.SetPROJEnableNetwork(False)
 HALF_EQUATOR_M = 20037508.342789244
 TILES = ((8, 74, 96), (7, 37, 48))
 UNITS = "nW cm-2 sr-1"
@@ -68,6 +69,8 @@ def validate_input(manifest, input_path, archive_path=""):
     semantics = "measured-nighttime-radiance" if kind == "nasa-black-marble" else "synthetic-radiance"
     require(manifest.get("semantics") == semantics, "wrong scientific semantics")
     require(manifest.get("units") == UNITS, "input must use physical radiance units")
+    require(manifest.get("crs") in ("EPSG:4326", "EPSG:3857"),
+            "pilot supports only EPSG:4326 or EPSG:3857; CRS files and URLs are unsupported")
     require(manifest.get("scale") == 1 and manifest.get("offset") == 0,
             "COG must already contain physical values; packed integers are unsupported")
     require(manifest.get("nodata") == -9999, "explicit -9999 nodata is required")
@@ -102,7 +105,7 @@ def validate_input(manifest, input_path, archive_path=""):
             require(local.name == name, "received original archive filename mismatch")
             check_file(local, original.get("sha256"), "original NASA archive")
             require(has_text(original.get("acquired_at")), "actual acquisition receipt is required")
-            archive = gdal.Open(str(local), gdal.GA_ReadOnly)
+            archive = gdal.OpenEx(str(local), gdal.OF_RASTER, allowed_drivers=["HDF5"])
             require(archive.GetDriver().ShortName == "HDF5", "original archive must be HDF5")
             datasets = [dataset.rsplit("/", 1)[-1] for dataset, _ in archive.GetSubDatasets()]
             require(manifest["dataset"] in datasets and
@@ -115,7 +118,7 @@ def validate_input(manifest, input_path, archive_path=""):
         require(manifest.get("product") == "GENERATED-NOT-NASA", "fixture must say GENERATED-NOT-NASA")
         require(not archive_path, "synthetic fixture must not bind a NASA archive")
 
-    ds = gdal.Open(str(input_path), gdal.GA_ReadOnly)
+    ds = gdal.OpenEx(str(input_path), gdal.OF_RASTER, allowed_drivers=["GTiff"])
     require({Path(filename).resolve() for filename in ds.GetFileList()} == {Path(input_path).resolve()},
             "crop must be self-contained; unbound sidecars are unsupported")
     require(ds.GetDriver().ShortName == "GTiff", "input must be a GeoTIFF COG")
@@ -129,10 +132,7 @@ def validate_input(manifest, input_path, archive_path=""):
     require(band.GetScale() in (None, 1) and band.GetOffset() in (None, 0), "band still has packed scaling")
     require(band.GetUnitType() == UNITS, "band radiance units mismatch")
     require(ds.GetSpatialRef() is not None, "missing CRS")
-    declared = osr.SpatialReference()
-    require(has_text(manifest.get("crs")), "missing manifest CRS")
-    require(declared.SetFromUserInput(manifest.get("crs", "")) == 0, "invalid manifest CRS")
-    declared.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    declared = srs(int(manifest["crs"].split(":")[1]))
     require(bool(ds.GetSpatialRef().IsSame(declared)), "manifest and COG CRS differ")
     transform = ds.GetGeoTransform()
     require(transform[1] > 0 and transform[5] < 0 and transform[2] == transform[4] == 0,
@@ -179,7 +179,9 @@ def save_png(rgba, path):
 
 
 def read_png(path):
-    ds = gdal.Open(str(path), gdal.GA_ReadOnly)
+    ds = gdal.OpenEx(str(path), gdal.OF_RASTER, allowed_drivers=["PNG"])
+    require({Path(filename).resolve() for filename in ds.GetFileList()} == {Path(path).resolve()},
+            "reference PNG must be self-contained; unbound sidecars are unsupported")
     require(ds.GetDriver().ShortName == "PNG" and
             ds.RasterXSize == ds.RasterYSize == 256, "reference must be a 256 x 256 PNG")
     require(all(ds.GetRasterBand(i).DataType == gdal.GDT_Byte for i in range(1, ds.RasterCount + 1)),
@@ -187,17 +189,22 @@ def read_png(path):
     raw = ds.ReadAsArray()
     if ds.RasterCount == 1 and ds.GetRasterBand(1).GetColorTable():
         table = ds.GetRasterBand(1).GetColorTable()
-        return np.array([table.GetColorEntry(i) for i in range(table.GetCount())], dtype=np.uint8)[raw]
-    rgba = np.full((256, 256, 4), 255, dtype=np.uint8)
-    if ds.RasterCount == 1:
+        rgba = np.array([table.GetColorEntry(i) for i in range(table.GetCount())], dtype=np.uint8)[raw]
+    elif ds.RasterCount == 1:
+        rgba = np.full((256, 256, 4), 255, dtype=np.uint8)
         rgba[:, :, :3] = raw[:, :, None]
     elif ds.RasterCount == 2:
+        rgba = np.full((256, 256, 4), 255, dtype=np.uint8)
         rgba[:, :, :3] = raw[0, :, :, None]
         rgba[:, :, 3] = raw[1]
     elif ds.RasterCount in (3, 4):
+        rgba = np.full((256, 256, 4), 255, dtype=np.uint8)
         rgba[:, :, :ds.RasterCount] = np.moveaxis(raw, 0, -1)
     else:
         raise ValueError("unsupported reference PNG bands")
+    # GDAL exposes grayscale/RGB tRNS and nodata through the validity mask,
+    # rather than an explicit alpha band. Preserve that transparency too.
+    rgba[:, :, 3] = np.minimum(rgba[:, :, 3], ds.GetRasterBand(1).GetMaskBand().ReadAsArray())
     return rgba
 
 
@@ -274,6 +281,7 @@ def render(manifest_path, input_path, output_path, archive_path="", reference_pa
         "resampling": "nearest from native samples; no source overviews; exact transformer; one thread",
         "output_crs": "EPSG:3857",
         "scientific_dtype": "Float32",
+        "proj_network_enabled": bool(osr.GetPROJEnableNetwork()),
         "palette": {"id": "pilot-radiance-classes-v1", "units": UNITS, "stops": PALETTE,
                     "upstream_style_verified": False},
         "reference": reference,
