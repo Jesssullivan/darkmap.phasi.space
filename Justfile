@@ -489,3 +489,11 @@ sync-flywheel-bazelrc tag="v1.0.0":
     @echo "    | jq -r .content | base64 -d > .bazelrc.flywheel"
     @echo "  and update the header comment to record the tag."
     @exit 2
+
+# Offline local-input pilot. Enter nix develop .#raster-pilot first.
+raster-pilot manifest input output archive="" reference="":
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pilot.py --manifest {{ quote(manifest) }} --input {{ quote(input) }} --output {{ quote(output) }} --archive {{ quote(archive) }} --reference {{ quote(reference) }}
+
+# Generated synthetic scientific fixture, never acquired NASA bytes.
+raster-pilot-test:
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/raster-pilot -p 'test_*.py' -v
