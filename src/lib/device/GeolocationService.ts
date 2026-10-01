@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer } from 'effect';
+import { Context, Data, Effect, Layer, type Scope } from 'effect';
 
 export interface DevicePosition {
 	readonly lat: number;
@@ -36,6 +36,16 @@ export class GeolocationService extends Context.Tag('@darkmap/GeolocationService
 		) => Effect.Effect<GeolocationWatch, GeolocationError>;
 	}
 >() {}
+
+/** Own a GPS watch for the caller's Effect scope, including interruption. */
+export const watchGeolocationScoped = (
+	onUpdate: (update: DevicePositionUpdate) => void,
+	options?: PositionOptions,
+): Effect.Effect<GeolocationWatch, GeolocationError, GeolocationService | Scope.Scope> =>
+	Effect.acquireRelease(
+		Effect.flatMap(GeolocationService, (service) => service.watch(onUpdate, options)),
+		(watch) => Effect.sync(() => watch.stop()),
+	);
 
 interface NavigatorWithOptionalGeolocation {
 	readonly geolocation?: Geolocation;
@@ -115,11 +125,31 @@ export const makeGeolocationServiceLive = (
 						new GeolocationError({ reason: 'unsupported', message: 'geolocation is not available' }),
 					);
 				}
-				const watchId = geolocation.watchPosition(
-					(position) => onUpdate({ kind: 'position', position: normalizePosition(position) }),
-					(err) => onUpdate({ kind: 'error', error: geolocationErrorFromPositionError(err) }),
-					options,
-				);
-				return { stop: () => geolocation.clearWatch(watchId) };
+				let active = true;
+				const watchId = yield* Effect.try({
+					try: () =>
+						geolocation.watchPosition(
+							(position) => {
+								if (active) onUpdate({ kind: 'position', position: normalizePosition(position) });
+							},
+							(err) => {
+								if (active) onUpdate({ kind: 'error', error: geolocationErrorFromPositionError(err) });
+							},
+							options,
+						),
+					catch: (cause) => {
+						active = false;
+						return new GeolocationError({ reason: 'failed', message: 'location watch could not start', cause });
+					},
+				});
+				return {
+					stop: () => {
+						if (!active) return;
+						// Clear the delivery gate before clearWatch: already queued callbacks
+						// must not revive a stopped follow session or its replacement.
+						active = false;
+						geolocation.clearWatch(watchId);
+					},
+				};
 			}),
 	});
