@@ -63,7 +63,7 @@ class FakeCache {
 
 	/** Test-only: seed an entry. */
 	__seed(url: string, body: { bytes: number }): void {
-		const response = new Response(new Uint8Array(0), {
+		const response = new Response(new Uint8Array(body.bytes), {
 			headers: { 'content-length': String(body.bytes), date: '2026-05-27T18:00:00Z' },
 		});
 		this.store.set(url, response);
@@ -279,10 +279,10 @@ describe('OfflineCacheServiceBrowser Layer end-to-end', () => {
 		// Pre-seed two raster entries via FakeCache.__seed; the public API only
 		// reads them on snapshot, so the date header drives "oldest" ordering.
 		const raster = await deps.__caches.open('darkmap-raster-tile');
-		const old = new Response(new Uint8Array(0), {
+		const old = new Response(new Uint8Array(64_000), {
 			headers: { 'content-length': '64000', date: '2026-05-27T10:00:00Z' },
 		});
-		const newish = new Response(new Uint8Array(0), {
+		const newish = new Response(new Uint8Array(64_000), {
 			headers: { 'content-length': '64000', date: '2026-05-27T17:00:00Z' },
 		});
 		await raster.put('https://darkmap.example/api/raster/old', old);
@@ -328,5 +328,60 @@ describe('OfflineCacheServiceBrowser Layer end-to-end', () => {
 			}).pipe(Effect.provide(layer)),
 		);
 		expect(expectFailReason(exit)).toBe('unsupported');
+	});
+});
+
+describe('makeBrowserAdapter — persisted cache evidence', () => {
+	it('prefers write metadata and derives lastUpdated from the latest actual write', async () => {
+		const deps = makeDeps();
+		const cache = await deps.__caches.open('darkmap-raster-tile');
+		const writeTime = Date.parse('2026-05-27T12:00:00Z');
+		await cache.put(
+			'https://darkmap.example/metadata',
+			new Response('abc', {
+				headers: {
+					'x-darkmap-cached-at': String(writeTime),
+					'x-darkmap-cache-bytes': '3',
+					date: '2026-05-27T10:00:00Z',
+					'content-length': '999',
+				},
+			}),
+		);
+		await cache.put(
+			'https://darkmap.example/legacy',
+			new Response('12345', { headers: { date: '2026-05-27T11:00:00Z', 'content-length': '999' } }),
+		);
+		const snapshot = await makeBrowserAdapter(deps).snapshot();
+		expect(snapshot.entries.map((entry) => entry.bytes)).toEqual([3, 5]);
+		expect(snapshot.entries[0].storedAt).toBe(new Date(writeTime).toISOString());
+		expect(Date.parse(snapshot.entries[1].storedAt)).toBe(Date.parse('2026-05-27T11:00:00Z'));
+		expect(snapshot.lastUpdated).toBe(new Date(writeTime).toISOString());
+	});
+
+	it('measures bodies with absent or invalid metadata and uses epoch for unknown age', async () => {
+		const deps = makeDeps();
+		const cache = await deps.__caches.open('darkmap-raster-tile');
+		await cache.put('https://darkmap.example/unknown', new Response('abc', { headers: { 'content-length': '999' } }));
+		await cache.put(
+			'https://darkmap.example/invalid',
+			new Response('12345', {
+				headers: {
+					'x-darkmap-cached-at': 'invalid',
+					'x-darkmap-cache-bytes': '-12',
+					date: 'invalid',
+				},
+			}),
+		);
+		const adapter = makeBrowserAdapter(deps);
+		const first = await adapter.snapshot();
+		const second = await adapter.snapshot();
+		expect(first.entries.map((entry) => entry.bytes)).toEqual([3, 5]);
+		expect(first.entries.map((entry) => entry.storedAt)).toEqual([
+			new Date(0).toISOString(),
+			new Date(0).toISOString(),
+		]);
+		expect(second).toEqual(first);
+		expect(first.lastUpdated).not.toBe(deps.now());
+		expect(await adapter.drop(first.entries[0].key)).toBe(3);
 	});
 });

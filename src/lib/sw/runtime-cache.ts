@@ -31,22 +31,87 @@ export interface CacheStorageLike {
 export interface RuntimeCacheDeps {
 	readonly caches: CacheStorageLike;
 	readonly fetch: typeof fetch;
+	readonly now?: () => number;
 }
 
 export interface CacheFirstOptions {
 	/** Normalize the cache key (collapse query-order-equivalent URLs). Default false. */
 	readonly normalize?: boolean;
+	/** Runtime responses obey their browser Cache-Control; app-shell remains unchanged. */
+	readonly freshness?: boolean;
 }
 
 /** The key used for match/put: a normalized URL string, or the raw Request. */
 const keyFor = (request: Request, normalize: boolean): RequestInfo =>
 	normalize ? normalizeCacheKey(new URL(request.url)) : request;
 
-/**
- * Cache-first: serve a cached response if present, else fetch, cache a
- * successful response, and return it. Quota failures fall through to an
- * uncached network response.
- */
+export const CACHE_WRITE_TIME_HEADER = 'x-darkmap-cached-at';
+export const CACHE_BYTES_HEADER = 'x-darkmap-cache-bytes';
+
+/** Legacy entries without a valid timestamp are unknown, never newly fresh. */
+export const cacheWriteTime = (response: Response): number => {
+	const value = response.headers.get(CACHE_WRITE_TIME_HEADER);
+	if (value !== null && /^\d+$/.test(value)) {
+		const parsed = Number(value);
+		if (Number.isSafeInteger(parsed) && parsed <= 8.64e15) return parsed;
+	}
+	const date = Date.parse(response.headers.get('date') ?? '');
+	return Number.isFinite(date) ? date : 0;
+};
+
+export const cacheResponseBytes = async (response: Response): Promise<number> => {
+	const value = response.headers.get(CACHE_BYTES_HEADER);
+	if (value !== null && /^\d+$/.test(value)) {
+		const parsed = Number(value);
+		if (Number.isSafeInteger(parsed)) return parsed;
+	}
+	return (await response.clone().arrayBuffer()).byteLength;
+};
+
+const fresh = (response: Response, now: number): boolean => {
+	const control = response.headers.get('cache-control') ?? '';
+	if (/\b(no-cache|no-store)\b/i.test(control)) return false;
+	const maxAge = /(?:^|,)\s*max-age\s*=\s*(\d+)(?:\s|,|$)/i.exec(control);
+	const written = cacheWriteTime(response);
+	const age = Number(response.headers.get('age') ?? '0');
+	return (
+		written > 0 &&
+		written <= now &&
+		maxAge !== null &&
+		Number.isFinite(age) &&
+		age >= 0 &&
+		now - written + age * 1000 < Number(maxAge[1]) * 1000
+	);
+};
+
+const mayStore = (response: Response): boolean =>
+	response.ok &&
+	response.type !== 'opaqueredirect' &&
+	response.type !== 'opaque' &&
+	!/\bno-store\b/i.test(response.headers.get('cache-control') ?? '');
+
+const withWriteMetadata = async (response: Response, now: number): Promise<Response> => {
+	const body = await response.clone().arrayBuffer();
+	const headers = new Headers(response.headers);
+	// Fetch bodies are decoded; reconstructed cache bytes must describe that body.
+	headers.delete('content-encoding');
+	headers.set('content-length', String(body.byteLength));
+	const originDate = Date.parse(response.headers.get('date') ?? '');
+	const originAge = Number(response.headers.get('age') ?? '0');
+	const initialAge = Math.max(
+		Number.isFinite(originAge) && originAge >= 0 ? originAge : 0,
+		Number.isFinite(originDate) ? Math.max(0, (now - originDate) / 1000) : 0,
+	);
+	headers.set('age', String(Math.ceil(initialAge)));
+	headers.set(CACHE_WRITE_TIME_HEADER, String(now));
+	headers.set(CACHE_BYTES_HEADER, String(body.byteLength));
+	return new Response(body, { status: response.status, statusText: response.statusText, headers });
+};
+
+// Scope deduplication to a storage adapter as well as cache/key (tests and seats
+// can own independent stores). Never share an already-consumed response body.
+const pending = new WeakMap<CacheStorageLike, Map<string, Promise<Response>>>();
+
 export async function cacheFirst(
 	deps: RuntimeCacheDeps,
 	request: Request,
@@ -55,15 +120,45 @@ export async function cacheFirst(
 ): Promise<Response> {
 	const key = keyFor(request, opts.normalize ?? false);
 	const cache = await deps.caches.open(cacheName);
-	const cached = await cache.match(key);
-	if (cached) return cached;
-	const response = await deps.fetch(request);
-	if (response.ok && response.type !== 'opaqueredirect') {
-		await cache.put(key, response.clone()).catch(() => {
-			// Storage quota — serve the network response uncached.
-		});
+	const match = await cache.match(key);
+	const cached = opts.freshness && match && !mayStore(match) ? undefined : match;
+	if (cached && (!opts.freshness || fresh(cached, (deps.now ?? Date.now)()))) return cached;
+	let active = pending.get(deps.caches);
+	if (!active) {
+		active = new Map();
+		pending.set(deps.caches, active);
 	}
-	return response;
+	const identity = `${cacheName}\0${typeof key === 'string' ? key : key instanceof URL ? key.href : key.url}`;
+	const existing = active.get(identity);
+	if (existing) return (await existing).clone();
+	const operation = (async () => {
+		try {
+			const response = await deps.fetch(request);
+			if (mayStore(response)) {
+				try {
+					const stored = opts.freshness
+						? await withWriteMetadata(response, (deps.now ?? Date.now)())
+						: response.clone();
+					await cache.put(key, stored);
+				} catch {
+					/* Quota or storage failure: keep prior cache and serve successful network bytes. */
+				}
+				return response;
+			}
+			return response.ok && response.type !== 'opaqueredirect' && response.type !== 'opaque'
+				? response
+				: (cached ?? response);
+		} catch (error) {
+			if (cached) return cached;
+			throw error;
+		}
+	})();
+	active.set(identity, operation);
+	try {
+		return (await operation).clone();
+	} finally {
+		active.delete(identity);
+	}
 }
 
 /**
