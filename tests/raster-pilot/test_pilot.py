@@ -180,6 +180,15 @@ class RasterPilotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already exists"):
             pilot.render(self.manifest_path, self.input, output)
 
+    def test_crs_cannot_trigger_url_or_file_access_and_proj_network_is_off(self):
+        from unittest.mock import patch
+        self.assertFalse(pilot.osr.GetPROJEnableNetwork())
+        for crs in ("https://invalid.example/crs", "/unapproved/crs.prj", "EPSG:4269"):
+            with self.subTest(crs=crs), patch.object(pilot.gdal, "OpenEx") as opener:
+                with self.assertRaisesRegex(ValueError, "only EPSG:4326 or EPSG:3857"):
+                    pilot.validate_input(dict(self.manifest, crs=crs), self.input)
+                opener.assert_not_called()
+
     def test_all_nodata_crop_is_not_a_successful_scientific_pilot(self):
         ds = gdal.Open(str(self.input))
         memory = gdal.GetDriverByName("MEM").CreateCopy("", ds)
@@ -272,6 +281,22 @@ class RasterPilotTests(unittest.TestCase):
             pilot.validate_reference_url(url, (7, 37, 48))
         with self.assertRaisesRegex(ValueError, "unexpected"):
             pilot.validate_reference_url(url + "&unreviewed=1", (8, 74, 96))
+
+    def test_grayscale_reference_retains_trns_nodata_transparency(self):
+        memory = gdal.GetDriverByName("MEM").Create("", 256, 256, 1, gdal.GDT_Byte)
+        values = np.full((256, 256), 17, dtype=np.uint8)
+        values[0, 0] = 0
+        memory.GetRasterBand(1).WriteArray(values)
+        memory.GetRasterBand(1).SetNoDataValue(0)
+        path = self.directory / "grayscale-trns.png"
+        gdal.GetDriverByName("PNG").CreateCopy(str(path), memory)
+        source = gdal.Open(str(path))
+        self.assertEqual(source.RasterCount, 1)
+        self.assertEqual(source.GetRasterBand(1).GetNoDataValue(), 0)
+        source = None
+        rgba = pilot.read_png(path)
+        self.assertEqual(rgba[0, 0].tolist(), [0, 0, 0, 0])
+        self.assertEqual(rgba[1, 1].tolist(), [17, 17, 17, 255])
 
 
 if __name__ == "__main__":

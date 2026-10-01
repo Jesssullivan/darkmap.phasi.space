@@ -29,6 +29,13 @@ The tool checks that receipt and the crop format; it does not independently
 recreate or audit the crop's quality masking from the original full archive.
 That masking remains part of the input review.
 
+NASA's [LAADS data-use guidance](https://modaps.modaps.eosdis.nasa.gov/services/faq/LAADS_Data-Use_Citation_Policies.pdf)
+permits subsequent use and redistribution of LAADS data products and requests
+acknowledgment and citation. A later real-data derivative should credit NASA
+VIIRS Land Science Investigator-led Processing System / LAADS DAAC and the
+[collection-002 dataset DOI](https://doi.org/10.5067/VIIRS/VNP46A4.002). This is
+the planned data attribution; it does not assert that bytes were acquired.
+
 Falchi 2016 is modeled artificial night sky brightness, a separate quantity
 and artifact. Its exact source artifact, redistribution license and scientific
 normalization have not been verified for this pilot. No Falchi fixture is
@@ -49,6 +56,9 @@ Before running with NASA data, supply all of:
   Float32 band in `nW cm-2 sr-1` (band unit metadata must match), explicit CRS,
   scale 1, offset 0, and nodata `-9999`. Include the exact crop filename and
   received-byte SHA-256. Native `EPSG:4326` is accepted and reprojected.
+  Only `EPSG:4326` and `EPSG:3857` are supported. CRS definitions are imported
+  by EPSG number; user-supplied CRS files and URLs are rejected. PROJ network
+  access is disabled in both the recipe environment and the tool.
   The COG must be self-contained; external metadata, masks and overviews are
   not bound by its checksum and are rejected. Internal mask rejection must
   agree with the explicit normalized nodata values.
@@ -145,8 +155,9 @@ path as `reference=/approved/reference.json`. The JSON shape is:
 This displayed shape is incomplete and must not be mistaken for a receipt.
 Reference PNG paths resolve relative to their manifest. Reference checksums,
 256 × 256 size, 8-bit channels, CRS, layer and each exact bbox are checked before
-output. Indexed, grayscale, RGB and RGBA references decode to RGBA for comparison;
-the checksum remains the received PNG's, without rewriting it.
+output. Indexed, grayscale, RGB and RGBA references decode to RGBA for comparison,
+including GDAL's nodata/tRNS validity masks; the checksum remains the received
+PNG's, without rewriting it. External metadata/mask sidecars are rejected.
 Acquired upstream references must also record their exact public WMS request
 URL; the tool verifies its endpoint, layer, default style, size and bbox and
 rejects unexpected query parameters.
