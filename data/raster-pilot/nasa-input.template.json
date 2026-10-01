@@ -6,9 +6,13 @@
 	"dataset": "AllAngle_Composite_Snow_Free",
 	"product_url": "https://ladsweb.modaps.eosdis.nasa.gov/missions-and-measurements/products/VNP46A4/",
 	"acquisition": "2019",
-	"acquired_at": null,
-	"archive_filename": null,
-	"archive_sha256": null,
+	"archives": [
+		{
+			"filename": null,
+			"sha256": null,
+			"acquired_at": null
+		}
+	],
 	"input_filename": null,
 	"input_sha256": null,
 	"semantics": "measured-nighttime-radiance",

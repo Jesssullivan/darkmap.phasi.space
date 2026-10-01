@@ -85,19 +85,29 @@ def validate_input(manifest, input_path, archive_path=""):
         require(manifest.get("dataset") == "AllAngle_Composite_Snow_Free", "wrong science dataset")
         require(manifest.get("product_url") == PRODUCT_URL, "wrong product authority")
         require(manifest.get("acquisition") == "2019", "pilot is restricted to annual 2019")
-        name = manifest.get("archive_filename", "")
-        require(isinstance(name, str) and
-                re.fullmatch(r"VNP46A4\.A2019001\.h\d{2}v\d{2}\.002\.\d{13}\.h5", name),
-                "exact collection-002 annual-2019 archive filename is required")
-        require(archive_path and Path(archive_path).name == name, "supply the received original archive")
-        check_file(archive_path, manifest.get("archive_sha256"), "original NASA archive")
-        archive = gdal.Open(str(archive_path), gdal.GA_ReadOnly)
-        require(archive.GetDriver().ShortName == "HDF5", "original archive must be HDF5")
-        datasets = [name.rsplit("/", 1)[-1] for name, _ in archive.GetSubDatasets()]
-        require(manifest["dataset"] in datasets and
-                "AllAngle_Composite_Snow_Free_Quality" in datasets,
-                "archive must contain the science dataset and matching quality dataset")
-        require(has_text(manifest.get("acquired_at")), "actual acquisition receipt is required")
+        originals = manifest.get("archives")
+        require(isinstance(originals, list) and 1 <= len(originals) <= 4,
+                "supply receipts for one to four original NASA granules")
+        require(archive_path, "supply the received original archive or archive directory")
+        seen = set()
+        for original in originals:
+            require(isinstance(original, dict), "each original archive needs a receipt object")
+            name = original.get("filename")
+            require(isinstance(name, str) and
+                    re.fullmatch(r"VNP46A4\.A2019001\.h\d{2}v\d{2}\.002\.\d{13}\.h5", name),
+                    "exact collection-002 annual-2019 archive filename is required")
+            require(name not in seen, "duplicate archive receipt")
+            seen.add(name)
+            local = Path(archive_path) / name if Path(archive_path).is_dir() else Path(archive_path)
+            require(local.name == name, "received original archive filename mismatch")
+            check_file(local, original.get("sha256"), "original NASA archive")
+            require(has_text(original.get("acquired_at")), "actual acquisition receipt is required")
+            archive = gdal.Open(str(local), gdal.GA_ReadOnly)
+            require(archive.GetDriver().ShortName == "HDF5", "original archive must be HDF5")
+            datasets = [dataset.rsplit("/", 1)[-1] for dataset, _ in archive.GetSubDatasets()]
+            require(manifest["dataset"] in datasets and
+                    "AllAngle_Composite_Snow_Free_Quality" in datasets,
+                    "archive must contain the science dataset and matching quality dataset")
         require(quality.get("dataset") == "AllAngle_Composite_Snow_Free_Quality",
                 "record the matching quality dataset")
         require(quality.get("accepted_values") == [0], "pilot accepts only good-quality flag 0")
@@ -106,6 +116,8 @@ def validate_input(manifest, input_path, archive_path=""):
         require(not archive_path, "synthetic fixture must not bind a NASA archive")
 
     ds = gdal.Open(str(input_path), gdal.GA_ReadOnly)
+    require({Path(filename).resolve() for filename in ds.GetFileList()} == {Path(input_path).resolve()},
+            "crop must be self-contained; unbound sidecars are unsupported")
     require(ds.GetDriver().ShortName == "GTiff", "input must be a GeoTIFF COG")
     require(ds.GetMetadata("IMAGE_STRUCTURE").get("LAYOUT") == "COG", "input must declare COG layout")
     require(ds.RasterCount == 1, "input must contain exactly one science band")
@@ -126,6 +138,9 @@ def validate_input(manifest, input_path, archive_path=""):
     require(transform[1] > 0 and transform[5] < 0 and transform[2] == transform[4] == 0,
             "crop must be north-up with an explicit affine transform")
     values = band.ReadAsArray()
+    mask = band.GetMaskBand().ReadAsArray()
+    require(np.all((mask != 0) | (values == -9999)),
+            "masked values must be normalized to explicit nodata before handoff")
     require(np.isfinite(values).all(), "NaN/infinity must be normalized to nodata before handoff")
     require(np.all((values == -9999) | (values >= 0)), "negative radiance must be normalized to nodata")
     return ds
@@ -137,6 +152,7 @@ def warp_science(ds, tile):
     out = gdal.Warp("", ds, format="MEM", dstSRS="EPSG:3857", outputBounds=bbox(*tile),
                     width=256, height=256, outputType=gdal.GDT_Float32,
                     srcNodata=-9999, dstNodata=-9999, resampleAlg="near",
+                    overviewLevel="NONE",
                     errorThreshold=0, multithread=False, warpOptions=["NUM_THREADS=1"])
     out.GetRasterBand(1).SetUnitType(UNITS)
     return out
@@ -255,7 +271,7 @@ def render(manifest_path, input_path, output_path, archive_path="", reference_pa
         "manifest_sha256": sha256(manifest_path),
         "gdal_version": gdal.VersionInfo("RELEASE_NAME"),
         "numpy_version": np.__version__,
-        "resampling": "nearest; exact transformer; one thread",
+        "resampling": "nearest from native samples; no source overviews; exact transformer; one thread",
         "output_crs": "EPSG:3857",
         "scientific_dtype": "Float32",
         "palette": {"id": "pilot-radiance-classes-v1", "units": UNITS, "stops": PALETTE,

@@ -15,13 +15,15 @@ pilot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pilot)
 
 
-def fixture(directory, crs=3857):
+def fixture(directory, crs=3857, averaged_overviews=False):
     """A 512px parent crop with low/high radiance and a rejected-data hole."""
     values = np.full((512, 512), np.float32(0.12345679), dtype=np.float32)
     values[:256, 256:] = 1.5
     values[256:, :256] = 10000.25  # exceeds the old packed 6553.5 saturation
     values[256:, 256:] = 0
     values[32:64, 32:64] = -9999
+    if averaged_overviews:
+        values = (np.indices((512, 512)).sum(axis=0) % 2).astype(np.float32) * 1.5 + 0.25
     memory = gdal.GetDriverByName("MEM").Create("", 512, 512, 1, gdal.GDT_Float32)
     bounds = pilot.bbox(7, 37, 48)
     if crs == 4326:
@@ -37,9 +39,12 @@ def fixture(directory, crs=3857):
     band.WriteArray(values)
     band.SetNoDataValue(-9999)
     band.SetUnitType(pilot.UNITS)
+    if averaged_overviews:
+        memory.BuildOverviews("AVERAGE", [2, 4])
     path = Path(directory) / "generated-not-nasa.tif"
     cog = gdal.GetDriverByName("COG").CreateCopy(str(path), memory,
-        options=["COMPRESS=DEFLATE", "NUM_THREADS=1", "OVERVIEWS=NONE"])
+        options=["COMPRESS=DEFLATE", "NUM_THREADS=1",
+                 "OVERVIEWS=FORCE_USE_EXISTING" if averaged_overviews else "OVERVIEWS=NONE"])
     cog = None
     manifest = {"schema_version": 1, "kind": "synthetic-scientific-fixture",
                 "product": "GENERATED-NOT-NASA", "semantics": "synthetic-radiance",
@@ -97,6 +102,52 @@ class RasterPilotTests(unittest.TestCase):
         self.assertEqual(out.ReadAsArray()[100, 100], np.float32(0.12345679))
         self.assertEqual(out.ReadAsArray()[40, 40], -9999)
 
+    def test_averaged_cog_overviews_cannot_replace_native_scientific_samples(self):
+        directory = self.directory / "averaged-overviews"
+        directory.mkdir()
+        path, _, manifest, values = fixture(directory, averaged_overviews=True)
+        ds = pilot.validate_input(manifest, path)
+        self.assertGreater(ds.GetRasterBand(1).GetOverviewCount(), 0)
+        parent = pilot.warp_science(ds, (7, 37, 48)).ReadAsArray()
+        np.testing.assert_array_equal(parent, values[1::2, 1::2])
+        self.assertFalse(np.any(parent == 1.0))  # averaged overview values
+
+    def test_pilot_geometry_crosses_original_geographic_granule_boundary(self):
+        from osgeo import osr
+        convert = osr.CoordinateTransformation(pilot.srs(3857), pilot.srs(4326))
+        for tile in pilot.TILES:
+            left, bottom, right, top = pilot.bbox(*tile)
+            west, south, _ = convert.TransformPoint(left, bottom)
+            east, north, _ = convert.TransformPoint(right, top)
+            self.assertLess(south, 40)
+            self.assertGreater(north, 40)
+            self.assertGreater(west, -80)
+            self.assertLess(east, -70)
+
+    def test_locked_toolchain_has_scientific_input_and_output_drivers(self):
+        for driver in ("HDF5", "COG", "GTiff", "PNG", "MEM"):
+            with self.subTest(driver=driver):
+                self.assertIsNotNone(gdal.GetDriverByName(driver))
+
+    def test_multiple_unreceived_originals_cannot_claim_acquired_nasa_data(self):
+        # Deliberately invalid/unreceived receipts, not real archive identities.
+        # The impossible production timestamp is only a filename-syntax probe.
+        names = [f"VNP46A4.A2019001.h10v{v:02d}.002.0000000000000.h5" for v in (4, 5)]
+        manifest = dict(self.manifest, kind="nasa-black-marble", product="VNP46A4",
+                        semantics="measured-nighttime-radiance", collection="002",
+                        dataset="AllAngle_Composite_Snow_Free", product_url=pilot.PRODUCT_URL,
+                        acquisition="2019", archives=[{"filename": name, "sha256": None,
+                                                      "acquired_at": None} for name in names])
+        self.manifest_path.write_text(json.dumps(manifest))
+        originals = self.directory / "unreceived-originals"
+        originals.mkdir()
+        with self.assertRaisesRegex(ValueError, "missing original NASA archive"):
+            pilot.render(self.manifest_path, self.input, self.directory / "phantom-nasa", originals)
+        self.assertFalse((self.directory / "phantom-nasa").exists())
+        manifest["archives"] = manifest["archives"] * 3
+        with self.assertRaisesRegex(ValueError, "one to four"):
+            pilot.validate_input(manifest, self.input, originals)
+
     def test_checksum_missing_bytes_and_template_fail_closed(self):
         self.manifest["input_sha256"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
@@ -142,6 +193,22 @@ class RasterPilotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no valid scientific samples"):
             pilot.render(self.manifest_path, self.input, self.directory / "empty-result")
         self.assertFalse((self.directory / "empty-result").exists())
+
+    def test_internal_mask_requires_explicit_normalized_nodata(self):
+        ds = gdal.Open(str(self.input))
+        memory = gdal.GetDriverByName("MEM").CreateCopy("", ds)
+        ds = None
+        band = memory.GetRasterBand(1)
+        band.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask = np.full((512, 512), 255, dtype=np.uint8)
+        mask[100, 100] = 0  # still positive radiance: inconsistent handoff
+        band.GetMaskBand().WriteArray(mask)
+        self.input.unlink()
+        gdal.GetDriverByName("COG").CreateCopy(str(self.input), memory,
+            options=["OVERVIEWS=NONE"])
+        self.manifest["input_sha256"] = pilot.sha256(self.input)
+        with self.assertRaisesRegex(ValueError, "normalized to explicit nodata"):
+            pilot.validate_input(self.manifest, self.input)
 
     def test_pixel_parity_measures_color_and_transparency(self):
         candidate = np.zeros((256, 256, 4), dtype=np.uint8)

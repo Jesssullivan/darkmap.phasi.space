@@ -40,13 +40,18 @@ accepted. No display PNG is treated as a scientific source raster.
 non-executable handoff template. Its null fields are not example checksums.
 Before running with NASA data, supply all of:
 
-- The original authorized HDF5 archive, with its exact NASA filename,
-  collection/version, acquisition year, receipt time and locally computed
-  SHA-256; the tool checks bytes, filename and presence of science/quality SDS.
+- One to four original authorized HDF5 archives, each with its exact NASA
+  filename, collection/version, acquisition year, receipt time and locally
+  computed SHA-256; the tool checks bytes, filename and science/quality SDS.
+  A full-coverage crop can cross granule boundaries; retain every contributing
+  archive's receipt in `archives`, including any reviewed crop/mosaic steps.
 - One reviewed north-up COG crop, at most 4096 × 4096 pixels, exactly one
   Float32 band in `nW cm-2 sr-1` (band unit metadata must match), explicit CRS,
   scale 1, offset 0, and nodata `-9999`. Include the exact crop filename and
   received-byte SHA-256. Native `EPSG:4326` is accepted and reprojected.
+  The COG must be self-contained; external metadata, masks and overviews are
+  not bound by its checksum and are rejected. Internal mask rejection must
+  agree with the explicit normalized nodata values.
 - A provenance receipt identifying who supplied the approved bytes and how
   the selected science SDS, QA flag 0 policy, source fill conversion, georeference
   and crop extent were prepared. Credentials do not belong in the manifest.
@@ -58,6 +63,14 @@ fail before an output directory is created. An existing output directory is
 refused so earlier evidence is preserved.
 An all-nodata result in either requested tile also fails before writing output;
 an unrelated or empty crop cannot be presented as a successful pilot.
+
+The requested child spans approximately 39.91–40.98° N and its parent
+38.82–40.98° N, both within approximately 75.94–73.13° W. These are geometry
+derived from the XYZ request, not observations from acquired source bytes.
+Against the user guide's geographic 10° grid (section 3 / figure 2), both
+cross the 40° boundary; a complete source crop can therefore require the
+neighboring `h10v04` and `h10v05` granules. Exact archive identities, production
+versions and checksums remain required handoff fields, not inferred here.
 
 The source-identity checks bind a reviewed crop to a received archive receipt;
 they do not prove that upstream `PostGIS:VIIRS_2019` was built from the same
@@ -73,16 +86,19 @@ packages are kept out of the default application shell.
 nix develop --no-write-lock-file .#raster-pilot --command just raster-pilot-test
 nix develop --no-write-lock-file .#raster-pilot --command just raster-pilot \
   /approved/input.json /approved/crop.tif /scratch/pilot-run \
-  archive=/approved/exact-received-NASA-filename.h5
+  archive=/approved/original-granules
 ```
 
-The second command is a handoff shape, not evidence of an acquired archive.
+The second command is a handoff shape, not evidence of acquired archives.
+`archive` accepts a directory containing the manifest's exact received filenames;
+for a single-granule crop it also accepts that original HDF5 file directly.
 Keep large scientific input bytes and generated outputs in operator-approved
 scratch storage. Do not commit downloaded archives, credentials or tile trees.
 
 The tool matches `src/lib/server/raster/TileMath.ts`'s XYZ bounds in EPSG:3857
 and `RasterClient.ts`'s 256 × 256 output size. It uses nearest-neighbor
-resampling, an exact transformer, and one warp thread. Scientific samples stay
+resampling from the native band, disables source overviews (which could contain
+averaged values), and uses an exact transformer and one warp thread. Scientific samples stay
 Float32, including dim fractional radiance and values above the old integer
 saturation. Nodata maps to transparent RGBA `(0,0,0,0)`; valid zero remains
 opaque. The science TIFF is the data artifact; the PNG is presentation only.
@@ -156,7 +172,7 @@ transparency, checksum/units/scale/CRS/quality/integer failures, reference
 integrity and comparison metrics. This is a local scientific-tool proof, not a
 browser, RBE, deployed-rendering or operator LOOK proof.
 
-The remaining operator handoff is the authorized original NASA archive and
+The remaining operator handoff is the authorized original NASA granules and
 reviewed scientific crop, exact provenance/quality receipts, and actual WMS
 references for both tiles. No large acquisition, account login or token action
 is authorized by this source-only implementation. Full pyramid generation,
