@@ -125,6 +125,15 @@ class RasterPilotTests(unittest.TestCase):
             self.assertLess(east, -70)
 
     def test_locked_toolchain_has_scientific_input_and_output_drivers(self):
+        import platform
+        print("raster-pilot toolchain: " + json.dumps({
+            "python": platform.python_version(), "gdal": gdal.VersionInfo("RELEASE_NAME"),
+            "numpy": np.__version__, "proj": ".".join(str(value) for value in (
+                pilot.osr.GetPROJVersionMajor(), pilot.osr.GetPROJVersionMinor(), pilot.osr.GetPROJVersionMicro())),
+            "drivers": {driver: gdal.GetDriverByName(driver) is not None
+                        for driver in ("HDF5", "COG", "GTiff", "PNG", "MEM")},
+            "proj_network_enabled": bool(pilot.osr.GetPROJEnableNetwork()),
+        }, sort_keys=True))
         for driver in ("HDF5", "COG", "GTiff", "PNG", "MEM"):
             with self.subTest(driver=driver):
                 self.assertIsNotNone(gdal.GetDriverByName(driver))
@@ -194,6 +203,7 @@ class RasterPilotTests(unittest.TestCase):
         memory = gdal.GetDriverByName("MEM").CreateCopy("", ds)
         ds = None
         memory.GetRasterBand(1).Fill(-9999)
+        memory.GetRasterBand(1).SetUnitType(pilot.UNITS)
         self.input.unlink()
         gdal.GetDriverByName("COG").CreateCopy(str(self.input), memory,
             options=["OVERVIEWS=NONE"])
@@ -208,6 +218,7 @@ class RasterPilotTests(unittest.TestCase):
         memory = gdal.GetDriverByName("MEM").CreateCopy("", ds)
         ds = None
         band = memory.GetRasterBand(1)
+        band.SetUnitType(pilot.UNITS)
         band.CreateMaskBand(gdal.GMF_PER_DATASET)
         mask = np.full((512, 512), 255, dtype=np.uint8)
         mask[100, 100] = 0  # still positive radiance: inconsistent handoff
