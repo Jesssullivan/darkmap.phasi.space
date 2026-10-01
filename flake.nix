@@ -63,6 +63,13 @@
       {
         devShells = {
           default = baseShell;
+          # Offline scientific raster pilot only; keep GIS out of the app shell.
+          raster-pilot = pkgs.mkShell {
+            buildInputs = [
+              pkgs.just
+              (pkgs.python3.withPackages (ps: [ ps.gdal ps.numpy ]))
+            ];
+          };
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           # Browser proof uses the same locked toolchain plus an explicit
           # Chromium store executable; it is not an RBE or release shell.
