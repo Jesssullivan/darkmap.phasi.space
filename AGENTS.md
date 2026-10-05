@@ -17,11 +17,10 @@ sister site spawned from this scaffold.
 
 ## Repo Role
 
-This repo is **a static brand/project site under the Tinyland enterprise** —
-one of many static projection consumers of the `tinyland.dev` authority
-monolith. It is **not** an application backend. It does not own user data,
-auth, payments, or business logic. Public content may later flow in through
-reviewed static snapshots from `tinyland.dev`.
+This repo is a **read-only map/project renderer under the Tinyland enterprise**,
+with SvelteKit adapter-node and thin upstream proxy/normalization routes. It is
+not an independent data, auth, payment or business-write authority. Reviewed
+Tinyland content projections remain static consumers of `tinyland.dev`.
 
 ## Authoritative Entrypoints
 
@@ -61,11 +60,16 @@ reviewed static snapshots from `tinyland.dev`.
 
 - **2026-10-05 operator override, UI/data convergence:** bounded local
   Bazelisk and browser checks are authorized qualification for this release;
-  the root release lane is the sole heavy build/browser producer. Do not
+  the root release lane coordinates bounded heavy build/browser producers. Do not
   dispatch GloriousFlywheel browser proof or rerun/bypass independent TIN-5374
   as part of this convergence. Preserve the original dirty implementation
   worktree and qualify the exact integrated source before rollout. Local
-  evidence is local evidence, not an RBE claim.
+  evidence is local evidence, not an RBE claim. Exact served source
+  `ec16b51b5e56ab65efaa4fc10c742573ee2d8056` passed frozen install, typecheck,
+  local Bazel service/map/service-worker tests, build, focused browser and strict
+  MapLibre smoke; its hosted candidate image was separately runtime/visually
+  qualified and rolled out by guarded CAS. This exception is release-scoped,
+  not a remote-CI pass or removal of branch protection.
 
 - Browserful Playwright e2e and the adapter-node build are **remote-first**.
   Locally use `just check` / `just ci-quick`; do **not** run `just test-e2e`
@@ -74,17 +78,23 @@ reviewed static snapshots from `tinyland.dev`.
 
 ## Theme & Skeleton
 
-- **Skeleton 5.0.1** is the explicitly requested, source-only candidate in this
-  branch; main's checked-in baseline remains 4.15.2 until a reviewed lock and
-  build/browser evidence exist. `package.json` and the candidate lock now select
-  5.0.1 after managed `just lockfile-prepare` on 2026-09-30 (pnpm 10.13.1,
-  lock-only, lifecycle scripts ignored). The Skeleton/Zag graph is prepared;
-  existing Effect peer warnings remain separate. This is source preparation,
-  not frozen-install, compiler, browser, deployment, or merge-ready proof.
+- **Skeleton 5.0.1**, its coherent Zag1.43.0 lock, and real FloatingPanel are
+  qualified and served in exact `ec16b51` as of October 5, 2026. Qualification
+  and immutable image/CAS rollout evidence are recorded in signed receipt
+  [af0180c](https://github.com/Jesssullivan/darkmap.phasi.space/blob/af0180c239cee8ffabf83b9064deb13d23d7e991/docs/agent-notes/darkmap-ec16-release-2026-10-05.md).
+  Source-main reconciliation is separate from this actual runtime evidence;
+  existing Effect peer warnings and live upstream/data-cache acceptance gaps
+  remain separate, not hidden by fixture browser proof.
 - Tailwind v4 consumes Skeleton 5 component utilities through the `@source`
   directive in `src/app.css`. The Skeleton-4-only
   `skeletonTailwindV4Compat()` Vite shim is intentionally removed in this
-  candidate; this CSS/build behavior remains unverified.
+  release. Build/browser/image evidence includes the dark detached-panel repair
+  (computed title contrast16.73:1) and coherent mobile Air capture. No browser
+  RBE claim follows from local or hosted-runner evidence.
+- App releases use reviewed `just deploy-exact` immutable-image UID/RV/prior-image
+  CAS only. The automatic whole-stack staging workflow is retired in this
+  convergence carrier; `just deploy` refuses. Container publication is manual
+  candidate-only, not triggered by main convergence and never tags latest.
 - Theme cascade lives in `src/app.css`. Per-site brand themes go under
   `src/lib/styles/themes/`.
 
@@ -123,12 +133,13 @@ After creating a new sister site from this scaffold:
 
 ## What Not To Do
 
-- Don't add runtime database / API server to a sister site. Keep it static.
+- Don't add runtime databases, write authorities or business APIs. Existing
+  adapter-node thin upstream proxies are the renderer's documented exception.
 - Don't fork tinyland-color-utils / tinyvectors / vite plugins per-site.
   Pin via the BCR.
 - Don't bypass `Justfile` in CI or local — DX/AX must stay homogenous.
-- Don't change Skeleton or the Tailwind compatibility path beyond this
-  explicitly requested, unqualified candidate without coordination.
+- Don't change the qualified Skeleton/Tailwind/FloatingPanel baseline without
+  coordinated source and runtime qualification.
 
 ## Multi-Lane Posture
 

@@ -1,4 +1,4 @@
-# darkmap.phasi.space — SvelteKit static site task runner
+# darkmap.phasi.space — SvelteKit adapter-node map renderer task runner
 # Prerequisites: just, direnv (loads Nix devShell), Nix with flakes
 # Quick Start: direnv allow && just setup && just dev
 #
