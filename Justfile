@@ -351,8 +351,12 @@ deploy: kustomize-apply
 
 # Exact-source release path. Verifies GHCR revision metadata before pinning an immutable digest.
 # Does not apply unrelated manifests, touch DNS, restart a mutable tag, or read Secret payloads.
-deploy-exact source_sha image_digest:
-    cd {{ root }} && bash scripts/deploy-exact.sh '{{ source_sha }}' '{{ image_digest }}'
+deploy-exact source_sha image_digest expected_uid expected_prior_image expected_resource_version:
+    cd {{ root }} && bash scripts/deploy-exact.sh '{{ source_sha }}' '{{ image_digest }}' '{{ expected_uid }}' '{{ expected_prior_image }}' '{{ expected_resource_version }}'
+
+# Fake CLIs only: verifies the guarded delivery adapter without cluster access.
+test-deploy-exact:
+    cd {{ root }} && node --test scripts/deploy-exact.test.mjs
 
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)
