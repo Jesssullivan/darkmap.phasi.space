@@ -37,6 +37,13 @@ lockfile-check:
 format-instrument-panel:
     cd {{ root }} && pnpm exec prettier --write e2e/instrument-panel.spec.ts src/lib/components/DetachableInstrumentPanel.svelte src/routes/+page.svelte
 
+# Bounded local release qualification; use nix develop .#browser --command just test-instrument-panel.
+# Reuses the root producer's existing build; never silently rebuild or download browsers.
+test-instrument-panel:
+    cd {{ root }} && test -f build/index.js
+    cd {{ root }} && test -x "${CHROME_BIN:?use the pinned browser devShell}"
+    cd {{ root }} && LOCAL=1 pnpm exec playwright test e2e/instrument-panel.spec.ts --project=chromium --workers=1
+
 # Start the Vite dev server
 dev:
     cd {{ root }} && pnpm run dev
@@ -341,6 +348,11 @@ kustomize-apply:
 deploy: kustomize-apply
     kubectl -n darkmap rollout restart deployment/darkmap
     kubectl -n darkmap rollout status deployment/darkmap --timeout=180s
+
+# Exact-source release path. Verifies GHCR revision metadata before pinning an immutable digest.
+# Does not apply unrelated manifests, touch DNS, restart a mutable tag, or read Secret payloads.
+deploy-exact source_sha image_digest:
+    cd {{ root }} && bash scripts/deploy-exact.sh '{{ source_sha }}' '{{ image_digest }}'
 
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)

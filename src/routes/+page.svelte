@@ -2826,7 +2826,7 @@
 				<summary>Air · viewport</summary>
 				<InstrumentColumn compact lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 			</details>
-		{:else}
+		{:else if !dockActive}
 			<DetachableInstrumentPanel>
 				<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
 			</DetachableInstrumentPanel>

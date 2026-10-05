@@ -19,7 +19,12 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'chromium',
-			use: { ...devices['Desktop Chrome'] },
+			use: {
+				...devices['Desktop Chrome'],
+				launchOptions: process.env.CHROME_BIN
+					? { executablePath: process.env.CHROME_BIN, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }
+					: undefined,
+			},
 		},
 		// Firefox + WebKit gated behind PLAYWRIGHT_ALL_BROWSERS to keep M0 fast.
 		// Enable in M1 CI by setting PLAYWRIGHT_ALL_BROWSERS=1.

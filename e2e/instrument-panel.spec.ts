@@ -5,6 +5,7 @@ test('right inspector owns Air and local dome while the viewport toolbar alone o
 	await page.goto('/');
 	const instruments = page.locator('.deck-inspector .instrument-column');
 	await expect(instruments).toBeVisible();
+	await expect(page.locator('.instrument-column')).toHaveCount(1);
 	await expect(instruments.locator('.tile')).toHaveCount(2);
 	const instrumentBox = await instruments.boundingBox();
 	const stageBox = await page.locator('.stage').boundingBox();
@@ -39,7 +40,8 @@ test('compact keeps the Air instrument in the readout dock', async ({ page }) =>
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/#lens=air');
 	await expect(page.locator('[data-responsive-dock] .instrument-column.compact')).toBeVisible();
-	await expect(page.locator('[data-instrument-panel="docked"]')).toBeHidden();
+	await expect(page.locator('[data-instrument-panel="docked"]')).toHaveCount(0);
+	await expect(page.locator('.instrument-column')).toHaveCount(1);
 	await expect(page.getByRole('button', { name: 'Detach Air and local dome' })).toHaveCount(0);
 });
 
@@ -155,6 +157,7 @@ for (const viewport of [{ width: 568, height: 320 }, { width: 1440, height: 450 
 		await summary.press('Enter');
 		const air = disclosure.getByRole('region', { name: 'Air — viewport air quality' });
 		await expect(air).toBeVisible();
+		await expect(page.locator('.instrument-column')).toHaveCount(1);
 		await expect(air.locator('.aqi-value')).toHaveText(/\S+/);
 		await expect(disclosure.locator('.sky-tile')).toHaveCount(0);
 		const bounds = await disclosure.boundingBox();
