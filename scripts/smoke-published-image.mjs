@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { computedContrast } from './image-smoke-contrast.mjs';
 
 const [appRoot, baseUrl, artifactDir, sourceSha, imageDigest] = process.argv.slice(2);
@@ -22,6 +23,7 @@ const evidence = {
 	startedAt: new Date().toISOString(), mode: 'published-image UI with denied provider diagnostics',
 	boundaries: 'No source build/server spawn; no real provider/data availability, first-run or geographic raster proof.',
 	pageErrors: [], consoleErrors: [], deniedRequests: [], screenshots: [],
+	screenshotDigests: {},
 };
 const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN, headless: true,
 	args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -61,7 +63,11 @@ try {
 	const instrumentBox = await instruments.boundingBox();
 	const stageBox = await page.locator('.stage').boundingBox();
 	assert(instrumentBox && stageBox && instrumentBox.x >= stageBox.x + stageBox.width - 1, 'right inspector does not overlap stage');
-	const shot = async name => { await page.screenshot({ path: path.join(output, name), fullPage: true }); evidence.screenshots.push(name); };
+	const shot = async name => {
+		const bytes = await page.screenshot({ path: path.join(output, name), fullPage: true });
+		evidence.screenshots.push(name);
+		evidence.screenshotDigests[name] = createHash('sha256').update(bytes).digest('hex');
+	};
 	await shot('desktop.png');
 	await page.getByRole('button', { name: 'Detach Air and local dome' }).click();
 	await page.locator('[data-instrument-panel="floating"]').waitFor({ state: 'visible' });
@@ -80,16 +86,48 @@ try {
 	assert(evidence.detachedTitleContrast.ratio >= 4.5, 'detached title computed contrast must be at least 4.5:1');
 	await page.getByRole('button', { name: 'Redock instruments' }).click();
 	await page.locator('[data-instrument-panel="docked"]').waitFor({ state: 'visible' });
+	// Stay on the fully mounted desktop document. Hash navigation here can race
+	// route/hydration/camera hash initialization and is not a lens-selection action.
+	await page.waitForFunction(() => {
+		const value = document.querySelector('[data-maplibre-runtime-diagnostic]')?.getAttribute('data-maplibre-runtime-diagnostic');
+		return value && JSON.parse(value).renderEvents > 0;
+	});
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto(new URL('/#lens=air', base).href, { waitUntil: 'domcontentloaded' });
 	const mobileAir = page.locator('[data-responsive-dock]').getByRole('button', { name: 'Air', exact: true });
 	await mobileAir.click();
-	await page.waitForFunction(() => document.querySelector('[data-responsive-dock] button[aria-label="Air"]')?.getAttribute('aria-pressed') === 'true');
+	await page.waitForFunction(() => {
+		const button = document.querySelector('[data-responsive-dock] button[aria-label="Air"]');
+		return button?.getAttribute('aria-pressed') === 'true' && button.classList.contains('active') &&
+			document.querySelector('.command-deck')?.getAttribute('data-lens') === 'air' &&
+			new URLSearchParams(location.hash.slice(1)).get('lens') === 'air';
+	});
 	assert.equal(await mobileAir.getAttribute('aria-pressed'), 'true', 'mobile Air lens actually selected');
 	evidence.mobileSelectedLens = 'air';
 	await page.locator('[data-responsive-dock] .instrument-column.compact').waitFor({ state: 'visible' });
 	assert.equal(await page.locator('.instrument-column').count(), 1);
+	const mobileSnapshot = () => page.evaluate(() => ({
+		deckLens: document.querySelector('.command-deck')?.getAttribute('data-lens'),
+		hashLens: new URLSearchParams(location.hash.slice(1)).get('lens'),
+		storedLens: localStorage.getItem('darkmap-lens'),
+		viewport: { width: innerWidth, height: innerHeight },
+		chips: [...document.querySelectorAll('[data-responsive-dock] .lens-switcher button')].map(button => ({
+			label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed'),
+			active: button.classList.contains('active'), background: getComputedStyle(button).backgroundColor,
+			color: getComputedStyle(button).color,
+		})),
+	}));
+	const assertAirSnapshot = snapshot => {
+		assert.equal(snapshot.deckLens, 'air');
+		assert.equal(snapshot.hashLens, 'air');
+		assert.equal(snapshot.storedLens, 'air');
+		assert.deepEqual(snapshot.chips.filter(chip => chip.active || chip.pressed === 'true').map(chip => chip.label), ['Air']);
+	};
+	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+	evidence.mobileBeforeCapture = await mobileSnapshot();
+	assertAirSnapshot(evidence.mobileBeforeCapture);
 	await shot('mobile.png');
+	evidence.mobileAfterCapture = await mobileSnapshot();
+	assertAirSnapshot(evidence.mobileAfterCapture);
 	assert.deepEqual(evidence.pageErrors, [], 'unexpected application JS exceptions');
 	evidence.result = 'pass';
 	await context.close();
