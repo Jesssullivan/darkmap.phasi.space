@@ -129,6 +129,64 @@ describe('networkFirst — navigations (never normalized)', () => {
 	});
 });
 
+describe('unavailable Cache Storage does not deny online responses', () => {
+	const denied = new Error('SecurityError: storage unavailable');
+	const storageWithFailure = (stage: 'open' | 'match'): CacheStorageLike => ({
+		open: async () => {
+			if (stage === 'open') throw denied;
+			return {
+				match: async () => {
+					throw denied;
+				},
+				put: vi.fn(),
+			};
+		},
+	});
+
+	it.each(['open', 'match'] as const)('cacheFirst serves network bytes after cache.%s fails', async (stage) => {
+		const fetchImpl = vi.fn().mockResolvedValue(new Response('online tile'));
+		const out = await cacheFirst(
+			{ caches: storageWithFailure(stage), fetch: fetchImpl },
+			req('/api/raster?x=1&z=2'),
+			'raster',
+			{ normalize: true, freshness: true },
+		);
+		expect(await out.text()).toBe('online tile');
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
+
+	it('coalesces normalized network work even when storage cannot open', async () => {
+		const fetchImpl = vi.fn().mockResolvedValue(new Response('online tile'));
+		const deps = { caches: storageWithFailure('open'), fetch: fetchImpl };
+		const results = await Promise.all([
+			cacheFirst(deps, req('/api/raster?x=1&z=2'), 'raster', { normalize: true, freshness: true }),
+			cacheFirst(deps, req('/api/raster?z=2&x=1'), 'raster', { normalize: true, freshness: true }),
+		]);
+		expect(await Promise.all(results.map((response) => response.text()))).toEqual(['online tile', 'online tile']);
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
+
+	it('networkFirst preserves successful navigation when cache.open rejects', async () => {
+		const fetchImpl = vi.fn().mockResolvedValue(new Response('<online html>'));
+		const out = await networkFirst({ caches: storageWithFailure('open'), fetch: fetchImpl }, req('/'), 'shell');
+		expect(await out.text()).toBe('<online html>');
+	});
+
+	it.each(['open', 'match'] as const)(
+		'networkFirst preserves the original offline error if cache.%s fails too',
+		async (stage) => {
+			const networkError = new Error('actual network failure');
+			await expect(
+				networkFirst(
+					{ caches: storageWithFailure(stage), fetch: vi.fn().mockRejectedValue(networkError) },
+					req('/'),
+					'shell',
+				),
+			).rejects.toBe(networkError);
+		},
+	);
+});
+
 describe('cacheFirst — response freshness', () => {
 	const url = '/api/raster?x=1&z=2';
 	const name = 'darkmap-raster-tile';

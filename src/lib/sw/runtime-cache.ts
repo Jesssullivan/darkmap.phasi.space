@@ -133,14 +133,20 @@ export async function cacheFirst(
 	opts: CacheFirstOptions = {},
 ): Promise<Response> {
 	const key = keyFor(request, opts.normalize ?? false);
-	const cache = await deps.caches.open(cacheName);
-	const match = await cache.match(key);
+	let cache: CacheLike | undefined;
+	let match: Response | undefined;
+	try {
+		cache = await deps.caches.open(cacheName);
+		match = await cache.match(key);
+	} catch {
+		// Disabled/private/quota-denied Cache Storage must not deny online data.
+		cache = undefined;
+	}
 	const cached = opts.freshness && match && !mayStore(match) ? undefined : match;
 	if (cached && (!opts.freshness || fresh(cached, (deps.now ?? Date.now)()))) {
 		return opts.freshness ? cacheEvidence(cached, 'fresh', (deps.now ?? Date.now)()) : cached;
 	}
-	const fallback = () =>
-		cached && opts.freshness ? cacheEvidence(cached, 'stale', (deps.now ?? Date.now)()) : cached;
+	const fallback = () => (cached && opts.freshness ? cacheEvidence(cached, 'stale', (deps.now ?? Date.now)()) : cached);
 	let active = pending.get(deps.caches);
 	if (!active) {
 		active = new Map();
@@ -154,6 +160,7 @@ export async function cacheFirst(
 			const response = await deps.fetch(request);
 			if (mayStore(response)) {
 				try {
+					if (!cache) return response;
 					const stored = opts.freshness
 						? await withWriteMetadata(response, (deps.now ?? Date.now)())
 						: response.clone();
@@ -190,16 +197,24 @@ export async function networkFirst(deps: RuntimeCacheDeps, request: Request, cac
 		// cache.put would throw, so skip it (a redirected navigation just isn't
 		// cached rather than silently failing the put).
 		if (response.ok && response.type !== 'opaqueredirect') {
-			const cache = await deps.caches.open(cacheName);
-			await cache.put(request, response.clone()).catch(() => {});
+			try {
+				const cache = await deps.caches.open(cacheName);
+				await cache.put(request, response.clone());
+			} catch {
+				// Storage availability is not a condition for serving successful network bytes.
+			}
 		}
 		return response;
 	} catch (err) {
-		const cache = await deps.caches.open(cacheName);
-		const cached = await cache.match(request);
-		if (cached) return cached;
-		const shellMatch = await cache.match('/');
-		if (shellMatch) return shellMatch;
+		try {
+			const cache = await deps.caches.open(cacheName);
+			const cached = await cache.match(request);
+			if (cached) return cached;
+			const shellMatch = await cache.match('/');
+			if (shellMatch) return shellMatch;
+		} catch {
+			// Preserve the actual network failure when offline storage is unavailable too.
+		}
 		throw err;
 	}
 }
