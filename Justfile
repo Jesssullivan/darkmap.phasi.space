@@ -364,6 +364,9 @@ smoke-published-image app_root image_base_url artifact_dir source_sha image_dige
     test -x "${CHROME_BIN:?locked browser shell required}"
     node '{{ root }}/scripts/smoke-published-image.mjs' '{{ app_root }}' '{{ image_base_url }}' '{{ artifact_dir }}' '{{ source_sha }}' '{{ image_digest }}'
 
+test-image-smoke-adapter:
+    cd {{ root }} && node --test scripts/image-smoke-contrast.test.mjs
+
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)
 # ─────────────────────────────────────────────

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { computedContrast } from './image-smoke-contrast.mjs';
 
 const [appRoot, baseUrl, artifactDir, sourceSha, imageDigest] = process.argv.slice(2);
 assert(appRoot && baseUrl && artifactDir, 'app_root, explicit image base URL and artifact directory required');
@@ -65,11 +66,27 @@ try {
 	await page.getByRole('button', { name: 'Detach Air and local dome' }).click();
 	await page.locator('[data-instrument-panel="floating"]').waitFor({ state: 'visible' });
 	assert.equal(await page.locator('.instrument-column').count(), 1);
+	const detachedColors = await page.locator('[data-instrument-panel="floating"] h2').evaluate(title => {
+		const backgrounds = [];
+		let element = title;
+		while (element) {
+			backgrounds.push(getComputedStyle(element).backgroundColor);
+			element = element.parentElement;
+		}
+		return { text: getComputedStyle(title).color, backgrounds };
+	});
+	evidence.detachedTitleContrast = { ...detachedColors, ...computedContrast(detachedColors.text, detachedColors.backgrounds) };
 	await shot('detached.png');
+	assert(evidence.detachedTitleContrast.ratio >= 4.5, 'detached title computed contrast must be at least 4.5:1');
 	await page.getByRole('button', { name: 'Redock instruments' }).click();
 	await page.locator('[data-instrument-panel="docked"]').waitFor({ state: 'visible' });
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(new URL('/#lens=air', base).href, { waitUntil: 'domcontentloaded' });
+	const mobileAir = page.locator('[data-responsive-dock]').getByRole('button', { name: 'Air', exact: true });
+	await mobileAir.click();
+	await page.waitForFunction(() => document.querySelector('[data-responsive-dock] button[aria-label="Air"]')?.getAttribute('aria-pressed') === 'true');
+	assert.equal(await mobileAir.getAttribute('aria-pressed'), 'true', 'mobile Air lens actually selected');
+	evidence.mobileSelectedLens = 'air';
 	await page.locator('[data-responsive-dock] .instrument-column.compact').waitFor({ state: 'visible' });
 	assert.equal(await page.locator('.instrument-column').count(), 1);
 	await shot('mobile.png');
