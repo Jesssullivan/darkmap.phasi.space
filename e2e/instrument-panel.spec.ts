@@ -33,6 +33,22 @@ test('reduced motion preserves keyboard detach, stage restoration and focus', as
 	const floating = page.locator('[data-instrument-panel="floating"]');
 	await expect(floating).toBeVisible();
 	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();
+	const contrast = await floating.evaluate(panel => {
+		const luminance = (color: string) => {
+			const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => {
+				const channel = value / 255;
+				return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+			});
+			return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+		};
+		return ['.instrument-float-header', '.instrument-float-body'].map(selector => {
+			const style = getComputedStyle(panel.querySelector(selector)!);
+			const foreground = luminance(style.color);
+			const background = luminance(style.backgroundColor);
+			return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+		});
+	});
+	for (const ratio of contrast) expect(ratio).toBeGreaterThanOrEqual(4.5);
 	await page.getByRole('button', { name: 'Minimize instruments' }).click();
 	await expect(floating.locator('.instrument-float-body')).toBeHidden();
 	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();

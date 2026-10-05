@@ -175,6 +175,15 @@
 	:global(.instrument-float-controls) { display: flex; gap: 0.25rem; }
 	:global(.instrument-float-body) { flex: 1 1 auto; }
 	:global(.instrument-float-resize) { position: absolute; right: 0; bottom: 0; width: 1.25rem; height: 1.25rem; cursor: se-resize; }
+	/* The portal leaves the deck's dark surface context. Override Skeleton's
+	   two-attribute anatomy defaults on this instrument only, not all panels. */
+	:global(.instrument-float[data-scope='floating-panel'][data-part='content']),
+	:global(.instrument-float-header[data-scope='floating-panel'][data-part='header']),
+	:global(.instrument-float-body[data-scope='floating-panel'][data-part='body']) {
+		background: #080a10;
+		color: #e9ecf3;
+		color-scheme: dark;
+	}
 	@media (prefers-reduced-motion: reduce) {
 		:global(.instrument-float-positioner),
 		:global(.instrument-float) { animation: none; transition: none; }

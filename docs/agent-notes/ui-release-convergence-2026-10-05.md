@@ -62,3 +62,15 @@ earlier 21:04–21:07 UTC audit. Preserve `darkmap.xoxd.ai`, public
 `darkmap.phasi.space`, and tailnet `darkmap.tinyland.dev`; no DNS mutation is
 required. Acceptance still needs exact new image identity, rollout readiness,
 served map/browser smoke and all-host continuity after deployment.
+# Published-image visual correction
+
+The exact 870ba8f image index `sha256:8485126b5a3e77e1330e6d292e485b105c9b743e90e3d1133d841e2c04a4aa7f`
+passed the bounded behavioral image smoke, but screenshot review found detached
+header/body cream backgrounds with inherited pale text. It is not rollout-ready;
+no cluster mutation occurred. Skeleton's two-attribute anatomy backgrounds
+out-ranked the instrument class background after portaling. The successor pins
+only this panel's content/header/body to its existing dark house surface and
+adds computed header/body contrast >=4.5 regression coverage. Preserve the old
+image, logs, and screenshots as failed visual receipts. Successor runtime/image
+qualification remains required. Authority: root's October 5 explicit narrow
+repair instruction; no broader redesign, provider or first-run proof claimed.
