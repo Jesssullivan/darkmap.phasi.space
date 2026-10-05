@@ -2,20 +2,17 @@
 # GitHub Actions: build and push container image to GHCR.
 #
 # Builds the `production` stage of Containerfile and pushes to
-# ghcr.io/jesssullivan/darkmap.phasi.space:<tag> (sha, branch, semver).
+# ghcr.io/jesssullivan/darkmap.phasi.space:<tag> (sha, candidate branch).
 #
 # Triggers:
-#   - push to main (build + push: sha + latest)
-#   - tags matching v* (build + push: semver)
+#   - workflow_dispatch on candidate/* (build + push: sha + branch)
 #   - pull_request (build only — no push, validates Containerfile)
+# Main convergence is source-only: no push trigger, latest tag or auto deploy.
 # =============================================================================
 
 name: Container
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
     paths:
@@ -42,6 +39,7 @@ env:
 jobs:
   build-and-push:
     name: Build container image
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/candidate/'))
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     permissions:
@@ -73,9 +71,6 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=sha,prefix=
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
         id: push
@@ -102,8 +97,8 @@ jobs:
         # step above; attestation is best-effort SLSA provenance. Sigstore's
         # Rekor transparency log intermittently 404s on tlog-entry fetch
         # ("InternalError: error fetching tlog entry - (404)"), and a
-        # provenance-service flake must never gate the production deploy
-        # (the Staging deploy workflow_run is gated on this job's success).
+        # provenance-service flake does not turn publication into deployment.
+        # Rollout is a separate reviewed immutable-image CAS operation.
         continue-on-error: true
         if: github.event_name != 'pull_request' && !github.event.repository.private
         uses: actions/attest-build-provenance@v2
