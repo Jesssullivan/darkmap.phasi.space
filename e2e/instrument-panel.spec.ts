@@ -1,5 +1,40 @@
 import { expect, test } from '@playwright/test';
 
+test('right inspector owns Air and local dome while the viewport toolbar alone owns Twilight', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const instruments = page.locator('.deck-inspector .instrument-column');
+	await expect(instruments).toBeVisible();
+	await expect(instruments.locator('.tile')).toHaveCount(2);
+	const instrumentBox = await instruments.boundingBox();
+	const stageBox = await page.locator('.stage').boundingBox();
+	expect(instrumentBox).not.toBeNull();
+	expect(stageBox).not.toBeNull();
+	expect(instrumentBox!.x).toBeGreaterThanOrEqual(stageBox!.x + stageBox!.width - 1);
+	await expect(page.locator('.toolbar .tool[aria-label*="twilight strip"]')).toBeVisible();
+	await expect(page.locator('.toolbar .tool[aria-label*="twilight strip"]')).toHaveCount(1);
+	await expect(page.locator('.tools-cluster .tool-tile').filter({ hasText: /Twilight/i })).toHaveCount(0);
+});
+
+test('reduced motion preserves keyboard detach, stage restoration and focus', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const detach = page.getByRole('button', { name: 'Detach Air and local dome' });
+	await detach.focus();
+	await detach.press('Enter');
+	const floating = page.locator('[data-instrument-panel="floating"]');
+	await expect(floating).toBeVisible();
+	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();
+	await page.getByRole('button', { name: 'Minimize instruments' }).click();
+	await expect(floating.locator('.instrument-float-body')).toBeHidden();
+	await page.getByRole('button', { name: 'Restore instruments' }).click();
+	await expect(floating.locator('.instrument-float-body')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(floating).toHaveCount(0);
+	await expect(detach).toBeFocused();
+});
+
 test('compact keeps the Air instrument in the readout dock', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/#lens=air');
@@ -73,10 +108,16 @@ test('floating panel minimizes to its header, restores, and stays within the vie
 	const drag = floating.locator('.instrument-float-drag');
 	const dragBox = await drag.boundingBox();
 	expect(dragBox).not.toBeNull();
+	const beforeDrag = await floating.boundingBox();
+	expect(beforeDrag).not.toBeNull();
 	await page.mouse.move(dragBox!.x + 30, dragBox!.y + dragBox!.height / 2);
 	await page.mouse.down();
 	await page.mouse.move(4000, 4000, { steps: 8 });
 	await page.mouse.up();
+	await expect.poll(async () => {
+		const box = await floating.boundingBox();
+		return box ? Math.hypot(box.x - beforeDrag!.x, box.y - beforeDrag!.y) : 0;
+	}).toBeGreaterThan(1);
 	const bounded = await floating.boundingBox();
 	expect(bounded).not.toBeNull();
 	expect(bounded!.x).toBeGreaterThanOrEqual(-1);
@@ -101,4 +142,64 @@ test('short wide viewport does not offer a panel that cannot fit', async ({ page
 	await page.goto('/');
 	await expect(page.getByRole('button', { name: 'Detach Air and local dome' })).toHaveCount(0);
 	await expect(page.locator('[data-instrument-panel="floating"]')).toHaveCount(0);
+});
+
+for (const viewport of [{ width: 568, height: 320 }, { width: 1440, height: 450 }]) {
+	test(`short ${viewport.width}px keeps Air reachable through native keyboard disclosure`, async ({ page }) => {
+		await page.setViewportSize(viewport);
+		await page.goto('/#lens=air');
+		const disclosure = page.locator('[data-short-air]');
+		const summary = disclosure.locator('summary');
+		await expect(summary).toBeVisible();
+		await summary.focus();
+		await summary.press('Enter');
+		const air = disclosure.getByRole('region', { name: 'Air — viewport air quality' });
+		await expect(air).toBeVisible();
+		await expect(air.locator('.aqi-value')).toHaveText(/\S+/);
+		await expect(disclosure.locator('.sky-tile')).toHaveCount(0);
+		const bounds = await disclosure.boundingBox();
+		expect(bounds).not.toBeNull();
+		expect(bounds!.y).toBeGreaterThanOrEqual(0);
+		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+		expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height + 1);
+		await summary.press('Space');
+		await expect(air).toBeHidden();
+		await expect(summary).toBeFocused();
+	});
+}
+
+test('wide floating instruments resize, maximize, restore and redock when height becomes short', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Detach Air and local dome' }).click();
+	const floating = page.locator('[data-instrument-panel="floating"]');
+	const initial = await floating.boundingBox();
+	expect(initial).not.toBeNull();
+	const grip = await page.getByLabel('Resize instruments').boundingBox();
+	expect(grip).not.toBeNull();
+	await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(grip!.x + 80, grip!.y + 70, { steps: 8 });
+	await page.mouse.up();
+	await expect.poll(async () => (await floating.boundingBox())?.width ?? 0).toBeGreaterThan(initial!.width);
+	const resized = await floating.boundingBox();
+	expect(resized).not.toBeNull();
+	await page.getByRole('button', { name: 'Maximize instruments' }).click();
+	await expect(floating.locator('.instrument-float-body')).toBeVisible();
+	await expect.poll(async () => {
+		const box = await floating.boundingBox();
+		return box ? box.width * box.height : 0;
+	}).toBeGreaterThan(resized!.width * resized!.height + 1);
+	await page.getByRole('button', { name: 'Restore instruments' }).click();
+	await expect(floating.locator('.instrument-float-body')).toBeVisible();
+	await expect.poll(async () => {
+		const box = await floating.boundingBox();
+		return box
+			? Math.max(Math.abs(box.width - resized!.width), Math.abs(box.height - resized!.height))
+			: Number.POSITIVE_INFINITY;
+	}).toBeLessThanOrEqual(1);
+	await page.setViewportSize({ width: 1440, height: 450 });
+	await expect(floating).toHaveCount(0);
+	await expect(page.locator('[data-short-air] summary')).toBeFocused();
+	await expect(page.getByRole('button', { name: 'Detach Air and local dome' })).toHaveCount(0);
 });

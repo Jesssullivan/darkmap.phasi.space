@@ -59,6 +59,14 @@ reviewed static snapshots from `tinyland.dev`.
 
 ## Remote-first testing
 
+- **2026-10-05 operator override, UI/data convergence:** bounded local
+  Bazelisk and browser checks are authorized qualification for this release;
+  the root release lane is the sole heavy build/browser producer. Do not
+  dispatch GloriousFlywheel browser proof or rerun/bypass independent TIN-5374
+  as part of this convergence. Preserve the original dirty implementation
+  worktree and qualify the exact integrated source before rollout. Local
+  evidence is local evidence, not an RBE claim.
+
 - Browserful Playwright e2e and the adapter-node build are **remote-first**.
   Locally use `just check` / `just ci-quick`; do **not** run `just test-e2e`
   browserful locally — it requires `LOCAL=1`. CI's e2e lane is the source of
@@ -68,10 +76,11 @@ reviewed static snapshots from `tinyland.dev`.
 
 - **Skeleton 5.0.1** is the explicitly requested, source-only candidate in this
   branch; main's checked-in baseline remains 4.15.2 until a reviewed lock and
-  build/browser evidence exist. `package.json` selects 5.0.1, but the retained
-  main lock still selects 4.15.2. Do not describe this candidate as installable,
-  qualified, or merge-ready until the lock is regenerated through the existing
-  guarded `just lockfile-prepare` recipe and reviewed with the full graph.
+  build/browser evidence exist. `package.json` and the candidate lock now select
+  5.0.1 after managed `just lockfile-prepare` on 2026-09-30 (pnpm 10.13.1,
+  lock-only, lifecycle scripts ignored). The Skeleton/Zag graph is prepared;
+  existing Effect peer warnings remain separate. This is source preparation,
+  not frozen-install, compiler, browser, deployment, or merge-ready proof.
 - Tailwind v4 consumes Skeleton 5 component utilities through the `@source`
   directive in `src/app.css`. The Skeleton-4-only
   `skeletonTailwindV4Compat()` Vite shim is intentionally removed in this

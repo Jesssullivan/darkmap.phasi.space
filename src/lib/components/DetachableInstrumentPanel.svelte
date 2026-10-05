@@ -35,6 +35,7 @@
 				roomy ? detachButton : dockHeading,
 				document.querySelector<HTMLButtonElement>('.inspector-tab'),
 				document.querySelector<HTMLButtonElement>('[data-responsive-dock] .dock-tab'),
+				document.querySelector<HTMLElement>('[data-short-air] summary'),
 				document.querySelector<HTMLButtonElement>('.toolbar button'),
 			];
 			candidates.find((candidate) => candidate?.getClientRects().length)?.focus();
@@ -57,6 +58,9 @@
 		return () => {
 			query.removeEventListener('change', sync);
 			window.removeEventListener('resize', onResize);
+			// The short-screen fallback replaces this component. Its disclosure
+			// must receive focus even if the parent unmounts before our resize event.
+			if (detached) redock();
 		};
 	});
 </script>
@@ -164,4 +168,8 @@
 	:global(.instrument-float-controls) { display: flex; gap: 0.25rem; }
 	:global(.instrument-float-body) { flex: 1 1 auto; }
 	:global(.instrument-float-resize) { position: absolute; right: 0; bottom: 0; width: 1.25rem; height: 1.25rem; cursor: se-resize; }
+	@media (prefers-reduced-motion: reduce) {
+		:global(.instrument-float-positioner),
+		:global(.instrument-float) { animation: none; transition: none; }
+	}
 </style>

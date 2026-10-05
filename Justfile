@@ -28,6 +28,15 @@ lockfile-prepare:
     cd {{ root }} && test "$(corepack pnpm --version)" = "10.13.1"
     cd {{ root }} && corepack pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
 
+# Cheap manifest/lock consistency diagnostic; no lifecycle scripts.
+lockfile-check:
+    cd {{ root }} && test "$(corepack pnpm --version)" = "10.13.1"
+    cd {{ root }} && corepack pnpm install --lockfile-only --ignore-scripts --frozen-lockfile
+
+# Format only the selected Skeleton 5 instrument surface.
+format-instrument-panel:
+    cd {{ root }} && pnpm exec prettier --write e2e/instrument-panel.spec.ts src/lib/components/DetachableInstrumentPanel.svelte src/routes/+page.svelte
+
 # Start the Vite dev server
 dev:
     cd {{ root }} && pnpm run dev

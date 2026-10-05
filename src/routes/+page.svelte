@@ -2819,9 +2819,18 @@
 		<!-- The desktop Air and local-dome instruments belong to the right-hand
 		     inspector bay, above the point readout. Compact has a separate Air-only
 		     renderer inside its mutually exclusive ResponsiveDock branch. -->
-		<DetachableInstrumentPanel>
-			<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
-		</DetachableInstrumentPanel>
+		{#if !viewportTall}
+			<!-- Short/landscape keeps the existing floating readout and standalone
+			     dome. Give Air a native disclosure, not a hidden desktop panel. -->
+			<details class="short-air" data-short-air>
+				<summary>Air · viewport</summary>
+				<InstrumentColumn compact lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
+			</details>
+		{:else}
+			<DetachableInstrumentPanel>
+				<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
+			</DetachableInstrumentPanel>
+		{/if}
 		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered
 		     below); the inspector body keeps them for MEDIUM/WIDE (grid) + COMPACT-short
 		     (the byte-identical float fallback). One render site each — never duplicated. -->
@@ -3231,6 +3240,29 @@
 	}
 	.inspector-body {
 		display: contents;
+	}
+	.short-air {
+		position: fixed;
+		top: calc(4.75rem + env(safe-area-inset-top, 0px));
+		right: calc(0.75rem + env(safe-area-inset-right, 0px));
+		z-index: 20;
+		width: min(16rem, 45vw);
+		max-height: calc(100dvh - 6rem);
+		overflow: auto;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 8px;
+		background: rgba(8, 10, 16, 0.94);
+		color: #e9ecf3;
+		font: 600 0.7rem var(--font-mono, ui-monospace, monospace);
+	}
+	.short-air summary {
+		padding: 0.5rem;
+		min-height: 2rem;
+		cursor: pointer;
+	}
+	.short-air summary:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: -2px;
 	}
 	/* ===== MEDIUM + WIDE shared structure (≥640px): ONE real grid. =====
 	   Two grid areas can never occupy the same pixels, so the map + twilight strip
