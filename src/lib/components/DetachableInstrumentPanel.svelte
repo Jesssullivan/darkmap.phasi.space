@@ -78,6 +78,11 @@
 			maxSize={{ width: 760, height: maxHeight }}
 			closeOnEscape
 			initialFocusEl={() => floatHeading ?? null}
+			onStageChange={() => {
+				// Stage controls can unmount during minimize/restore. Keep keyboard
+				// focus inside the panel so Escape and subsequent controls stay usable.
+				void tick().then(() => requestAnimationFrame(() => floatHeading?.focus()));
+			}}
 			onOpenChange={(details: { open: boolean }) => {
 				if (!details.open) redock();
 			}}

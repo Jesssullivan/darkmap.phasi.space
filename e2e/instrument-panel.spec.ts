@@ -35,8 +35,10 @@ test('reduced motion preserves keyboard detach, stage restoration and focus', as
 	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();
 	await page.getByRole('button', { name: 'Minimize instruments' }).click();
 	await expect(floating.locator('.instrument-float-body')).toBeHidden();
+	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();
 	await page.getByRole('button', { name: 'Restore instruments' }).click();
 	await expect(floating.locator('.instrument-float-body')).toBeVisible();
+	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();
 	await page.keyboard.press('Escape');
 	await expect(floating).toHaveCount(0);
 	await expect(detach).toBeFocused();
