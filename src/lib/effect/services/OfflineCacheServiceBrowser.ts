@@ -1,4 +1,5 @@
 import { Layer } from 'effect';
+import { cacheWriteTime, cacheResponseBytes } from '$lib/sw/runtime-cache';
 import {
 	makeOfflineCacheServiceLive,
 	OfflineCacheService,
@@ -48,7 +49,6 @@ export interface BrowserAdapterDeps {
 export const makeBrowserAdapter = (deps: BrowserAdapterDeps = {}): OfflineCacheAdapter => {
 	const sw = deps.serviceWorker ?? (typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined);
 	const cacheStorage = deps.caches ?? (typeof caches !== 'undefined' ? caches : undefined);
-	const now = deps.now ?? (() => new Date().toISOString());
 
 	return {
 		isSupported: () => Boolean(sw) && Boolean(cacheStorage),
@@ -77,16 +77,17 @@ export const makeBrowserAdapter = (deps: BrowserAdapterDeps = {}): OfflineCacheA
 				const bucket = bucketForCacheName(cacheName);
 				for (const req of requests) {
 					const response = await cache.match(req);
-					const bytes = parseContentLength(response);
+					const bytes = response ? await cacheResponseBytes(response) : 0;
 					entries.push({
 						key: cacheKeyFor(cacheName, req),
 						bytes,
-						storedAt: response?.headers.get('date') ?? now(),
+						storedAt: new Date(response ? cacheWriteTime(response) : 0).toISOString(),
 						bucket,
 					});
 				}
 			}
-			return { registered, entries, lastUpdated: entries.length > 0 ? now() : undefined };
+			const latest = entries.reduce((value, entry) => Math.max(value, Date.parse(entry.storedAt)), 0);
+			return { registered, entries, lastUpdated: latest > 0 ? new Date(latest).toISOString() : undefined };
 		},
 
 		drop: async (key) => {
@@ -96,7 +97,7 @@ export const makeBrowserAdapter = (deps: BrowserAdapterDeps = {}): OfflineCacheA
 			const cache = await cacheStorage.open(parsed.cacheName);
 			const response = await cache.match(parsed.url);
 			if (!response) return 0;
-			const bytes = parseContentLength(response);
+			const bytes = response ? await cacheResponseBytes(response) : 0;
 			const removed = await cache.delete(parsed.url);
 			return removed ? bytes : 0;
 		},
@@ -113,14 +114,6 @@ const parseCacheKey = (key: string): { cacheName: string; url: string } | null =
 	const idx = key.indexOf('|');
 	if (idx < 0) return null;
 	return { cacheName: key.slice(0, idx), url: key.slice(idx + 1) };
-};
-
-const parseContentLength = (response: Response | undefined): number => {
-	if (!response) return 0;
-	const len = response.headers.get('content-length');
-	if (!len) return 0;
-	const n = Number.parseInt(len, 10);
-	return Number.isFinite(n) ? n : 0;
 };
 
 /**
