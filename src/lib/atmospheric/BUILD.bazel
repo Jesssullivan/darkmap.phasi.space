@@ -3,6 +3,13 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:vitest/package_json.bzl", vitest = "bin")
 
+# Pure palette/AQI value import used by the map PM2.5 paint-expression slice.
+js_library(
+    name = "aqi",
+    srcs = ["aqi.ts"],
+    visibility = ["//visibility:public"],
+)
+
 # Task B (deferred #292 typecheck) intentionally SKIPPED for this slice. A
 # ts_project here is invasive: pm25-diffusion.ts imports `$lib/spectral/...` and
 # the test files import `$lib/layers` as VALUES, so tsc must resolve cross-
