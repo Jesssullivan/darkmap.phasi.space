@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+// Instrument interactions are independent of first-run onboarding. The tour's
+// keyboard handler intentionally consumes Enter/Space while its dialog is open.
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
+});
+
 test('right inspector owns Air and local dome while the viewport toolbar alone owns Twilight', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');

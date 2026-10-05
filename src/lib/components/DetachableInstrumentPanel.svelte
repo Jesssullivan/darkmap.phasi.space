@@ -30,16 +30,18 @@
 
 	function redock(): void {
 		detached = false;
-		void tick().then(() => {
+		// Resize can destroy this component before its replacement dock/disclosure
+		// mounts. Wait for the parent flush AND the next frame before choosing focus.
+		void tick().then(() => requestAnimationFrame(() => {
 			const candidates = [
-				roomy ? detachButton : dockHeading,
-				document.querySelector<HTMLButtonElement>('.inspector-tab'),
 				document.querySelector<HTMLButtonElement>('[data-responsive-dock] .dock-tab'),
 				document.querySelector<HTMLElement>('[data-short-air] summary'),
+				roomy ? detachButton : dockHeading,
+				document.querySelector<HTMLButtonElement>('.inspector-tab'),
 				document.querySelector<HTMLButtonElement>('.toolbar button'),
 			];
 			candidates.find((candidate) => candidate?.getClientRects().length)?.focus();
-		});
+		}));
 	}
 
 	onMount(() => {
