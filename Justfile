@@ -358,6 +358,12 @@ deploy-exact source_sha image_digest expected_uid expected_prior_image expected_
 test-deploy-exact:
     cd {{ root }} && node --test scripts/deploy-exact.test.mjs
 
+# Only an already-running local published image; no app build/server/provider calls.
+# Playwright is resolved from qualified app_root, Chromium from the locked browser shell.
+smoke-published-image app_root image_base_url artifact_dir source_sha image_digest:
+    test -x "${CHROME_BIN:?locked browser shell required}"
+    node '{{ root }}/scripts/smoke-published-image.mjs' '{{ app_root }}' '{{ image_base_url }}' '{{ artifact_dir }}' '{{ source_sha }}' '{{ image_digest }}'
+
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)
 # ─────────────────────────────────────────────
