@@ -52,7 +52,8 @@ try {
     await cache.put(key, new Response(await response.arrayBuffer(), { headers }));
     return headers.get('x-darkmap-cached-at'); }, url);
   assert.equal((await get(url)).body.version, 1);
-  assert.equal((await get(reordered)).body.version, 1); assert.equal(proxy.state.hits, 1);
+  const fresh = await get(reordered);
+  assert.equal(fresh.body.version, 1); assert.equal(fresh.headers['x-darkmap-runtime-cache'], 'fresh'); assert.equal(proxy.state.hits, 1);
   result.checks.push('normalized fresh hit');
   await context.setOffline(true); assert.equal((await get(url)).body.version, 1);
   const expiredAt = await expire(); const stale = await get(url);
@@ -63,8 +64,12 @@ try {
   const before = proxy.state.hits; const refreshed = await Promise.all([get(url), get(reordered)]);
   assert(refreshed.every(value => value.body.version === 2)); assert.equal(proxy.state.hits - before, 1);
   result.checks.push('normalized concurrent refresh coalescing');
-  await expire(); proxy.state.status = 503;
-  assert.equal((await get(url)).body.version, 2); result.checks.push('failed refresh preserves stale bytes');
+  const failedRefreshAt = await expire(); proxy.state.status = 503;
+  const failedRefresh = await get(url);
+  assert.equal(failedRefresh.body.version, 2);
+  assert.equal(failedRefresh.headers['x-darkmap-runtime-cache'], 'stale');
+  assert.equal(failedRefresh.headers['x-darkmap-cached-at'], failedRefreshAt);
+  result.checks.push('failed refresh preserves stale bytes/time');
   proxy.state.status = 200;
   const stored = () => page.evaluate(async () => { const cache = await caches.open('darkmap-raster-tile');
     const key = (await cache.keys()).find(key => key.url.includes('operator_fixture=1'));
