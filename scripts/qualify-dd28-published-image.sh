@@ -30,6 +30,8 @@ cleanup() {
   exit "$code"
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 printf 'app=%s image=%s adapter=baac0dadbf4cde773ca4eb1dd6b01bc676e36bc5 started=%s\n' "$source_sha" "$image" "$(date -u +%FT%TZ)"
 cat /proc/self/cgroup
 sha256sum "$adapter/scripts/smoke-real-service-worker.mjs" "$adapter/scripts/smoke-published-image.mjs"
