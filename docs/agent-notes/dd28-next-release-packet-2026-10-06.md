@@ -58,6 +58,20 @@ not invent credentials. Hosted publisher does not wait for GF/ARC.
 
 ## Forward and inverse guarded deployment (not authorized now)
 
+Metadata refresh (2026-10-06, source-only): local app branch clean/exactdd28;
+git ls-remote returned no matching remote candidate ref. Origin is
+https://github.com/Jesssullivan/darkmap.phasi.space. Existing dd28 Sting checkout
+is exact source but lacks installed Playwright. Library-only APP_ROOT may use
+/srv/cache/jess/qualification/darkmap-ec16b51-source, whose installed
+@playwright/test resolves to .pnpm/@playwright+test@1.59.1. This imports browser
+tooling, not old application source/server. Documented standard Sting auth
+paths /run/user/1000/containers/auth.json, /home/jess/.config/containers/auth.json
+and /home/jess/.docker/config.json are all absent; no credential contents read.
+Original producer independently reports managed wrapper
+/nix/store/5s49sy54awj5a8r0bbniq8xhpzzl17cd-tinyland-heavy/bin/tinyland-heavy
+SHA256 1009640de1f9487c8e79d057980b63c6bcdcabbbae1b4511c3fc0bb558b945b3,
+parent high14/max18GiB. This is identity evidence, NOT fresh job admission.
+
 Retain served ec16b51b5e56ab65efaa4fc10c742573ee2d8056 index
 sha256:c5ca6a6907e4bc431835f2b49b2d81587b9cec5e344c309b9c5ab31b81d1d021;
 amd64 child sha256:b461f2304b61b64720fdebcf0d7943f8c2ec6fb3ce0c68deaccbcb92c0f117c2.
