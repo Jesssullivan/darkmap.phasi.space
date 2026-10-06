@@ -59,18 +59,34 @@ export const RasterClientLive = Layer.succeed(
 				url.searchParams.set('height', '256');
 				url.searchParams.set('bbox', bboxParam(tileBBox3857(tile)));
 
+				const signal = AbortSignal.timeout(8_000);
+				const timedOut = (cause: unknown): boolean =>
+					(signal.aborted && signal.reason instanceof Error && signal.reason.name === 'TimeoutError') ||
+					(cause instanceof Error && cause.name === 'TimeoutError');
 				const res = yield* Effect.tryPromise({
-					try: () => fetch(url, { signal: AbortSignal.timeout(8_000) }),
-					catch: (cause) => new RasterError({ status: 0, upstream: url.toString(), cause,
-						reason: cause instanceof Error && cause.name === 'TimeoutError' ? 'timeout' : 'network' }),
+					try: () => fetch(url, { signal }),
+					catch: (cause) => new RasterError({
+						status: 0,
+						upstream: url.toString(),
+						cause,
+						reason: timedOut(cause) ? 'timeout' : 'network',
+					}),
 				});
 				if (!res.ok) {
-					return yield* Effect.fail(new RasterError({ status: res.status, upstream: url.toString(), reason: 'upstream-http' }));
+					return yield* Effect.fail(new RasterError({
+						status: res.status,
+						upstream: url.toString(),
+						reason: 'upstream-http',
+					}));
 				}
 				const buffer = yield* Effect.tryPromise({
 					try: () => res.arrayBuffer(),
-					catch: (cause) => new RasterError({ status: res.status, upstream: url.toString(), cause,
-						reason: cause instanceof Error && cause.name === 'TimeoutError' ? 'timeout' : 'body-read' }),
+					catch: (cause) => new RasterError({
+						status: res.status,
+						upstream: url.toString(),
+						cause,
+						reason: timedOut(cause) ? 'timeout' : 'body-read',
+					}),
 				});
 				return {
 					contentType: res.headers.get('content-type') ?? 'image/png',

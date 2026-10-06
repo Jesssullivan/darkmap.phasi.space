@@ -146,6 +146,28 @@ describe('RasterClientLive — WMS GetMap URL builder', () => {
 			}).pipe(Effect.provide(RasterClientLive)),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ reason: 'body-read' });
+	});
+
+	it('recognizes deadline during body consumption even when body rejects AbortError', async () => {
+		const controller = new AbortController();
+		vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+		const response = new Response(null, { status: 200 });
+		Object.defineProperty(response, 'arrayBuffer', {
+			value: async () => {
+				controller.abort(new DOMException('fixture deadline', 'TimeoutError'));
+				throw new DOMException('fixture body aborted', 'AbortError');
+			},
+		});
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const client = yield* RasterClient;
+				return yield* client.getTile({ upstreamLayer: 'PostGIS:VIIRS_2019', tile: { z: 0, x: 0, y: 0 } });
+			}).pipe(Effect.provide(RasterClientLive)),
+		);
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ status: 200, reason: 'timeout' });
 	});
 
 	it('RasterError carries the structured tag', () => {

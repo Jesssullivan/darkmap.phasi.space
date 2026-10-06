@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GET } from './+server';
 
 const originalFetch = globalThis.fetch;
@@ -9,10 +9,39 @@ const fakeEvent = (url: string): Parameters<typeof GET>[0] =>
 	}) as Parameters<typeof GET>[0];
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	globalThis.fetch = originalFetch;
 });
 
 describe('/api/raster atmospheric proxy', () => {
+	it.each([
+		['timeout', 504],
+		['body-read', 502],
+	] as const)('classifies %s after successful headers without fabricated raster bytes', async (reason, status) => {
+		const controller = new AbortController();
+		vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+		const broken = new Response(null, { status: 200 });
+		Object.defineProperty(broken, 'arrayBuffer', {
+			value: async () => {
+				if (reason === 'timeout') {
+					controller.abort(new DOMException('fixture deadline', 'TimeoutError'));
+					throw new DOMException('fixture body aborted', 'AbortError');
+				}
+				throw new Error('fixture truncated body');
+			},
+		});
+		globalThis.fetch = (async () => broken) as typeof globalThis.fetch;
+		const x = reason === 'timeout' ? 76 : 77;
+		const response = await GET(fakeEvent(`https://fixture.invalid/api/raster?layer=viirs_2019&z=8&x=${x}&y=96`));
+		expect(response.status).toBe(status);
+		expect(await response.json()).toEqual({
+			message: 'upstream raster error',
+			code: 'raster-unavailable',
+			stage: 'upstream',
+			reason,
+			upstreamStatus: null,
+		});
+	});
 	it('returns closed upstream denial evidence without upstream address or fabricated bytes', async () => {
 		globalThis.fetch = (async () => new Response('', { status: 403 })) as typeof globalThis.fetch;
 		const response = await GET(fakeEvent('https://fixture.invalid/api/raster?layer=viirs_2019&z=8&x=75&y=96'));

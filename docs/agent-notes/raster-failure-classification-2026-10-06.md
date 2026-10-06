@@ -27,3 +27,11 @@ carrier has no installed dependency graph; no install/build/remote producer
 was authorized. This is NOT a live fix or full type/build qualification.
 Next step: independent source review and admitted exact small raster/API test
 targets before publication; retain served807/2da and prior rollback meanwhile.
+
+Independent root review correction: retain ONE deadline signal across headers
+and body. Body consumption may reject AbortError although signal.reason is
+TimeoutError; both catches now inspect the aborted signal reason as well as
+the thrown error. Deterministic fixtures abort the injected signal only during
+body reading (no8s sleep/network) and assert client timeout plus route504;
+ordinary truncated body remains body-read/502. Fixtures still NOT RUN without
+an admitted dependency graph. Original5c94 lineage retained; no live claim.

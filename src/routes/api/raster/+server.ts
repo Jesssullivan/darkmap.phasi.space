@@ -112,14 +112,21 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (Exit.isFailure(exit)) {
 		const failure = Cause.failureOption(exit.cause);
 		if (Option.isSome(failure) && failure.value instanceof RasterError) {
-				const status = failure.value.status;
-				// Closed public evidence; never expose upstream URLs, queries or causes.
-				return Response.json({ message: 'upstream raster error', code: 'raster-unavailable',
-					stage: 'upstream', reason: failure.value.reason ?? 'upstream-http',
-					upstreamStatus: status >= 400 && status < 600 ? status : null }, {
+			const status = failure.value.status;
+			// Closed public evidence; never expose upstream URLs, queries or causes.
+			return Response.json(
+				{
+					message: 'upstream raster error',
+					code: 'raster-unavailable',
+					stage: 'upstream',
+					reason: failure.value.reason ?? 'upstream-http',
+					upstreamStatus: status >= 400 && status < 600 ? status : null,
+				},
+				{
 					status: failure.value.reason === 'timeout' ? 504 : status >= 400 && status < 600 ? status : 502,
 					headers: { 'cache-control': 'no-store' },
-				});
+				},
+			);
 		}
 		error(500, Cause.pretty(exit.cause));
 	}
