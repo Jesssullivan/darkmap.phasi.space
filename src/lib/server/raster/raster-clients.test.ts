@@ -1,4 +1,4 @@
-import { Effect, Exit } from 'effect';
+import { Cause, Effect, Exit } from 'effect';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PointQueryClient, PointQueryClientLive, PointQueryError } from './PointQuery';
 import { RasterClient, RasterClientLive, RasterError } from './RasterClient';
@@ -106,6 +106,30 @@ describe('RasterClientLive — WMS GetMap URL builder', () => {
 			}).pipe(Effect.provide(RasterClientLive)),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);
+	});
+
+	it.each([
+		['timeout', new DOMException('fixture deadline', 'TimeoutError')],
+		['network', new Error('fixture network failure')],
+	] as const)('classifies %s without returning a fabricated raster', async (reason, failure) => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(failure);
+		const exit = await Effect.runPromiseExit(Effect.gen(function* () {
+			const client = yield* RasterClient;
+			return yield* client.getTile({ upstreamLayer: 'PostGIS:VIIRS_2019', tile: { z: 0, x: 0, y: 0 } });
+		}).pipe(Effect.provide(RasterClientLive)));
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ status: 0, reason });
+		expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+	});
+
+	it('classifies an upstream403 as HTTP denial, not local authorization', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 403 }));
+		const exit = await Effect.runPromiseExit(Effect.gen(function* () {
+			const client = yield* RasterClient;
+			return yield* client.getTile({ upstreamLayer: 'PostGIS:VIIRS_2019', tile: { z: 0, x: 0, y: 0 } });
+		}).pipe(Effect.provide(RasterClientLive)));
+		if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ status: 403, reason: 'upstream-http' });
+		else throw new Error('denied upstream unexpectedly succeeded');
 	});
 
 	it('emits RasterError when arrayBuffer() throws after a 2xx', async () => {

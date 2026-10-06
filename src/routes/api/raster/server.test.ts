@@ -13,6 +13,14 @@ afterEach(() => {
 });
 
 describe('/api/raster atmospheric proxy', () => {
+	it('returns closed upstream denial evidence without upstream address or fabricated bytes', async () => {
+		globalThis.fetch = (async () => new Response('', { status: 403 })) as typeof globalThis.fetch;
+		const response = await GET(fakeEvent('https://fixture.invalid/api/raster?layer=viirs_2019&z=8&x=75&y=96'));
+		expect(response.status).toBe(403);
+		expect(response.headers.get('cache-control')).toBe('no-store');
+		expect(await response.json()).toEqual({ message: 'upstream raster error', code: 'raster-unavailable',
+			stage: 'upstream', reason: 'upstream-http', upstreamStatus: 403 });
+	});
 	it('clamps overzoomed water-vapor requests to the native GIBS matrix tile', async () => {
 		let upstreamUrl = '';
 		globalThis.fetch = (async (input: RequestInfo | URL) => {

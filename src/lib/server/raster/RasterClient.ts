@@ -18,6 +18,7 @@ export interface RasterResponse {
 
 export class RasterError extends Data.TaggedError('RasterError')<{
 	readonly status: number;
+	readonly reason?: 'upstream-http' | 'timeout' | 'network' | 'body-read';
 	readonly upstream: string;
 	readonly cause?: unknown;
 }> {}
@@ -59,15 +60,17 @@ export const RasterClientLive = Layer.succeed(
 				url.searchParams.set('bbox', bboxParam(tileBBox3857(tile)));
 
 				const res = yield* Effect.tryPromise({
-					try: () => fetch(url),
-					catch: (cause) => new RasterError({ status: 0, upstream: url.toString(), cause }),
+					try: () => fetch(url, { signal: AbortSignal.timeout(8_000) }),
+					catch: (cause) => new RasterError({ status: 0, upstream: url.toString(), cause,
+						reason: cause instanceof Error && cause.name === 'TimeoutError' ? 'timeout' : 'network' }),
 				});
 				if (!res.ok) {
-					return yield* Effect.fail(new RasterError({ status: res.status, upstream: url.toString() }));
+					return yield* Effect.fail(new RasterError({ status: res.status, upstream: url.toString(), reason: 'upstream-http' }));
 				}
 				const buffer = yield* Effect.tryPromise({
 					try: () => res.arrayBuffer(),
-					catch: (cause) => new RasterError({ status: res.status, upstream: url.toString(), cause }),
+					catch: (cause) => new RasterError({ status: res.status, upstream: url.toString(), cause,
+						reason: cause instanceof Error && cause.name === 'TimeoutError' ? 'timeout' : 'body-read' }),
 				});
 				return {
 					contentType: res.headers.get('content-type') ?? 'image/png',
