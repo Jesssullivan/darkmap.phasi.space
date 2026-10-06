@@ -367,6 +367,13 @@ smoke-published-image app_root image_base_url artifact_dir source_sha image_dige
 test-image-smoke-adapter:
     cd {{ root }} && node --test scripts/image-smoke-contrast.test.mjs
 
+# Operator-only real compiled SW proof; explicit running local image, no build.
+smoke-real-service-worker app_root image_base_url artifact_dir source_sha image_digest:
+    node '{{ root }}/scripts/smoke-real-service-worker.mjs' '{{ app_root }}' '{{ image_base_url }}' '{{ artifact_dir }}' '{{ source_sha }}' '{{ image_digest }}'
+
+test-real-service-worker-adapter:
+    node --test '{{ root }}/scripts/real-sw-fixtures.test.mjs'
+
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)
 # ─────────────────────────────────────────────
