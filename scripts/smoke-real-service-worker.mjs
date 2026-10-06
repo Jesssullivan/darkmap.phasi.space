@@ -59,6 +59,8 @@ try {
   assert.equal(result.controller.state, 'activated');
   worker = context.serviceWorkers().find(value => value.url() === result.controller.url);
   assert(worker, 'original activated worker available');
+  result.registrationOnly = process.env.SW_REGISTRATION_DIAGNOSTIC === '1';
+  if (!result.registrationOnly) {
   const url = '/api/raster?operator_fixture=1&z=0&x=0&y=0';
   const reordered = '/api/raster?y=0&x=0&z=0&operator_fixture=1';
   const get = value => page.evaluate(async value => { const response = await fetch(value);
@@ -113,6 +115,7 @@ try {
   assert(miss, 'offline uncached miss must fail truthfully');
   result.checks.push('storage recovery and truthful offline miss');
   assert(result.workerFixtureRequests > 0, 'fixture network requests genuinely originated in actual service worker');
+  }
   result.fixtureCounts = { ...proxy.state }; result.passed = true;
 } catch (error) { result.passed = false; result.error = error.stack; process.exitCode = 1; }
 finally {

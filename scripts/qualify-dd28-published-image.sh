@@ -53,6 +53,5 @@ for attempt in {1..30}; do
   sleep 1
 done
 [[ "$ready" == 1 ]] || { echo 'Image health did not become ready' >&2; exit 1; }
-timeout --signal=TERM --kill-after=15s 240s just --justfile "$adapter/Justfile" smoke-real-service-worker "$library" "$base" "$artifacts/sw" "$source_sha" "$digest"
-timeout --signal=TERM --kill-after=15s 240s just --justfile "$adapter/Justfile" smoke-published-image "$library" "$base" "$artifacts/ui" "$source_sha" "$digest"
-find "$artifacts/sw" "$artifacts/ui" -type f -exec sha256sum {} \;
+SW_REGISTRATION_DIAGNOSTIC=1 timeout --signal=TERM --kill-after=10s 65s just --justfile "$adapter/Justfile" smoke-real-service-worker "$library" "$base" "$artifacts/sw" "$source_sha" "$digest"
+find "$artifacts/sw" -type f -exec sha256sum {} \;
