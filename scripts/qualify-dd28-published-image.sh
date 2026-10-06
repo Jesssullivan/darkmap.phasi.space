@@ -3,7 +3,7 @@ set -euo pipefail
 # Invoked ONLY inside root-reviewed lowering tinyland-heavy scope after fresh GO.
 adapter=/srv/cache/jess/qualification/darkmap-sw-adapter-baac0da
 library=/srv/cache/jess/qualification/darkmap-ec16b51-source
-artifacts=/srv/cache/jess/qualification/darkmap-dd28a83-artifacts/published-ddd4202
+artifacts=/srv/cache/jess/qualification/darkmap-dd28a83-artifacts/published-ddd4202-registration-diagnostic
 source_sha=dd28a8398699e6b790ab29616ad07a15d52c1a02
 digest=sha256:ddd420222bb6e7fc3a0aeacb77564903ba6295fe1bf81fb6fd02163d72df71f6
 image=ghcr.io/jesssullivan/darkmap.phasi.space@$digest
@@ -13,6 +13,7 @@ export FONTCONFIG_FILE=/nix/store/37d1hj8wrdgbh64qy6v8h877x78i5ckj-fonts.conf
 export NODE_OPTIONS=--max-old-space-size=1536
 cid=''
 owner=darkmap-dd28-cache-qualification-20261006
+[[ ! -e "$artifacts" ]] || { echo 'Refuse existing artifact path' >&2; exit 2; }
 mkdir -p "$artifacts"
 exec > >(tee "$artifacts/runner.log") 2>&1
 cleanup() {

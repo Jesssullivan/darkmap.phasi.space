@@ -12,7 +12,7 @@ const { chromium } = createRequire(path.join(path.resolve(appRoot), 'package.jso
 await mkdir(artifactDir, { recursive: true });
 const result = { sourceSha, imageDigest, startedAt: new Date().toISOString(),
   boundary: 'Actual image compiled SW; controlled synthetic local raster bytes, not provider/scientific measurement proof.', checks: [] };
-let proxy, browser, context, worker;
+let proxy, browser, context, worker, page;
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 try {
   proxy = await fixtureProxy(baseUrl);
@@ -24,6 +24,23 @@ try {
   assert.equal(hash(Buffer.from(await (await fetch(proxy.origin + '/service-worker.js')).arrayBuffer())), result.workerSha256);
   browser = await chromium.launch({ executablePath: process.env.CHROME_BIN, headless: true, args: ['--no-sandbox'] });
   context = await browser.newContext({ serviceWorkers: 'allow' });
+  result.console = []; result.pageErrors = []; result.requestFailures = []; result.workerEvents = [];
+  context.on('serviceworker', value => result.workerEvents.push({ url: value.url(), at: new Date().toISOString() }));
+  context.on('requestfailed', request => result.requestFailures.push({ url: new URL(request.url()).pathname, error: request.failure()?.errorText, worker: !!request.serviceWorker() }));
+  await context.addInitScript(() => {
+    globalThis.__operatorRegistration = [];
+    const sw = navigator.serviceWorker;
+    if (!sw) return;
+    const original = sw.register.bind(sw);
+    sw.register = (...args) => {
+      const event = { url: String(args[0]), at: Date.now(), state: 'called' };
+      globalThis.__operatorRegistration.push(event);
+      // Observe the application's call; never register independently or change arguments.
+      return original(...args).then(reg => { event.state = 'resolved'; return reg; }, error => {
+        event.state = 'rejected'; event.error = String(error); throw error;
+      });
+    };
+  });
   result.workerFixtureRequests = 0;
   context.on('request', request => {
     if (request.url().includes('/api/raster?') && request.url().includes('operator_fixture=1') && request.serviceWorker())
@@ -31,7 +48,9 @@ try {
   });
   await context.addInitScript(() => localStorage.setItem('darkmap-tour-v1', '1'));
   await context.route('**/*', route => new URL(route.request().url()).origin === proxy.origin ? route.continue() : route.abort('blockedbyclient'));
-  const page = await context.newPage();
+  page = await context.newPage();
+  page.on('console', message => result.console.push({ type: message.type(), text: message.text() }));
+  page.on('pageerror', error => result.pageErrors.push(error.message));
   await page.goto(proxy.origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 45000 });
   result.controller = await page.evaluate(async () => { const registration = await navigator.serviceWorker.ready;
@@ -97,6 +116,13 @@ try {
   result.fixtureCounts = { ...proxy.state }; result.passed = true;
 } catch (error) { result.passed = false; result.error = error.stack; process.exitCode = 1; }
 finally {
+  if (page) result.registrationDiagnostic = await page.evaluate(async () => ({
+    secureContext: window.isSecureContext, controller: navigator.serviceWorker?.controller?.scriptURL ?? null,
+    appCalls: globalThis.__operatorRegistration, registrations: navigator.serviceWorker ? (await navigator.serviceWorker.getRegistrations()).map(reg => ({
+      scope: reg.scope, installing: reg.installing?.state, waiting: reg.waiting?.state, active: reg.active?.state,
+      script: (reg.active ?? reg.installing ?? reg.waiting)?.scriptURL })) : [],
+  })).catch(error => ({ error: String(error) }));
+  if (proxy) result.fixtureCounts = { ...proxy.state };
   if (worker) await worker.evaluate(storageFault, 'restore').catch(() => {});
   if (context) await context.setOffline(false).catch(() => {});
   if (browser) await browser.close(); if (proxy) await proxy.close();

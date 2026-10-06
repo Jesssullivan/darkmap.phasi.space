@@ -5,7 +5,7 @@ export async function fixtureProxy(baseUrl) {
   const base = new URL(baseUrl);
   assert(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname));
   assert(['http:', 'https:'].includes(base.protocol) && !base.username && !base.password);
-  const state = { version: 1, status: 200, hits: 0, denied: 0 };
+  const state = { version: 1, status: 200, hits: 0, denied: 0, upstreamFailures: [] };
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, base);
@@ -18,6 +18,7 @@ export async function fixtureProxy(baseUrl) {
         return;
       }
       const upstream = await fetch(new URL(req.url, base), { redirect: 'manual' });
+      if (!upstream.ok) state.upstreamFailures.push({ path: url.pathname, status: upstream.status });
       const headers = Object.fromEntries(upstream.headers);
       delete headers['content-encoding']; delete headers['content-length'];
       // Browser and worker external fetches are fenced, including worker fetches
