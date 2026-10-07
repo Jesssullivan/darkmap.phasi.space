@@ -30,7 +30,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const exit = await Effect.runPromiseExit(program);
 
 	if (Exit.isFailure(exit)) {
-		const failure = Cause.failureOption(exit.cause);
+		const failure = Cause.findErrorOption(exit.cause);
 		if (Option.isSome(failure) && failure.value instanceof PointQueryError) {
 			const status = failure.value.status;
 			error(status >= 400 && status < 600 ? status : 502, 'upstream point-query error');

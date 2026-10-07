@@ -36,7 +36,7 @@ export class TransmissionEstimatorError extends Data.TaggedError('TransmissionEs
 	readonly cause?: unknown;
 }> {}
 
-export class TransmissionEstimator extends Context.Tag('@darkmap/TransmissionEstimator')<
+export class TransmissionEstimator extends Context.Service<
 	TransmissionEstimator,
 	{
 		readonly estimate: (input: TransmissionInput) => Effect.Effect<TransmissionCurve, TransmissionEstimatorError>;
@@ -54,7 +54,7 @@ export class TransmissionEstimator extends Context.Tag('@darkmap/TransmissionEst
 			aerosolType: AerosolType,
 		) => Effect.Effect<TransmissionCurve, TransmissionEstimatorError, MieScatteringService>;
 	}
->() {}
+>()('@darkmap/TransmissionEstimator') {}
 
 /**
  * Kasten-Young 1989 airmass. Duplicated here from `smarts-analog.ts` to

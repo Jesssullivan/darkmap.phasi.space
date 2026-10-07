@@ -41,7 +41,7 @@ const fetchOrCache = (
 		return yield* client.getTile(req).pipe(
 			Effect.tap((response) => cache.set(req, response)),
 			Effect.map((response) => ({ cacheStatus: 'MISS' as const, response })),
-			Effect.catchAll((rasterError) =>
+			Effect.catch((rasterError) =>
 				cache
 					.getStale(req)
 					.pipe(
@@ -110,7 +110,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const exit = await runCoalesced({ upstreamLayer: layerDef.upstreamLayer, tile });
 
 	if (Exit.isFailure(exit)) {
-		const failure = Cause.failureOption(exit.cause);
+		const failure = Cause.findErrorOption(exit.cause);
 		if (Option.isSome(failure) && failure.value instanceof RasterError) {
 			const status = failure.value.status;
 			error(status >= 400 && status < 600 ? status : 502, 'upstream raster error');
@@ -143,7 +143,7 @@ const atmosphericResponse = async (
 		}).pipe(Effect.provide(AtmosphericTileServiceLive)),
 	);
 	if (Exit.isFailure(exit)) {
-		const failure = Cause.failureOption(exit.cause);
+		const failure = Cause.findErrorOption(exit.cause);
 		if (Option.isSome(failure) && failure.value instanceof AtmosphericTileError) {
 			const err = failure.value;
 			if (err.reason === 'upstream-error' && err.status !== undefined) {

@@ -56,7 +56,7 @@ export class OfflineCacheError extends Data.TaggedError('OfflineCacheError')<{
 	readonly detail?: string;
 }> {}
 
-export class OfflineCacheService extends Context.Tag('@darkmap/OfflineCacheService')<
+export class OfflineCacheService extends Context.Service<
 	OfflineCacheService,
 	{
 		readonly register: () => Effect.Effect<void, OfflineCacheError>;
@@ -64,7 +64,7 @@ export class OfflineCacheService extends Context.Tag('@darkmap/OfflineCacheServi
 		readonly status: () => Effect.Effect<OfflineCacheStatus, OfflineCacheError>;
 		readonly evict: (req: EvictionRequest) => Effect.Effect<EvictionResult, OfflineCacheError>;
 	}
->() {}
+>()('@darkmap/OfflineCacheService') {}
 
 /**
  * Minimal adapter shape the live Layer expects. The real Live impl (next PR)

@@ -69,7 +69,7 @@ export class OpenAQHistoryError extends Data.TaggedError('OpenAQHistoryError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class OpenAQHistoryService extends Context.Tag('@darkmap/OpenAQHistoryService')<
+export class OpenAQHistoryService extends Context.Service<
 	OpenAQHistoryService,
 	{
 		readonly getHistory: (
@@ -77,7 +77,7 @@ export class OpenAQHistoryService extends Context.Tag('@darkmap/OpenAQHistorySer
 			options?: { readonly signal?: AbortSignal },
 		) => Effect.Effect<OpenAQHistoryResult, OpenAQHistoryError>;
 	}
->() {}
+>()('@darkmap/OpenAQHistoryService') {}
 
 /** Bake the `/api/atmospheric/openaq-history` query string for a request. */
 export const openAQHistoryUrl = (req: OpenAQHistoryRequest): string => {

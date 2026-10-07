@@ -45,7 +45,7 @@ export class AtmosphericPointError extends Data.TaggedError('AtmosphericPointErr
 	readonly cause?: unknown;
 }> {}
 
-export class AtmosphericPointService extends Context.Tag('@darkmap/AtmosphericPointService')<
+export class AtmosphericPointService extends Context.Service<
 	AtmosphericPointService,
 	{
 		readonly getReading: (
@@ -53,7 +53,7 @@ export class AtmosphericPointService extends Context.Tag('@darkmap/AtmosphericPo
 			options?: { readonly signal?: AbortSignal },
 		) => Effect.Effect<AtmosphericPointReading, AtmosphericPointError>;
 	}
->() {}
+>()('@darkmap/AtmosphericPointService') {}
 
 /** Bake the `/api/atmospheric/point` query string for a request. */
 export const atmosphericPointUrl = (req: AtmosphericPointRequest): string =>

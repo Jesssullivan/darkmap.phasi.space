@@ -34,14 +34,14 @@ export class HorizonError extends Data.TaggedError('HorizonError')<{
  * implementation that fetches tiles via the SvelteKit `/api/elevation`
  * proxy. Stub implementations let tests use synthetic terrain.
  */
-export class ElevationLookup extends Context.Tag('@darkmap/ElevationLookup')<
+export class ElevationLookup extends Context.Service<
 	ElevationLookup,
 	{
 		readonly metersAt: (loc: LatLon) => Effect.Effect<number, HorizonError>;
 	}
->() {}
+>()('@darkmap/ElevationLookup') {}
 
-export class HorizonProvider extends Context.Tag('@darkmap/HorizonProvider')<
+export class HorizonProvider extends Context.Service<
 	HorizonProvider,
 	{
 		readonly polygonAt: (loc: LatLon, opts?: HorizonOptions) => Effect.Effect<HorizonPolygon, HorizonError>;
@@ -57,7 +57,7 @@ export class HorizonProvider extends Context.Tag('@darkmap/HorizonProvider')<
 			opts?: NearAzimuthOptions,
 		) => Effect.Effect<HorizonPolygon, HorizonError>;
 	}
->() {}
+>()('@darkmap/HorizonProvider') {}
 
 export interface HorizonOptions {
 	/** Number of azimuth rays (default 36 = every 10°). */
@@ -212,7 +212,7 @@ export const chainElevationLookups = (
 			const p = yield* Effect.provide(ElevationLookup, primary);
 			const f = yield* Effect.provide(ElevationLookup, fallback);
 			return {
-				metersAt: (loc) => p.metersAt(loc).pipe(Effect.catchAll(() => f.metersAt(loc))),
+				metersAt: (loc) => p.metersAt(loc).pipe(Effect.catch(() => f.metersAt(loc))),
 			};
 		}),
 	);

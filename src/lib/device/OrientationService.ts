@@ -23,7 +23,7 @@ export class OrientationError extends Data.TaggedError('OrientationError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class OrientationService extends Context.Tag('@darkmap/OrientationService')<
+export class OrientationService extends Context.Service<
 	OrientationService,
 	{
 		readonly requestPermission: () => Effect.Effect<OrientationCapability, OrientationError>;
@@ -31,7 +31,7 @@ export class OrientationService extends Context.Tag('@darkmap/OrientationService
 			onReading: (reading: OrientationReading) => void,
 		) => Effect.Effect<OrientationWatch, OrientationError>;
 	}
->() {}
+>()('@darkmap/OrientationService') {}
 
 export const normalizeHeadingDeg = (deg: number): number => ((deg % 360) + 360) % 360;
 

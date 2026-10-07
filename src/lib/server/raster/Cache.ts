@@ -14,14 +14,14 @@ interface RasterCacheOptions {
 	readonly store?: Map<string, RasterCacheEntry>;
 }
 
-export class RasterCache extends Context.Tag('@darkmap/RasterCache')<
+export class RasterCache extends Context.Service<
 	RasterCache,
 	{
 		readonly get: (req: RasterTileRequest) => Effect.Effect<Option.Option<RasterResponse>>;
 		readonly getStale: (req: RasterTileRequest) => Effect.Effect<Option.Option<RasterResponse>>;
 		readonly set: (req: RasterTileRequest, v: RasterResponse) => Effect.Effect<void>;
 	}
->() {}
+>()('@darkmap/RasterCache') {}
 
 export const rasterCacheKey = ({ upstreamLayer, tile }: RasterTileRequest): string =>
 	`${upstreamLayer}::${tile.z}/${tile.x}/${tile.y}`;
