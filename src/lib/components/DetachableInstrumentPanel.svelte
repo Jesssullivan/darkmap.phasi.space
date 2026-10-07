@@ -32,16 +32,18 @@
 		detached = false;
 		// Resize can destroy this component before its replacement dock/disclosure
 		// mounts. Wait for the parent flush AND the next frame before choosing focus.
-		void tick().then(() => requestAnimationFrame(() => {
-			const candidates = [
-				document.querySelector<HTMLButtonElement>('[data-responsive-dock] .dock-tab'),
-				document.querySelector<HTMLElement>('[data-short-air] summary'),
-				roomy ? detachButton : dockHeading,
-				document.querySelector<HTMLButtonElement>('.inspector-tab'),
-				document.querySelector<HTMLButtonElement>('.toolbar button'),
-			];
-			candidates.find((candidate) => candidate?.getClientRects().length)?.focus();
-		}));
+		void tick().then(() =>
+			requestAnimationFrame(() => {
+				const candidates = [
+					document.querySelector<HTMLButtonElement>('[data-responsive-dock] .dock-tab'),
+					document.querySelector<HTMLElement>('[data-short-air] summary'),
+					roomy ? detachButton : dockHeading,
+					document.querySelector<HTMLButtonElement>('.inspector-tab'),
+					document.querySelector<HTMLButtonElement>('.toolbar button'),
+				];
+				candidates.find((candidate) => candidate?.getClientRects().length)?.focus();
+			}),
+		);
 	}
 
 	onMount(() => {
@@ -90,15 +92,25 @@
 			<FloatingPanel.Context>
 				{#snippet children(panel)}
 					<FloatingPanel.Positioner class="instrument-float-positioner">
-						<FloatingPanel.Content class="instrument-float" aria-labelledby="instrument-panel-title" data-instrument-panel="floating">
+						<FloatingPanel.Content
+							class="instrument-float"
+							aria-labelledby="instrument-panel-title"
+							data-instrument-panel="floating"
+						>
 							<FloatingPanel.Header class="instrument-float-header">
 								<FloatingPanel.DragTrigger class="instrument-float-drag">
 									<h2 id="instrument-panel-title" bind:this={floatHeading} tabindex="-1">Air · local dome</h2>
 								</FloatingPanel.DragTrigger>
 								<FloatingPanel.Control class="instrument-float-controls">
-									<FloatingPanel.StageTrigger stage="minimized" aria-label="Minimize instruments" title="Minimize">−</FloatingPanel.StageTrigger>
-									<FloatingPanel.StageTrigger stage="maximized" aria-label="Maximize instruments" title="Maximize">□</FloatingPanel.StageTrigger>
-									<FloatingPanel.StageTrigger stage="default" aria-label="Restore instruments" title="Restore">↺</FloatingPanel.StageTrigger>
+									<FloatingPanel.StageTrigger stage="minimized" aria-label="Minimize instruments" title="Minimize"
+										>−</FloatingPanel.StageTrigger
+									>
+									<FloatingPanel.StageTrigger stage="maximized" aria-label="Maximize instruments" title="Maximize"
+										>□</FloatingPanel.StageTrigger
+									>
+									<FloatingPanel.StageTrigger stage="default" aria-label="Restore instruments" title="Restore"
+										>↺</FloatingPanel.StageTrigger
+									>
 									<button type="button" aria-label="Redock instruments" title="Redock" onclick={redock}>↙</button>
 								</FloatingPanel.Control>
 							</FloatingPanel.Header>
@@ -115,7 +127,9 @@
 		<header class="instrument-panel-header">
 			<h2 id="instrument-panel-title" bind:this={dockHeading} tabindex="-1">Air · local dome</h2>
 			{#if hydrated && roomy}
-				<button bind:this={detachButton} type="button" aria-label="Detach Air and local dome" onclick={detach}>Detach</button>
+				<button bind:this={detachButton} type="button" aria-label="Detach Air and local dome" onclick={detach}
+					>Detach</button
+				>
 			{/if}
 		</header>
 		<div class="instrument-panel-body">{@render panelBody()}</div>
@@ -139,7 +153,9 @@
 		overflow: auto;
 	}
 	@media (min-width: 640px) and (min-height: 501px) {
-		.instrument-panel { display: block; }
+		.instrument-panel {
+			display: block;
+		}
 	}
 	.instrument-panel-header,
 	:global(.instrument-float-header) {
@@ -152,8 +168,17 @@
 		font: 600 0.7rem var(--font-mono, ui-monospace, monospace);
 	}
 	.instrument-panel-header h2,
-	:global(.instrument-float-header h2) { margin: 0; min-width: 0; flex: 1 1 auto; }
-	:global(.instrument-float-drag) { flex: 1 1 auto; min-width: 0; cursor: move; touch-action: none; }
+	:global(.instrument-float-header h2) {
+		margin: 0;
+		min-width: 0;
+		flex: 1 1 auto;
+	}
+	:global(.instrument-float-drag) {
+		flex: 1 1 auto;
+		min-width: 0;
+		cursor: move;
+		touch-action: none;
+	}
 	.instrument-panel-header button,
 	:global(.instrument-float-controls button) {
 		background: rgba(255, 255, 255, 0.06);
@@ -165,16 +190,46 @@
 		cursor: pointer;
 	}
 	.instrument-panel-header button:focus-visible,
-	:global(.instrument-float-controls button:focus-visible) { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
+	:global(.instrument-float-controls button:focus-visible) {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: 2px;
+	}
 	.instrument-panel-body,
-	:global(.instrument-float-body) { padding: 0.45rem; min-height: 0; overflow: auto; }
+	:global(.instrument-float-body) {
+		padding: 0.45rem;
+		min-height: 0;
+		overflow: auto;
+	}
 	:global(.instrument-panel .tile),
-	:global(.instrument-float .tile) { border: 0; }
-	:global(.instrument-float-positioner) { position: fixed; z-index: 60; }
-	:global(.instrument-float) { display: flex; position: relative; flex-direction: column; height: 100%; min-height: 0; }
-	:global(.instrument-float-controls) { display: flex; gap: 0.25rem; }
-	:global(.instrument-float-body) { flex: 1 1 auto; }
-	:global(.instrument-float-resize) { position: absolute; right: 0; bottom: 0; width: 1.25rem; height: 1.25rem; cursor: se-resize; }
+	:global(.instrument-float .tile) {
+		border: 0;
+	}
+	:global(.instrument-float-positioner) {
+		position: fixed;
+		z-index: 60;
+	}
+	:global(.instrument-float) {
+		display: flex;
+		position: relative;
+		flex-direction: column;
+		height: 100%;
+		min-height: 0;
+	}
+	:global(.instrument-float-controls) {
+		display: flex;
+		gap: 0.25rem;
+	}
+	:global(.instrument-float-body) {
+		flex: 1 1 auto;
+	}
+	:global(.instrument-float-resize) {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		width: 1.25rem;
+		height: 1.25rem;
+		cursor: se-resize;
+	}
 	/* The portal leaves the deck's dark surface context. Override Skeleton's
 	   two-attribute anatomy defaults on this instrument only, not all panels. */
 	:global(.instrument-float[data-scope='floating-panel'][data-part='content']),
@@ -186,6 +241,9 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		:global(.instrument-float-positioner),
-		:global(.instrument-float) { animation: none; transition: none; }
+		:global(.instrument-float) {
+			animation: none;
+			transition: none;
+		}
 	}
 </style>

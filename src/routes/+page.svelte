@@ -2824,11 +2824,22 @@
 			     dome. Give Air a native disclosure, not a hidden desktop panel. -->
 			<details class="short-air" data-short-air>
 				<summary>Air · viewport</summary>
-				<InstrumentColumn compact lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
+				<InstrumentColumn
+					compact
+					lens={lensStore.lens}
+					stations={instrumentStations}
+					location={viewCenter}
+					time={ephemerisTime}
+				/>
 			</details>
 		{:else if !dockActive}
 			<DetachableInstrumentPanel>
-				<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
+				<InstrumentColumn
+					lens={lensStore.lens}
+					stations={instrumentStations}
+					location={viewCenter}
+					time={ephemerisTime}
+				/>
 			</DetachableInstrumentPanel>
 		{/if}
 		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered

@@ -22,7 +22,10 @@ export default defineConfig({
 			use: {
 				...devices['Desktop Chrome'],
 				launchOptions: process.env.CHROME_BIN
-					? { executablePath: process.env.CHROME_BIN, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }
+					? {
+							executablePath: process.env.CHROME_BIN,
+							args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+						}
 					: undefined,
 			},
 		},

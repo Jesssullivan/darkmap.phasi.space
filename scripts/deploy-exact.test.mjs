@@ -17,7 +17,16 @@ function run({ readChange, patchChange, containers } = {}) {
 	try {
 		const deployment = {
 			metadata: { uid: 'recorded-uid', resourceVersion: '42', ...readChange },
-			spec: { template: { spec: { containers: containers ?? [{ name: 'sidecar', image: 'sidecar:1' }, { name: 'app', image: prior }] } } },
+			spec: {
+				template: {
+					spec: {
+						containers: containers ?? [
+							{ name: 'sidecar', image: 'sidecar:1' },
+							{ name: 'app', image: prior },
+						],
+					},
+				},
+			},
 		};
 		writeFileSync(path.join(dir, 'fixture.json'), JSON.stringify(deployment));
 		const cli = `#!${process.execPath}
@@ -56,10 +65,27 @@ else console.log(d.spec.template.spec.containers.find(c => c.name === 'app')?.im
 		for (const name of ['git', 'kubectl', 'skopeo']) writeFileSync(path.join(dir, name), cli, { mode: 0o700 });
 		const result = spawnSync('bash', [script, sha, digest, 'recorded-uid', prior, '42'], {
 			encoding: 'utf8',
-			env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, TEST_DIR: dir, TEST_SHA: sha, TEST_PATCH_CHANGE: patchChange ?? '' },
+			env: {
+				...process.env,
+				PATH: `${dir}:${process.env.PATH}`,
+				TEST_DIR: dir,
+				TEST_SHA: sha,
+				TEST_PATCH_CHANGE: patchChange ?? '',
+			},
 		});
-		const exists = (file) => { try { return readFileSync(path.join(dir, file), 'utf8'); } catch { return null; } };
-		return { result, patch: exists('accepted-patch.json'), attempted: exists('patch-attempt'), rollout: exists('rollout') };
+		const exists = (file) => {
+			try {
+				return readFileSync(path.join(dir, file), 'utf8');
+			} catch {
+				return null;
+			}
+		};
+		return {
+			result,
+			patch: exists('accepted-patch.json'),
+			attempted: exists('patch-attempt'),
+			rollout: exists('rollout'),
+		};
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -69,13 +95,19 @@ test('patches only the named app at its actual index after atomic state tests', 
 	const { result, patch, rollout } = run();
 	assert.equal(result.status, 0, result.stderr);
 	const ops = JSON.parse(patch);
-	assert.deepEqual(ops.map(op => op.op), ['test', 'test', 'test', 'test', 'replace']);
+	assert.deepEqual(
+		ops.map((op) => op.op),
+		['test', 'test', 'test', 'test', 'replace'],
+	);
 	assert.equal(ops[2].path, '/spec/template/spec/containers/1/name');
 	assert.equal(ops[4].value, image);
 	assert.equal(rollout, '1');
 });
 
-for (const [label, readChange] of [['UID', { uid: 'replacement-uid' }], ['resourceVersion', { resourceVersion: '43' }]]) {
+for (const [label, readChange] of [
+	['UID', { uid: 'replacement-uid' }],
+	['resourceVersion', { resourceVersion: '43' }],
+]) {
 	test(`refuses changed ${label} before attempting patch`, () => {
 		const { result, attempted, rollout } = run({ readChange });
 		assert.notEqual(result.status, 0);
@@ -94,7 +126,14 @@ for (const patchChange of ['uid=replacement-uid', 'resourceVersion=43', 'image=o
 	});
 }
 
-for (const containers of [[], [{ name: 'app', image: prior }, { name: 'app', image: prior }], [{ name: 'app', image: 'other:deployment' }]]) {
+for (const containers of [
+	[],
+	[
+		{ name: 'app', image: prior },
+		{ name: 'app', image: prior },
+	],
+	[{ name: 'app', image: 'other:deployment' }],
+]) {
 	test(`refuses missing/duplicate app or changed prior image: ${JSON.stringify(containers)}`, () => {
 		const { result, attempted } = run({ containers });
 		assert.notEqual(result.status, 0);

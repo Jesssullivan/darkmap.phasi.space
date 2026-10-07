@@ -33,15 +33,19 @@ test('reduced motion preserves keyboard detach, stage restoration and focus', as
 	const floating = page.locator('[data-instrument-panel="floating"]');
 	await expect(floating).toBeVisible();
 	await expect(floating.getByRole('heading', { name: 'Air · local dome' })).toBeFocused();
-	const contrast = await floating.evaluate(panel => {
+	const contrast = await floating.evaluate((panel) => {
 		const luminance = (color: string) => {
-			const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => {
-				const channel = value / 255;
-				return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-			});
+			const channels = color
+				.match(/[\d.]+/g)!
+				.slice(0, 3)
+				.map(Number)
+				.map((value) => {
+					const channel = value / 255;
+					return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+				});
 			return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
 		};
-		return ['.instrument-float-header', '.instrument-float-body'].map(selector => {
+		return ['.instrument-float-header', '.instrument-float-body'].map((selector) => {
 			const style = getComputedStyle(panel.querySelector(selector)!);
 			const foreground = luminance(style.color);
 			const background = luminance(style.backgroundColor);
@@ -117,7 +121,9 @@ test('wide instruments detach once, redock, and return keyboard focus', async ({
 	await expect(floating).toBeVisible();
 });
 
-test('floating panel minimizes to its header, restores, and stays within the viewport when dragged', async ({ page }) => {
+test('floating panel minimizes to its header, restores, and stays within the viewport when dragged', async ({
+	page,
+}) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Detach Air and local dome' }).click();
@@ -140,10 +146,12 @@ test('floating panel minimizes to its header, restores, and stays within the vie
 	await page.mouse.down();
 	await page.mouse.move(4000, 4000, { steps: 8 });
 	await page.mouse.up();
-	await expect.poll(async () => {
-		const box = await floating.boundingBox();
-		return box ? Math.hypot(box.x - beforeDrag!.x, box.y - beforeDrag!.y) : 0;
-	}).toBeGreaterThan(1);
+	await expect
+		.poll(async () => {
+			const box = await floating.boundingBox();
+			return box ? Math.hypot(box.x - beforeDrag!.x, box.y - beforeDrag!.y) : 0;
+		})
+		.toBeGreaterThan(1);
 	const bounded = await floating.boundingBox();
 	expect(bounded).not.toBeNull();
 	expect(bounded!.x).toBeGreaterThanOrEqual(-1);
@@ -170,7 +178,10 @@ test('short wide viewport does not offer a panel that cannot fit', async ({ page
 	await expect(page.locator('[data-instrument-panel="floating"]')).toHaveCount(0);
 });
 
-for (const viewport of [{ width: 568, height: 320 }, { width: 1440, height: 450 }]) {
+for (const viewport of [
+	{ width: 568, height: 320 },
+	{ width: 1440, height: 450 },
+]) {
 	test(`short ${viewport.width}px keeps Air reachable through native keyboard disclosure`, async ({ page }) => {
 		await page.setViewportSize(viewport);
 		await page.goto('/#lens=air');
@@ -213,18 +224,22 @@ test('wide floating instruments resize, maximize, restore and redock when height
 	expect(resized).not.toBeNull();
 	await page.getByRole('button', { name: 'Maximize instruments' }).click();
 	await expect(floating.locator('.instrument-float-body')).toBeVisible();
-	await expect.poll(async () => {
-		const box = await floating.boundingBox();
-		return box ? box.width * box.height : 0;
-	}).toBeGreaterThan(resized!.width * resized!.height + 1);
+	await expect
+		.poll(async () => {
+			const box = await floating.boundingBox();
+			return box ? box.width * box.height : 0;
+		})
+		.toBeGreaterThan(resized!.width * resized!.height + 1);
 	await page.getByRole('button', { name: 'Restore instruments' }).click();
 	await expect(floating.locator('.instrument-float-body')).toBeVisible();
-	await expect.poll(async () => {
-		const box = await floating.boundingBox();
-		return box
-			? Math.max(Math.abs(box.width - resized!.width), Math.abs(box.height - resized!.height))
-			: Number.POSITIVE_INFINITY;
-	}).toBeLessThanOrEqual(1);
+	await expect
+		.poll(async () => {
+			const box = await floating.boundingBox();
+			return box
+				? Math.max(Math.abs(box.width - resized!.width), Math.abs(box.height - resized!.height))
+				: Number.POSITIVE_INFINITY;
+		})
+		.toBeLessThanOrEqual(1);
 	await page.setViewportSize({ width: 1440, height: 450 });
 	await expect(floating).toHaveCount(0);
 	await expect(page.locator('[data-short-air] summary')).toBeFocused();
