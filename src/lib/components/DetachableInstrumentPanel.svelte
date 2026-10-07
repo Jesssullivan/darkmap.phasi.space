@@ -90,7 +90,7 @@
 			}}
 		>
 			<FloatingPanel.Context>
-				{#snippet children(panel)}
+				{#snippet children(_panel)}
 					<FloatingPanel.Positioner class="instrument-float-positioner">
 						<FloatingPanel.Content
 							class="instrument-float"
