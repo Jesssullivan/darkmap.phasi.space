@@ -15,6 +15,17 @@ old ingress certificate.
 This file is the working contract for coding agents and LLMs operating in any
 sister site spawned from this scaffold.
 
+## Repository and clone naming
+
+The repository is `Jesssullivan/darkmap.phasi.space`, and that is the canonical
+local clone name on every host. Local clones and worktree directories named
+`darkmap.tinyland.dev`, `darkmap.tinyland.dev-worktrees` or
+`darkmap.tinyland.dev.worktrees` are legacy names for the same repository. Do
+not create new clones or worktrees under the legacy name. Existing directories
+are not renamed in place; consolidate them deliberately, one clone per host.
+The tailnet web route `darkmap.tinyland.dev` above is a hostname, not a clone
+name, and is unaffected.
+
 ## Repo Role
 
 This repo is **a static brand/project site under the Tinyland enterprise** —
@@ -74,17 +85,15 @@ reviewed static snapshots from `tinyland.dev`.
 
 ## Theme & Skeleton
 
-- **Skeleton 5.0.1** is the explicitly requested, source-only candidate in this
-  branch; main's checked-in baseline remains 4.15.2 until a reviewed lock and
-  build/browser evidence exist. `package.json` and the candidate lock now select
-  5.0.1 after managed `just lockfile-prepare` on 2026-09-30 (pnpm 10.13.1,
-  lock-only, lifecycle scripts ignored). The Skeleton/Zag graph is prepared;
-  existing Effect peer warnings remain separate. This is source preparation,
-  not frozen-install, compiler, browser, deployment, or merge-ready proof.
+- **Skeleton 5.0.1** (`@skeletonlabs/skeleton` and `skeleton-svelte`, exact)
+  with **Zag 1.43.0** is the baseline. It is the source of the served image
+  (807520b, Skeleton 5 instruments from ec16b51), which passed a real
+  service-worker browser qualification and a separate UI qualification before
+  its 2026-10-06 deploy-exact rollout. Change these pins only through a
+  reviewed lock plus browser evidence.
 - Tailwind v4 consumes Skeleton 5 component utilities through the `@source`
   directive in `src/app.css`. The Skeleton-4-only
-  `skeletonTailwindV4Compat()` Vite shim is intentionally removed in this
-  candidate; this CSS/build behavior remains unverified.
+  `skeletonTailwindV4Compat()` Vite shim is retired; do not reintroduce it.
 - Theme cascade lives in `src/app.css`. Per-site brand themes go under
   `src/lib/styles/themes/`.
 
@@ -127,8 +136,8 @@ After creating a new sister site from this scaffold:
 - Don't fork tinyland-color-utils / tinyvectors / vite plugins per-site.
   Pin via the BCR.
 - Don't bypass `Justfile` in CI or local — DX/AX must stay homogenous.
-- Don't change Skeleton or the Tailwind compatibility path beyond this
-  explicitly requested, unqualified candidate without coordination.
+- Don't change the Skeleton/Zag pins or the Tailwind `@source` path without a
+  reviewed lock and browser evidence.
 
 ## Multi-Lane Posture
 
