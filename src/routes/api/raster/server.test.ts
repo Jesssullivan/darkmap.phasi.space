@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { GET } from './+server';
+import { GET, _resetRasterRuntimeForTests } from './+server';
 
 const originalFetch = globalThis.fetch;
 
@@ -63,5 +63,47 @@ describe('/api/raster atmospheric proxy', () => {
 		expect(res.headers.get('x-darkmap-atmospheric-status')).toBe('no-data');
 		expect(res.headers.get('x-darkmap-atmospheric-upstream-status')).toBe('404');
 		expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(0);
+	});
+});
+
+describe('/api/raster self-hosted VIIRS tiles (RV1)', () => {
+	const ENV = 'DARKMAP_RASTER_TILE_BASE_URL';
+	const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+
+	afterEach(() => {
+		delete process.env[ENV];
+		_resetRasterRuntimeForTests();
+	});
+
+	it('serves the stored tile as image/png without contacting the upstream WMS', async () => {
+		process.env[ENV] = 'https://tiles.darkmap.test/raster';
+		_resetRasterRuntimeForTests();
+		const requested: string[] = [];
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			requested.push(String(input));
+			return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png', 'set-cookie': 'x=1' } });
+		}) as typeof globalThis.fetch;
+
+		const res = await GET(fakeEvent('https://darkmap.test/api/raster?layer=viirs_2018&z=8&x=74&y=96'));
+
+		expect(requested).toEqual(['https://tiles.darkmap.test/raster/vnp46a4-002/2018/8/74/96.png']);
+		expect(res.status).toBe(200);
+		expect(res.headers.get('content-type')).toBe('image/png');
+		expect(res.headers.get('cache-control')).toContain('max-age=');
+		expect(res.headers.get('x-darkmap-raster-source')).toBe('self-hosted');
+		expect(res.headers.get('set-cookie')).toBeNull();
+		expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual(Array.from(PNG));
+	});
+
+	it('answers an unrendered (empty) tile with a transparent PNG', async () => {
+		process.env[ENV] = 'https://tiles.darkmap.test/raster';
+		_resetRasterRuntimeForTests();
+		globalThis.fetch = (async () => new Response('', { status: 404 })) as typeof globalThis.fetch;
+
+		const res = await GET(fakeEvent('https://darkmap.test/api/raster?layer=viirs_2017&z=3&x=0&y=0'));
+
+		expect(res.status).toBe(200);
+		expect(res.headers.get('content-type')).toBe('image/png');
+		expect(new Uint8Array(await res.arrayBuffer())[1]).toBe(0x50);
 	});
 });

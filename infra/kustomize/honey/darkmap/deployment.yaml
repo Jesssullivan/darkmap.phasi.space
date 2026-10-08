@@ -93,6 +93,15 @@ spec:
                   name: darkmap-secrets
                   key: OPENAQ_API_KEY
                   optional: true
+            # RV1 self-hosted VIIRS tiles. Not a secret: the public base URL of
+            # our own tile store (docs/SELF_HOSTED_RASTER.md). Absent ConfigMap
+            # or key keeps the legacy upstream WMS client.
+            - name: DARKMAP_RASTER_TILE_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: darkmap-raster-source
+                  key: DARKMAP_RASTER_TILE_BASE_URL
+                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz

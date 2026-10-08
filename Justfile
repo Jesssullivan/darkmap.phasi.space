@@ -540,3 +540,15 @@ raster-pilot manifest input output archive="" reference="":
 # Generated synthetic scientific fixture, never acquired NASA bytes.
 raster-pilot-test:
     cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/raster-pilot -p 'test_*.py' -v
+
+# Self-hosted VIIRS pyramid (RV1); see docs/SELF_HOSTED_RASTER.md. Enter
+# nix develop .#raster-pilot first. fetch needs an operator Earthdata token in
+# EARTHDATA_TOKEN or token_file; it is never printed or written to receipts.
+raster-fetch year out token_file="" granules="":
+    cd {{ root }} && PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py fetch --year {{ quote(year) }} --out {{ quote(out) }} --token-file {{ quote(token_file) }} --granules {{ quote(granules) }}
+
+raster-prepare archives out:
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py prepare --archives {{ quote(archives) }} --out {{ quote(out) }}
+
+raster-render vrt out work layer_path receipts="" max_zoom="8":
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py render --vrt {{ quote(vrt) }} --out {{ quote(out) }} --work {{ quote(work) }} --layer-path {{ quote(layer_path) }} --receipts {{ quote(receipts) }} --max-zoom {{ quote(max_zoom) }}

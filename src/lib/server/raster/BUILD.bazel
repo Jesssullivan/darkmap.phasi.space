@@ -67,6 +67,7 @@ vitest.vitest_test(
         "vitest.bazel.config.ts",
         "src/lib/server/raster/raster.test.ts",
         "src/lib/server/raster/raster-clients.test.ts",
+        "src/lib/server/raster/self-hosted.test.ts",
     ],
     log_level = "info",
     tags = [

@@ -10,6 +10,11 @@ import {
 import { sanitizeHeaders } from '$lib/server/raster/AdStripper';
 import { RasterCache, RasterCacheLive, rasterCacheKey } from '$lib/server/raster/Cache';
 import {
+	SELF_HOSTED_BASE_URL_ENV,
+	makeSelfHostedRasterClient,
+	resolveSelfHostedTileConfig,
+} from '$lib/server/raster/SelfHostedTiles';
+import {
 	RasterClient,
 	RasterClientLive,
 	RasterError,
@@ -17,8 +22,6 @@ import {
 	type RasterTileRequest,
 } from '$lib/server/raster/RasterClient';
 import { parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
-
-const RasterLayer = Layer.merge(RasterClientLive, RasterCacheLive);
 
 type RasterCacheStatus = 'HIT' | 'MISS' | 'STALE';
 
@@ -28,6 +31,31 @@ interface RasterFetchResult {
 }
 
 const inFlightTiles = new Map<string, Promise<Exit.Exit<RasterFetchResult, RasterError>>>();
+
+type RasterSource = 'self-hosted' | 'upstream-wms';
+
+// RV1: when DARKMAP_RASTER_TILE_BASE_URL is set, VIIRS tiles come from our own
+// pre-rendered store (NASA Black Marble VNP46A4) and the third-party WMS is not
+// contacted. Resolved lazily so the adapter-node runtime environment is used.
+let rasterRuntime:
+	| { readonly layer: Layer.Layer<RasterClient | RasterCache>; readonly source: RasterSource }
+	| undefined;
+
+const getRasterRuntime = () => {
+	if (!rasterRuntime) {
+		const selfHosted = resolveSelfHostedTileConfig(process.env[SELF_HOSTED_BASE_URL_ENV], LAYERS);
+		rasterRuntime = selfHosted
+			? { layer: Layer.merge(makeSelfHostedRasterClient(selfHosted), RasterCacheLive), source: 'self-hosted' }
+			: { layer: Layer.merge(RasterClientLive, RasterCacheLive), source: 'upstream-wms' };
+	}
+	return rasterRuntime;
+};
+
+/** Test hook: forget the resolved raster source so a new environment applies. */
+export const _resetRasterRuntimeForTests = (): void => {
+	rasterRuntime = undefined;
+	inFlightTiles.clear();
+};
 
 const fetchOrCache = (
 	req: RasterTileRequest,
@@ -62,7 +90,7 @@ const runCoalesced = (req: RasterTileRequest): Promise<Exit.Exit<RasterFetchResu
 	const pending = inFlightTiles.get(key);
 	if (pending) return pending;
 
-	const program = fetchOrCache(req).pipe(Effect.provide(RasterLayer));
+	const program = fetchOrCache(req).pipe(Effect.provide(getRasterRuntime().layer));
 	const promise = Effect.runPromiseExit(program).finally(() => {
 		if (inFlightTiles.get(key) === promise) inFlightTiles.delete(key);
 	});
@@ -124,6 +152,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	headers.set('cdn-cache-control', 'public, max-age=86400, stale-if-error=604800');
 	headers.set('cloudflare-cdn-cache-control', 'public, max-age=86400, stale-if-error=604800');
 	headers.set('x-darkmap-raster-cache', cacheStatus);
+	headers.set('x-darkmap-raster-source', getRasterRuntime().source);
 	return new Response(response.body as BodyInit, { headers });
 };
 

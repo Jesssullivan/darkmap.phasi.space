@@ -26,6 +26,12 @@ export interface RasterLayerDef {
 	 */
 	readonly upstreamLayer?: string;
 	/**
+	 * Path of this layer in the self-hosted tile store (RV1), e.g.
+	 * `vnp46a4-002/2019`. Used only when `DARKMAP_RASTER_TILE_BASE_URL` is set;
+	 * `maxNativeZoom` is then the deepest rendered zoom.
+	 */
+	readonly selfHostedPath?: string;
+	/**
 	 * Direct WMTS / XYZ URL template (with `{z}`, `{x}`, `{y}`, optional
 	 * `{TIME}`) for layers that bypass the GeoServer proxy. Used by the
 	 * `atmospheric` group (NASA GIBS) — tiles fetched server-side and bucketed
@@ -59,12 +65,19 @@ export interface RasterLayerDef {
 }
 
 const GIBS_ATTRIBUTION = 'Imagery courtesy NASA EOSDIS GIBS';
+const VIIRS_ATTRIBUTION =
+	'VIIRS nighttime lights: NASA Black Marble VNP46A4 (LAADS DAAC, doi:10.5067/VIIRS/VNP46A4.002)';
 
 const viirs = (year: number, defaultEnabled = false, opacity = 0.85): RasterLayerDef => ({
 	id: `viirs_${year}`,
 	upstreamLayer: `PostGIS:VIIRS_${year}`,
+	selfHostedPath: `vnp46a4-002/${year}`,
 	label: `VIIRS ${year}`,
-	description: `NOAA VIIRS DNB annual composite, ${year}.`,
+	description: `VIIRS DNB annual nighttime lights (NASA Black Marble VNP46A4), ${year}.`,
+	// The self-hosted pyramid is rendered to z8 (about 460 m/px at 40 N, close to
+	// the native 15 arc-second grid); MapLibre overzooms beyond it.
+	maxNativeZoom: 8,
+	attribution: VIIRS_ATTRIBUTION,
 	group: 'viirs_annual',
 	year,
 	defaultEnabled,
