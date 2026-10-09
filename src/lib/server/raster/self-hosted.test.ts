@@ -16,7 +16,11 @@ import {
 	type SelfHostedTileIo,
 } from './SelfHostedTiles';
 
-const BINDING = { path: 'gibs-viirs-black-marble/2016', maxZoom: 8, product: 'NASA GIBS VIIRS_Black_Marble 2016-01-01' };
+const BINDING = {
+	path: 'gibs-viirs-black-marble/2016',
+	maxZoom: 8,
+	product: 'NASA GIBS VIIRS_Black_Marble 2016-01-01',
+};
 const LAYERS = [{ upstreamLayer: 'PostGIS:VIIRS_2019', selfHosted: BINDING }, { upstreamLayer: 'PostGIS:WA_2015' }];
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -161,7 +165,11 @@ describe('makeSelfHostedRasterClient over HTTPS', () => {
 			() => new Response('<html/>', { status: 200, headers: { 'content-type': 'text/html' } }),
 		]) {
 			const seen: string[] = [];
-			const exit = await run(config, { fetch: storeFetch({ [tileUrl]: response }, seen), upstream: noUpstream }, viirsTile(8));
+			const exit = await run(
+				config,
+				{ fetch: storeFetch({ [tileUrl]: response }, seen), upstream: noUpstream },
+				viirsTile(8),
+			);
 			expect(seen.every((u) => u.startsWith(`${BASE}/`))).toBe(true);
 			expect(Exit.isFailure(exit)).toBe(true);
 			expect(statusOf(exit)).toBe(502);
@@ -234,7 +242,11 @@ describe('makeSelfHostedRasterClient over file://', () => {
 	});
 
 	it('fails with 503 on an empty or unmounted volume (F1)', async () => {
-		const exit = await run(resolveSelfHostedTileConfig(pathToFileURL(empty).href, LAYERS), { upstream: noUpstream }, viirsTile(8));
+		const exit = await run(
+			resolveSelfHostedTileConfig(pathToFileURL(empty).href, LAYERS),
+			{ upstream: noUpstream },
+			viirsTile(8),
+		);
 		expect(Exit.isFailure(exit)).toBe(true);
 		expect(statusOf(exit)).toBe(503);
 	});

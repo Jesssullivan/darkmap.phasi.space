@@ -153,4 +153,3 @@ describe('RV12 interim VIIRS slot labelling', () => {
 		}
 	});
 });
-

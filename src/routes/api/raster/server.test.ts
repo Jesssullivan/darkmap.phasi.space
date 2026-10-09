@@ -123,9 +123,9 @@ describe('/api/raster self-hosted VIIRS slot (RV1/RV12/RV13)', () => {
 		process.env[ENV] = STORE;
 		_resetRasterRuntimeForTests();
 		globalThis.fetch = (async () => new Response('', { status: 404 })) as typeof globalThis.fetch;
-		await expect(GET(fakeEvent('https://darkmap.test/api/raster?layer=viirs_2019&z=8&x=74&y=96'))).rejects.toMatchObject(
-			{ status: 503 },
-		);
+		await expect(
+			GET(fakeEvent('https://darkmap.test/api/raster?layer=viirs_2019&z=8&x=74&y=96')),
+		).rejects.toMatchObject({ status: 503 });
 	});
 
 	it('returns 503 for the slot when the store is unset, without contacting any upstream', async () => {
@@ -135,9 +135,9 @@ describe('/api/raster self-hosted VIIRS slot (RV1/RV12/RV13)', () => {
 			requested.push(String(input));
 			return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
 		}) as typeof globalThis.fetch;
-		await expect(GET(fakeEvent('https://darkmap.test/api/raster?layer=viirs_2019&z=8&x=74&y=96'))).rejects.toMatchObject(
-			{ status: 503 },
-		);
+		await expect(
+			GET(fakeEvent('https://darkmap.test/api/raster?layer=viirs_2019&z=8&x=74&y=96')),
+		).rejects.toMatchObject({ status: 503 });
 		expect(requested).toEqual([]);
 	});
 

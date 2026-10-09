@@ -14,7 +14,12 @@ import {
 	makeSelfHostedRasterClient,
 	resolveSelfHostedTileConfig,
 } from '$lib/server/raster/SelfHostedTiles';
-import { RasterClient, RasterError, type RasterResponse, type RasterTileRequest } from '$lib/server/raster/RasterClient';
+import {
+	RasterClient,
+	RasterError,
+	type RasterResponse,
+	type RasterTileRequest,
+} from '$lib/server/raster/RasterClient';
 import { parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
 
 type RasterCacheStatus = 'HIT' | 'MISS' | 'STALE';

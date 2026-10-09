@@ -312,8 +312,8 @@
 							</div>
 						{/if}
 						<div class="desc">
-							NOAA VIIRS DNB annual composites, 2012–2018; the newest slot shows NASA Black Marble 2016 (GIBS) until
-							the 2019 render lands. {@render modelInfo('viirs_annual')}
+							NOAA VIIRS DNB annual composites, 2012–2018; the newest slot shows NASA Black Marble 2016 (GIBS) until the
+							2019 render lands. {@render modelInfo('viirs_annual')}
 						</div>
 						{#if viirsOn && activeViirsLayer?.selfHosted}
 							<div class="desc">{activeViirsLayer.description}</div>

@@ -41,7 +41,10 @@ export class RasterClient extends Context.Service<
 const UPSTREAM_WMS = 'https://www2.lightpollutionmap.info/geoserver/gwc/service/wms';
 
 /** One upstream WMS GetMap for a tile (shared by `RasterClientLive` and the self-hosted router). */
-export const fetchUpstreamTile = ({ upstreamLayer, tile }: RasterTileRequest): Effect.Effect<RasterResponse, RasterError> =>
+export const fetchUpstreamTile = ({
+	upstreamLayer,
+	tile,
+}: RasterTileRequest): Effect.Effect<RasterResponse, RasterError> =>
 	Effect.gen(function* () {
 		const url = new URL(UPSTREAM_WMS);
 		url.searchParams.set('service', 'WMS');
