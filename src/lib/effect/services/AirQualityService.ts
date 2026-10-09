@@ -57,7 +57,7 @@ export class AirQualityError extends Data.TaggedError('AirQualityError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class AirQualityService extends Context.Tag('@darkmap/AirQualityService')<
+export class AirQualityService extends Context.Service<
 	AirQualityService,
 	{
 		readonly getReading: (
@@ -65,7 +65,7 @@ export class AirQualityService extends Context.Tag('@darkmap/AirQualityService')
 			options?: { readonly signal?: AbortSignal },
 		) => Effect.Effect<AirQualityPointReading, AirQualityError>;
 	}
->() {}
+>()('@darkmap/AirQualityService') {}
 
 /** Bake the `/api/atmospheric/airquality` query string for a request. */
 export const airQualityPointUrl = (req: AirQualityPointRequest): string =>

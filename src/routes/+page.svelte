@@ -1128,9 +1128,9 @@
 		);
 		if (watchExit._tag === 'Failure') {
 			// Watch failed to start — usually unsupported. Pull the typed failure
-			// via Cause.failureOption so a Die/Sequential cause isn't silently
+			// via Cause.findErrorOption so a Die/Sequential cause isn't silently
 			// dropped (a bare `cause.error` cast only reads a top-level Fail node).
-			const err = Option.getOrUndefined(Cause.failureOption(watchExit.cause)) as
+			const err = Option.getOrUndefined(Cause.findErrorOption(watchExit.cause)) as
 				| { reason?: string; message?: string }
 				| undefined;
 			handleFollowError({
@@ -1271,7 +1271,7 @@
 			}).pipe(Effect.provide(RouteImportServiceLive)),
 		);
 		if (exit._tag === 'Failure') {
-			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as
+			const err = Option.getOrUndefined(Cause.findErrorOption(exit.cause)) as
 				| { reason?: string; message?: string }
 				| undefined;
 			pushToast(err?.message ?? 'Route import failed', 'route');

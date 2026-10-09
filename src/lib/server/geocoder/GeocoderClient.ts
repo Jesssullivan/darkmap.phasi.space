@@ -44,12 +44,12 @@ export class GeocoderError extends Data.TaggedError('GeocoderError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class GeocoderClient extends Context.Tag('@darkmap/GeocoderClient')<
+export class GeocoderClient extends Context.Service<
 	GeocoderClient,
 	{
 		readonly search: (q: GeocodeQuery) => Effect.Effect<readonly GeocodeResult[], GeocoderError>;
 	}
->() {}
+>()('@darkmap/GeocoderClient') {}
 
 const PHOTON_BASE = 'https://photon.komoot.io/api';
 

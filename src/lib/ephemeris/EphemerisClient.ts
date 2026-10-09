@@ -68,7 +68,7 @@ export interface SkyPositions {
 	readonly moon: BodyPosition;
 }
 
-export class EphemerisClient extends Context.Tag('@darkmap/EphemerisClient')<
+export class EphemerisClient extends Context.Service<
 	EphemerisClient,
 	{
 		readonly at: (loc: LatLon, t: Date) => Effect.Effect<EphemerisReadout, EphemerisError>;
@@ -78,7 +78,7 @@ export class EphemerisClient extends Context.Tag('@darkmap/EphemerisClient')<
 		 */
 		readonly positionAt: (loc: LatLon, t: Date) => Effect.Effect<SkyPositions, EphemerisError>;
 	}
->() {}
+>()('@darkmap/EphemerisClient') {}
 
 const DAWN = +1 as const;
 const DUSK = -1 as const;

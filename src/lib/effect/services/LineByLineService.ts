@@ -50,12 +50,12 @@ export class LineByLineError extends Data.TaggedError('LineByLineError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class LineByLineService extends Context.Tag('@darkmap/LineByLineService')<
+export class LineByLineService extends Context.Service<
 	LineByLineService,
 	{
 		readonly estimateInBand: (input: EstimateInBandInput) => Effect.Effect<BandCurve, LineByLineError>;
 	}
->() {}
+>()('@darkmap/LineByLineService') {}
 
 export interface LineByLineFetcher {
 	readonly fetch: (

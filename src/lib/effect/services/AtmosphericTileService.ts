@@ -62,12 +62,12 @@ export interface AtmosphericTileRequest {
 	readonly time: string | undefined;
 }
 
-export class AtmosphericTileService extends Context.Tag('@darkmap/AtmosphericTileService')<
+export class AtmosphericTileService extends Context.Service<
 	AtmosphericTileService,
 	{
 		readonly fetchTile: (req: AtmosphericTileRequest) => Effect.Effect<AtmosphericTileOutcome, AtmosphericTileError>;
 	}
->() {}
+>()('@darkmap/AtmosphericTileService') {}
 
 export interface AtmosphericTileFetcher {
 	readonly fetch: (url: string) => Promise<Response>;

@@ -39,7 +39,7 @@ export class MieScatteringError extends Data.TaggedError('MieScatteringError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class MieScatteringService extends Context.Tag('@darkmap/MieScatteringService')<
+export class MieScatteringService extends Context.Service<
 	MieScatteringService,
 	{
 		readonly compute: (
@@ -47,7 +47,7 @@ export class MieScatteringService extends Context.Tag('@darkmap/MieScatteringSer
 			wavelengthsUm: ReadonlyArray<number>,
 		) => Effect.Effect<MieAerosolResult, MieScatteringError>;
 	}
->() {}
+>()('@darkmap/MieScatteringService') {}
 
 /** Index of the wavelength closest to 0.55 µm in the supplied grid. */
 const findIndexNear = (wavelengthsUm: ReadonlyArray<number>, target: number): number => {

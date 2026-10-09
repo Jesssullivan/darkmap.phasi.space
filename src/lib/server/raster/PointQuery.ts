@@ -33,7 +33,7 @@ export class PointQueryError extends Data.TaggedError('PointQueryError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class PointQueryClient extends Context.Tag('@darkmap/PointQueryClient')<
+export class PointQueryClient extends Context.Service<
 	PointQueryClient,
 	{
 		readonly readAt: (args: {
@@ -42,7 +42,7 @@ export class PointQueryClient extends Context.Tag('@darkmap/PointQueryClient')<
 			readonly lon: number;
 		}) => Effect.Effect<PointReadout, PointQueryError>;
 	}
->() {}
+>()('@darkmap/PointQueryClient') {}
 
 const UPSTREAM_WMS = 'https://www2.lightpollutionmap.info/geoserver/gwc/service/wms';
 const WA_RAW = 'PostGIS:WA_2015_raw';

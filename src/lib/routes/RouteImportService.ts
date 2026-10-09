@@ -45,12 +45,12 @@ export class RouteImportError extends Data.TaggedError('RouteImportError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class RouteImportService extends Context.Tag('@darkmap/RouteImportService')<
+export class RouteImportService extends Context.Service<
 	RouteImportService,
 	{
 		readonly parse: (input: RouteImportInput) => Effect.Effect<ImportedRoute, RouteImportError>;
 	}
->() {}
+>()('@darkmap/RouteImportService') {}
 
 const DEFAULT_MAX_BYTES = 2_000_000;
 const EARTH_RADIUS_M = 6_371_000;

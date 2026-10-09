@@ -32,13 +32,11 @@
 		"bake:spectral-lbl": "tsx scripts/bake-spectral-lbl.ts"
 	},
 	"dependencies": {
-		"@effect/platform": "^0.96.0",
-		"@effect/platform-node": "^0.106.0",
 		"@fontsource/inter": "^5.2.8",
 		"@lucide/svelte": "^1.16.0",
 		"@tummycrypt/tinyvectors": "0.3.0",
 		"astronomy-engine": "^2.1.19",
-		"effect": "^3.21.2",
+		"effect": "4.0.2",
 		"maplibre-gl": "6.4.1",
 		"satellite.js": "^5.0.0"
 	},

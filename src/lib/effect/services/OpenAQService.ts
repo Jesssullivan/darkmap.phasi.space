@@ -57,7 +57,7 @@ export class OpenAQError extends Data.TaggedError('OpenAQError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class OpenAQService extends Context.Tag('@darkmap/OpenAQService')<
+export class OpenAQService extends Context.Service<
 	OpenAQService,
 	{
 		readonly getSensors: (
@@ -65,7 +65,7 @@ export class OpenAQService extends Context.Tag('@darkmap/OpenAQService')<
 			options?: { readonly signal?: AbortSignal },
 		) => Effect.Effect<OpenAQSensorCollection, OpenAQError>;
 	}
->() {}
+>()('@darkmap/OpenAQService') {}
 
 export const openAQUrl = (bbox: OpenAQBbox): string =>
 	`/api/atmospheric/openaq?bbox=${bbox.west.toFixed(4)},${bbox.south.toFixed(4)},${bbox.east.toFixed(4)},${bbox.north.toFixed(4)}`;

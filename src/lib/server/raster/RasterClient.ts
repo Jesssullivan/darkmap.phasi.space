@@ -22,12 +22,12 @@ export class RasterError extends Data.TaggedError('RasterError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class RasterClient extends Context.Tag('@darkmap/RasterClient')<
+export class RasterClient extends Context.Service<
 	RasterClient,
 	{
 		readonly getTile: (req: RasterTileRequest) => Effect.Effect<RasterResponse, RasterError>;
 	}
->() {}
+>()('@darkmap/RasterClient') {}
 
 /**
  * GeoServer WMS GetMap endpoint. Public (no auth, no cookies).

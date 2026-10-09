@@ -26,7 +26,7 @@ export class GeolocationError extends Data.TaggedError('GeolocationError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class GeolocationService extends Context.Tag('@darkmap/GeolocationService')<
+export class GeolocationService extends Context.Service<
 	GeolocationService,
 	{
 		readonly current: (options?: PositionOptions) => Effect.Effect<DevicePosition, GeolocationError>;
@@ -35,7 +35,7 @@ export class GeolocationService extends Context.Tag('@darkmap/GeolocationService
 			options?: PositionOptions,
 		) => Effect.Effect<GeolocationWatch, GeolocationError>;
 	}
->() {}
+>()('@darkmap/GeolocationService') {}
 
 interface NavigatorWithOptionalGeolocation {
 	readonly geolocation?: Geolocation;
@@ -95,7 +95,7 @@ export const makeGeolocationServiceLive = (
 ): Layer.Layer<GeolocationService> =>
 	Layer.succeed(GeolocationService, {
 		current: (options) =>
-			Effect.async<DevicePosition, GeolocationError>((resume) => {
+			Effect.callback<DevicePosition, GeolocationError>((resume) => {
 				const geolocation = navigatorLike.geolocation;
 				if (!geolocation) {
 					resume(Effect.fail(new GeolocationError({ reason: 'unsupported', message: 'geolocation is not available' })));

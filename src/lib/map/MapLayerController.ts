@@ -55,7 +55,7 @@ export class MapLayerError extends Data.TaggedError('MapLayerError')<{
 	readonly cause?: unknown;
 }> {}
 
-export class MapLayerController extends Context.Tag('@darkmap/MapLayerController')<
+export class MapLayerController extends Context.Service<
 	MapLayerController,
 	{
 		readonly mount: (mount: RasterMount) => Effect.Effect<void, MapLayerError>;
@@ -67,7 +67,7 @@ export class MapLayerController extends Context.Tag('@darkmap/MapLayerController
 		 */
 		readonly stateOf: (id: string) => LayerLifecycleState;
 	}
->() {}
+>()('@darkmap/MapLayerController') {}
 
 const sourceIdFor = (id: string): string => `darkmap-${id}-src`;
 const layerIdFor = (id: string): string => `darkmap-${id}-lyr`;
@@ -90,7 +90,7 @@ export interface MapLibreSurface {
 }
 
 const awaitStyle = (map: MapLibreSurface): Effect.Effect<void, MapLayerError> =>
-	Effect.async<void, MapLayerError>((resume) => {
+	Effect.callback<void, MapLayerError>((resume) => {
 		if (map.isStyleLoaded()) {
 			resume(Effect.void);
 			return;

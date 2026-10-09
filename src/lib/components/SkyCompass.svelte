@@ -81,10 +81,10 @@
 			}).pipe(Effect.provide(layer)),
 		);
 		if (exit._tag === 'Failure') {
-			// Cause.failureOption extracts the typed failure for any cause shape
+			// Cause.findErrorOption extracts the typed failure for any cause shape
 			// (Fail/Sequential/Parallel); the old `cause.error` cast only worked
 			// for a bare Fail and silently mis-classified the rest as 'error'.
-			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
+			const err = Option.getOrUndefined(Cause.findErrorOption(exit.cause)) as { reason?: string } | undefined;
 			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
 			return;
 		}
@@ -107,7 +107,7 @@
 			}).pipe(Effect.provide(layer)),
 		);
 		if (exit._tag === 'Failure') {
-			const err = Option.getOrUndefined(Cause.failureOption(exit.cause)) as { reason?: string } | undefined;
+			const err = Option.getOrUndefined(Cause.findErrorOption(exit.cause)) as { reason?: string } | undefined;
 			compassStatus = err?.reason === 'denied' ? 'denied' : 'error';
 			return;
 		}
