@@ -552,3 +552,9 @@ raster-prepare archives out:
 
 raster-render vrt out work layer_path receipts="" max_zoom="8":
     cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py render --vrt {{ quote(vrt) }} --out {{ quote(out) }} --work {{ quote(work) }} --layer-path {{ quote(layer_path) }} --receipts {{ quote(receipts) }} --max-zoom {{ quote(max_zoom) }}
+
+# RV12 interim: mirror NASA GIBS VIIRS_Black_Marble (2016-01-01) into a static
+# XYZ pyramid for the self-hosted store. Standard-library Python, modest
+# concurrency, resumable. See docs/SELF_HOSTED_RASTER.md.
+raster-gibs-mirror out concurrency="4":
+    cd {{ root }} && PYTHONDONTWRITEBYTECODE=1 python3 -I scripts/raster-pilot/gibs_mirror.py --out {{ quote(out) }} --concurrency {{ quote(concurrency) }}

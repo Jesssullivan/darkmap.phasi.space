@@ -26,11 +26,23 @@ export interface RasterLayerDef {
 	 */
 	readonly upstreamLayer?: string;
 	/**
-	 * Path of this layer in the self-hosted tile store (RV1), e.g.
-	 * `vnp46a4-002/2019`. Used only when `DARKMAP_RASTER_TILE_BASE_URL` is set;
-	 * `maxNativeZoom` is then the deepest rendered zoom.
+	 * Self-hosted tile binding (RV1/RV12/RV13). A bound layer is served only
+	 * from our own XYZ store under `DARKMAP_RASTER_TILE_BASE_URL`
+	 * (`${base}/${path}/{z}/{x}/{y}.png`), never from the upstream WMS, and its
+	 * `label` / `description` / `attribution` describe the stored product.
 	 */
-	readonly selfHostedPath?: string;
+	readonly selfHosted?: {
+		/** Store path, e.g. `gibs-viirs-black-marble/2016`. */
+		readonly path: string;
+		/** Deepest rendered zoom (also the client `maxNativeZoom`). */
+		readonly maxZoom: number;
+		/** Provenance exposed as the `x-darkmap-raster-product` header. */
+		readonly product: string;
+		/** Year of the data actually stored (may differ from the slot `year`). */
+		readonly dataYear: number;
+	};
+	/** Short text for the year chip when it must differ from `year`. */
+	readonly chipLabel?: string;
 	/**
 	 * Direct WMTS / XYZ URL template (with `{z}`, `{x}`, `{y}`, optional
 	 * `{TIME}`) for layers that bypass the GeoServer proxy. Used by the
@@ -65,29 +77,49 @@ export interface RasterLayerDef {
 }
 
 const GIBS_ATTRIBUTION = 'Imagery courtesy NASA EOSDIS GIBS';
-const VIIRS_ATTRIBUTION =
-	'VIIRS nighttime lights: NASA Black Marble VNP46A4 (LAADS DAAC, doi:10.5067/VIIRS/VNP46A4.002)';
 
 const viirs = (year: number, defaultEnabled = false, opacity = 0.85): RasterLayerDef => ({
 	id: `viirs_${year}`,
 	upstreamLayer: `PostGIS:VIIRS_${year}`,
-	selfHostedPath: `vnp46a4-002/${year}`,
 	label: `VIIRS ${year}`,
-	description: `VIIRS DNB annual nighttime lights (NASA Black Marble VNP46A4), ${year}.`,
-	// The self-hosted pyramid is rendered to z8 (about 460 m/px at 40 N, close to
-	// the native 15 arc-second grid); MapLibre overzooms beyond it.
-	maxNativeZoom: 8,
-	attribution: VIIRS_ATTRIBUTION,
+	description: `NOAA VIIRS DNB annual composite, ${year}.`,
 	group: 'viirs_annual',
 	year,
 	defaultEnabled,
 	opacity,
 });
 
+/**
+ * RV12 interim: the newest VIIRS slot (`viirs_2019`, kept as the id so
+ * permalinks, the service-worker cache and the Public smoke keep working) is
+ * served from our self-hosted mirror of NASA GIBS `VIIRS_Black_Marble`,
+ * time 2016-01-01: the Black Marble 2016 annual composite (VIIRS Day/Night
+ * Band, Suomi NPP), GoogleMapsCompatible_Level8. It is labelled as that
+ * product and year, never as 2019. When the VNP46A4 2019 render lands
+ * (docs/SELF_HOSTED_RASTER.md), this binding becomes `vnp46a4-002/2019` and
+ * the label returns to 2019.
+ */
+export const VIIRS_2019_SLOT_GIBS: RasterLayerDef = {
+	...viirs(2019, true, 0.25),
+	label: 'Black Marble 2016 (NASA GIBS)',
+	chipLabel: '2016 BM',
+	description:
+		'NASA Black Marble 2016 annual composite (VIIRS Day/Night Band, Suomi NPP), via NASA GIBS (VIIRS_Black_Marble, 2016-01-01). Interim stand-in for the 2019 composite; not 2019 data.',
+	selfHosted: {
+		path: 'gibs-viirs-black-marble/2016',
+		maxZoom: 8,
+		product: 'NASA GIBS VIIRS_Black_Marble 2016-01-01 (Black Marble 2016 annual composite, VIIRS DNB, Suomi NPP)',
+		dataYear: 2016,
+	},
+	maxNativeZoom: 8,
+	attribution: `${GIBS_ATTRIBUTION} (VIIRS_Black_Marble 2016)`,
+};
+
 export const LAYERS: ReadonlyArray<RasterLayerDef> = [
-	// Default display: VIIRS 2019 at a faint 25% so it reads as a subtle wash over
-	// the OSM basemap (paired with World Atlas 25% below). Other years toggle at 85%.
-	viirs(2019, true, 0.25),
+	// Default display: the newest VIIRS slot (RV12 interim: Black Marble 2016 via
+	// GIBS) at a faint 25% so it reads as a subtle wash over the OSM basemap
+	// (paired with World Atlas 25% below). Other years toggle at 85%.
+	VIIRS_2019_SLOT_GIBS,
 	viirs(2018),
 	viirs(2017),
 	viirs(2016),
@@ -101,7 +133,7 @@ export const LAYERS: ReadonlyArray<RasterLayerDef> = [
 		label: 'World Atlas 2015',
 		description: 'Falchi et al. 2016 World Atlas of Artificial Night Sky Brightness (styled).',
 		group: 'world_atlas',
-		// On by default at a faint 25% — pairs with VIIRS 2019 25% over OSM.
+		// On by default at a faint 25% — pairs with the newest VIIRS slot at 25% over OSM.
 		defaultEnabled: true,
 		opacity: 0.25,
 	},
