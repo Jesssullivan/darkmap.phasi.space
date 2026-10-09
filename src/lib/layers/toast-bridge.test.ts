@@ -30,9 +30,9 @@ describe('reasonForLayer — status-based branches', () => {
 		}
 	});
 
-	it('401/403 → "credentials missing or expired"', () => {
+	it('401/403 → "source denied access"', () => {
 		for (const s of [401, 403]) {
-			expect(reasonForLayer({ layerId: 'x', status: s })).toMatch(/credentials/i);
+			expect(reasonForLayer({ layerId: 'x', status: s })).toBe('source denied access');
 		}
 	});
 
