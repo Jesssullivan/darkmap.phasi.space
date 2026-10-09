@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { inflateSync } from 'node:zlib';
+import { crc32, inflateSync } from 'node:zlib';
 import { Cause, Effect, Exit, Option } from 'effect';
 import { afterAll, describe, expect, it } from 'vitest';
 import { RasterClient, RasterError, type RasterResponse, type RasterTileRequest } from './RasterClient';
@@ -273,5 +273,15 @@ describe('TRANSPARENT_TILE_PNG', () => {
 		expect(raw.every((b) => b === 0)).toBe(true);
 		const tail = TRANSPARENT_TILE_PNG.slice(TRANSPARENT_TILE_PNG.length - 12);
 		expect(String.fromCharCode(...tail.slice(4, 8))).toBe('IEND');
+		// Every chunk CRC must match, or browsers and MapLibre reject the tile.
+		const chunks: string[] = [];
+		for (let at = 8; at < TRANSPARENT_TILE_PNG.length; ) {
+			const length = view.getUint32(at);
+			const typeAndData = TRANSPARENT_TILE_PNG.slice(at + 4, at + 8 + length);
+			chunks.push(String.fromCharCode(...typeAndData.slice(0, 4)));
+			expect(view.getUint32(at + 8 + length) >>> 0).toBe(crc32(typeAndData) >>> 0);
+			at += 12 + length;
+		}
+		expect(chunks).toEqual(['IHDR', 'IDAT', 'IEND']);
 	});
 });
