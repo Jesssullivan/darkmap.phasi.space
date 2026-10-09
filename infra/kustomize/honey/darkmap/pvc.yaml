@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: darkmap-raster-tiles
+spec:
+  # RV13 read-only tile store for /api/raster (docs/SELF_HOSTED_RASTER.md).
+  # local-path-retain is the honey class most workloads here use; the retired
+  # honey class local-path-honey-fast-ephemeral must not be used. Retain keeps
+  # the pyramid if the claim is deleted. ReadWriteOnce still lets both darkmap
+  # replicas mount it read-only on the same node.
+  storageClassName: local-path-retain
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi

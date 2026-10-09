@@ -532,3 +532,29 @@ sync-flywheel-bazelrc tag="v1.0.0":
     @echo "    | jq -r .content | base64 -d > .bazelrc.flywheel"
     @echo "  and update the header comment to record the tag."
     @exit 2
+
+# Offline local-input pilot. Enter nix develop .#raster-pilot first.
+raster-pilot manifest input output archive="" reference="":
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pilot.py --manifest {{ quote(manifest) }} --input {{ quote(input) }} --output {{ quote(output) }} --archive {{ quote(archive) }} --reference {{ quote(reference) }}
+
+# Generated synthetic scientific fixture, never acquired NASA bytes.
+raster-pilot-test:
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/raster-pilot -p 'test_*.py' -v
+
+# Self-hosted VIIRS pyramid (RV1); see docs/SELF_HOSTED_RASTER.md. Enter
+# nix develop .#raster-pilot first. fetch needs an operator Earthdata token in
+# EARTHDATA_TOKEN or token_file; it is never printed or written to receipts.
+raster-fetch year out token_file="" granules="":
+    cd {{ root }} && PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py fetch --year {{ quote(year) }} --out {{ quote(out) }} --token-file {{ quote(token_file) }} --granules {{ quote(granules) }}
+
+raster-prepare archives out:
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py prepare --archives {{ quote(archives) }} --out {{ quote(out) }}
+
+raster-render vrt out work layer_path receipts="" max_zoom="8":
+    cd {{ root }} && PROJ_NETWORK=OFF PYTHONDONTWRITEBYTECODE=1 python3 scripts/raster-pilot/pyramid.py render --vrt {{ quote(vrt) }} --out {{ quote(out) }} --work {{ quote(work) }} --layer-path {{ quote(layer_path) }} --receipts {{ quote(receipts) }} --max-zoom {{ quote(max_zoom) }}
+
+# RV12 interim: mirror NASA GIBS VIIRS_Black_Marble (2016-01-01) into a static
+# XYZ pyramid for the self-hosted store. Standard-library Python, modest
+# concurrency, resumable. See docs/SELF_HOSTED_RASTER.md.
+raster-gibs-mirror out concurrency="4":
+    cd {{ root }} && PYTHONDONTWRITEBYTECODE=1 python3 -I scripts/raster-pilot/gibs_mirror.py --out {{ quote(out) }} --concurrency {{ quote(concurrency) }}

@@ -131,3 +131,25 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 		expect(smog?.attribution).toMatch(/OpenAQ/i);
 	});
 });
+
+describe('RV12 interim VIIRS slot labelling', () => {
+	it('labels the viirs_2019 slot as the GIBS Black Marble 2016 product, never as 2019 data', () => {
+		const slot = VIIRS_YEARS.find((l) => l.id === 'viirs_2019')!;
+		expect(slot.selfHosted?.path).toBe('gibs-viirs-black-marble/2016');
+		expect(slot.selfHosted?.dataYear).toBe(2016);
+		expect(slot.label).toBe('Black Marble 2016 (NASA GIBS)');
+		expect(slot.label).not.toContain('2019');
+		expect(slot.chipLabel).not.toContain('2019');
+		expect(slot.attribution).toContain('NASA EOSDIS GIBS');
+		expect(slot.description).toContain('not 2019 data');
+		expect(slot.maxNativeZoom).toBe(8);
+	});
+
+	it('leaves the other VIIRS years on their original labels and upstream binding', () => {
+		for (const l of VIIRS_YEARS.filter((x) => x.id !== 'viirs_2019')) {
+			expect(l.selfHosted).toBeUndefined();
+			expect(l.label).toBe(`VIIRS ${l.year}`);
+			expect(l.maxNativeZoom).toBeUndefined();
+		}
+	});
+});

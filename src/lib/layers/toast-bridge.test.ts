@@ -65,7 +65,7 @@ describe('reasonForLayer — fallback', () => {
 describe('buildToast', () => {
 	it('uses the LAYERS label for a real layer id', () => {
 		const t = buildToast({ layerId: 'viirs_2019', status: 502 });
-		expect(t.text.startsWith('VIIRS 2019')).toBe(true);
+		expect(t.text.startsWith('Black Marble 2016 (NASA GIBS)')).toBe(true);
 		expect(t.text).toMatch(/temporarily unavailable/);
 		expect(t.source).toBe('viirs_2019');
 	});

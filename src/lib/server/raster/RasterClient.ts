@@ -40,42 +40,43 @@ export class RasterClient extends Context.Service<
  */
 const UPSTREAM_WMS = 'https://www2.lightpollutionmap.info/geoserver/gwc/service/wms';
 
-export const RasterClientLive = Layer.succeed(
-	RasterClient,
-	RasterClient.of({
-		getTile: ({ upstreamLayer, tile }) =>
-			Effect.gen(function* () {
-				const url = new URL(UPSTREAM_WMS);
-				url.searchParams.set('service', 'WMS');
-				url.searchParams.set('version', '1.1.1');
-				url.searchParams.set('request', 'GetMap');
-				url.searchParams.set('layers', upstreamLayer);
-				url.searchParams.set('styles', '');
-				url.searchParams.set('format', 'image/png');
-				url.searchParams.set('transparent', 'true');
-				url.searchParams.set('srs', 'EPSG:3857');
-				url.searchParams.set('width', '256');
-				url.searchParams.set('height', '256');
-				url.searchParams.set('bbox', bboxParam(tileBBox3857(tile)));
+/** One upstream WMS GetMap for a tile (shared by `RasterClientLive` and the self-hosted router). */
+export const fetchUpstreamTile = ({
+	upstreamLayer,
+	tile,
+}: RasterTileRequest): Effect.Effect<RasterResponse, RasterError> =>
+	Effect.gen(function* () {
+		const url = new URL(UPSTREAM_WMS);
+		url.searchParams.set('service', 'WMS');
+		url.searchParams.set('version', '1.1.1');
+		url.searchParams.set('request', 'GetMap');
+		url.searchParams.set('layers', upstreamLayer);
+		url.searchParams.set('styles', '');
+		url.searchParams.set('format', 'image/png');
+		url.searchParams.set('transparent', 'true');
+		url.searchParams.set('srs', 'EPSG:3857');
+		url.searchParams.set('width', '256');
+		url.searchParams.set('height', '256');
+		url.searchParams.set('bbox', bboxParam(tileBBox3857(tile)));
 
-				const res = yield* Effect.tryPromise({
-					try: () => fetch(url),
-					catch: (cause) => new RasterError({ status: 0, upstream: url.toString(), cause }),
-				});
-				if (!res.ok) {
-					return yield* Effect.fail(new RasterError({ status: res.status, upstream: url.toString() }));
-				}
-				const buffer = yield* Effect.tryPromise({
-					try: () => res.arrayBuffer(),
-					catch: (cause) => new RasterError({ status: res.status, upstream: url.toString(), cause }),
-				});
-				return {
-					contentType: res.headers.get('content-type') ?? 'image/png',
-					body: new Uint8Array(buffer),
-				};
-			}),
-	}),
-);
+		const res = yield* Effect.tryPromise({
+			try: () => fetch(url),
+			catch: (cause) => new RasterError({ status: 0, upstream: url.toString(), cause }),
+		});
+		if (!res.ok) {
+			return yield* Effect.fail(new RasterError({ status: res.status, upstream: url.toString() }));
+		}
+		const buffer = yield* Effect.tryPromise({
+			try: () => res.arrayBuffer(),
+			catch: (cause) => new RasterError({ status: res.status, upstream: url.toString(), cause }),
+		});
+		return {
+			contentType: res.headers.get('content-type') ?? 'image/png',
+			body: new Uint8Array(buffer),
+		};
+	});
+
+export const RasterClientLive = Layer.succeed(RasterClient, RasterClient.of({ getTile: fetchUpstreamTile }));
 
 /**
  * Test/preview layer. Substitutes `getTile` with a caller-supplied stub

@@ -93,6 +93,13 @@ spec:
                   name: darkmap-secrets
                   key: OPENAQ_API_KEY
                   optional: true
+            # RV1/RV13 self-hosted raster tiles (docs/SELF_HOSTED_RASTER.md).
+            # Not a secret. The store is the read-only `darkmap-raster-tiles`
+            # PVC mounted below; layers with a `selfHosted` binding in
+            # src/lib/layers.ts are served only from it (503 if its
+            # manifest.json is missing), every other layer keeps the upstream.
+            - name: DARKMAP_RASTER_TILE_BASE_URL
+              value: file:///var/lib/darkmap-tiles
           readinessProbe:
             httpGet:
               path: /healthz
@@ -121,6 +128,19 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ['ALL']
+          volumeMounts:
+            - name: raster-tiles
+              mountPath: /var/lib/darkmap-tiles
+              readOnly: true
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        # RV13: pre-rendered XYZ pyramids, loaded out of band (see
+        # docs/SELF_HOSTED_RASTER.md "Load the PVC"). local-path-retain binds
+        # the volume to the node that first consumed it (honey), so both
+        # replicas follow it there.
+        - name: raster-tiles
+          persistentVolumeClaim:
+            claimName: darkmap-raster-tiles
+            readOnly: true

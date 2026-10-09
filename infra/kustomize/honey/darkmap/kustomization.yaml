@@ -20,6 +20,7 @@ labels:
       tinyland.dev/site: darkmap.tinyland.dev
 
 resources:
+  - pvc.yaml
   - deployment.yaml
   - service.yaml
   - tailscale-svc.yaml

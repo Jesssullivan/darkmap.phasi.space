@@ -110,6 +110,9 @@
 		return onEntry?.id ?? VIIRS_YEARS[0]?.id;
 	});
 	const viirsOn = $derived(VIIRS_YEARS.some((l) => states[l.id]?.on));
+	// RV12: a slot backed by a self-hosted product (Black Marble 2016 via GIBS)
+	// is not on the VIIRS radiance color scale, so its legend is not shown.
+	const activeViirsLayer = $derived(VIIRS_YEARS.find((l) => l.id === activeViirsId));
 	const viirsOpacity = $derived(states[activeViirsId ?? '']?.opacity ?? VIIRS_YEARS[0]?.opacity ?? 0.85);
 
 	/** Switch which VIIRS year is rendered: turn off all others, turn on the picked one. */
@@ -288,8 +291,9 @@
 									aria-pressed={activeViirsId === l.id}
 									disabled={!viirsOn}
 									onclick={() => pickViirsYear(l.id)}
+									title={l.chipLabel ? l.description : undefined}
 								>
-									{l.year}
+									{l.chipLabel ?? l.year}
 								</button>
 							{/each}
 						</div>
@@ -307,8 +311,13 @@
 								<span class="opacity-pct" aria-hidden="true">{Math.round(viirsOpacity * 100)}%</span>
 							</div>
 						{/if}
-						<div class="desc">NOAA VIIRS DNB annual composites, 2012–2019. {@render modelInfo('viirs_annual')}</div>
-						{#if viirsOn}
+						<div class="desc">
+							NOAA VIIRS DNB annual composites, 2012–2018; the newest slot shows NASA Black Marble 2016 (GIBS) until the
+							2019 render lands. {@render modelInfo('viirs_annual')}
+						</div>
+						{#if viirsOn && activeViirsLayer?.selfHosted}
+							<div class="desc">{activeViirsLayer.description}</div>
+						{:else if viirsOn}
 							<Legend ramp={VIIRS_RAMP} title="VIIRS color scale" />
 						{/if}
 					</li>

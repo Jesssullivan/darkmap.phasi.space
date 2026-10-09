@@ -1,0 +1,31 @@
+{
+	"schema_version": 1,
+	"kind": "nasa-black-marble",
+	"product": "VNP46A4",
+	"collection": "002",
+	"dataset": "AllAngle_Composite_Snow_Free",
+	"product_url": "https://ladsweb.modaps.eosdis.nasa.gov/missions-and-measurements/products/VNP46A4/",
+	"acquisition": "2019",
+	"archives": [
+		{
+			"filename": null,
+			"sha256": null,
+			"acquired_at": null
+		}
+	],
+	"input_filename": null,
+	"input_sha256": null,
+	"semantics": "measured-nighttime-radiance",
+	"units": "nW cm-2 sr-1",
+	"crs": "EPSG:4326",
+	"scale": 1,
+	"offset": 0,
+	"nodata": -9999,
+	"quality": {
+		"dataset": "AllAngle_Composite_Snow_Free_Quality",
+		"accepted_values": [0],
+		"policy": "rejected-to-nodata",
+		"receipt": null
+	},
+	"provenance": null
+}

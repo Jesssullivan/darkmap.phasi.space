@@ -8,17 +8,24 @@ import {
 	type AtmosphericTileOutcome,
 } from '$lib/effect/services/AtmosphericTileService';
 import { sanitizeHeaders } from '$lib/server/raster/AdStripper';
-import { RasterCache, RasterCacheLive, rasterCacheKey } from '$lib/server/raster/Cache';
+import {
+	RasterCache,
+	RasterCacheLive,
+	_clearSharedRasterCacheForTests,
+	rasterCacheKey,
+} from '$lib/server/raster/Cache';
+import {
+	SELF_HOSTED_BASE_URL_ENV,
+	makeSelfHostedRasterClient,
+	resolveSelfHostedTileConfig,
+} from '$lib/server/raster/SelfHostedTiles';
 import {
 	RasterClient,
-	RasterClientLive,
 	RasterError,
 	type RasterResponse,
 	type RasterTileRequest,
 } from '$lib/server/raster/RasterClient';
 import { parseTileCoord, type TileCoord } from '$lib/server/raster/TileMath';
-
-const RasterLayer = Layer.merge(RasterClientLive, RasterCacheLive);
 
 type RasterCacheStatus = 'HIT' | 'MISS' | 'STALE';
 
@@ -28,6 +35,30 @@ interface RasterFetchResult {
 }
 
 const inFlightTiles = new Map<string, Promise<Exit.Exit<RasterFetchResult, RasterError>>>();
+
+// RV1/RV12/RV13: layers with a `selfHosted` binding (today the newest VIIRS
+// slot, Black Marble 2016 mirrored from NASA GIBS) are read only from our own
+// tile store at DARKMAP_RASTER_TILE_BASE_URL; every other layer keeps the
+// upstream WMS client. Resolved lazily so the adapter-node runtime env is used.
+let rasterRuntime: Layer.Layer<RasterClient | RasterCache> | undefined;
+
+const getRasterRuntime = () => {
+	if (!rasterRuntime) {
+		const config = resolveSelfHostedTileConfig(process.env[SELF_HOSTED_BASE_URL_ENV], LAYERS);
+		rasterRuntime = Layer.merge(makeSelfHostedRasterClient(config), RasterCacheLive);
+	}
+	return rasterRuntime;
+};
+
+/**
+ * Test hook: forget the resolved raster source so a new environment applies,
+ * and empty the shared tile cache so one test's tiles are not a HIT in the next.
+ */
+export const _resetRasterRuntimeForTests = (): void => {
+	rasterRuntime = undefined;
+	inFlightTiles.clear();
+	_clearSharedRasterCacheForTests();
+};
 
 const fetchOrCache = (
 	req: RasterTileRequest,
@@ -62,7 +93,7 @@ const runCoalesced = (req: RasterTileRequest): Promise<Exit.Exit<RasterFetchResu
 	const pending = inFlightTiles.get(key);
 	if (pending) return pending;
 
-	const program = fetchOrCache(req).pipe(Effect.provide(RasterLayer));
+	const program = fetchOrCache(req).pipe(Effect.provide(getRasterRuntime()));
 	const promise = Effect.runPromiseExit(program).finally(() => {
 		if (inFlightTiles.get(key) === promise) inFlightTiles.delete(key);
 	});
@@ -113,7 +144,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		const failure = Cause.findErrorOption(exit.cause);
 		if (Option.isSome(failure) && failure.value instanceof RasterError) {
 			const status = failure.value.status;
-			error(status >= 400 && status < 600 ? status : 502, 'upstream raster error');
+			error(
+				status >= 400 && status < 600 ? status : 502,
+				layerDef.selfHosted ? 'raster store unavailable' : 'upstream raster error',
+			);
 		}
 		error(500, Cause.pretty(exit.cause));
 	}
@@ -124,6 +158,8 @@ export const GET: RequestHandler = async ({ url }) => {
 	headers.set('cdn-cache-control', 'public, max-age=86400, stale-if-error=604800');
 	headers.set('cloudflare-cdn-cache-control', 'public, max-age=86400, stale-if-error=604800');
 	headers.set('x-darkmap-raster-cache', cacheStatus);
+	headers.set('x-darkmap-raster-source', layerDef.selfHosted ? 'self-hosted' : 'upstream-wms');
+	if (layerDef.selfHosted) headers.set('x-darkmap-raster-product', layerDef.selfHosted.product);
 	return new Response(response.body as BodyInit, { headers });
 };
 
