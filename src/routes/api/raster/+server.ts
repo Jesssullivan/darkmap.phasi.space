@@ -8,7 +8,12 @@ import {
 	type AtmosphericTileOutcome,
 } from '$lib/effect/services/AtmosphericTileService';
 import { sanitizeHeaders } from '$lib/server/raster/AdStripper';
-import { RasterCache, RasterCacheLive, rasterCacheKey } from '$lib/server/raster/Cache';
+import {
+	RasterCache,
+	RasterCacheLive,
+	_clearSharedRasterCacheForTests,
+	rasterCacheKey,
+} from '$lib/server/raster/Cache';
 import {
 	SELF_HOSTED_BASE_URL_ENV,
 	makeSelfHostedRasterClient,
@@ -45,10 +50,14 @@ const getRasterRuntime = () => {
 	return rasterRuntime;
 };
 
-/** Test hook: forget the resolved raster source so a new environment applies. */
+/**
+ * Test hook: forget the resolved raster source so a new environment applies,
+ * and empty the shared tile cache so one test's tiles are not a HIT in the next.
+ */
 export const _resetRasterRuntimeForTests = (): void => {
 	rasterRuntime = undefined;
 	inFlightTiles.clear();
+	_clearSharedRasterCacheForTests();
 };
 
 const fetchOrCache = (

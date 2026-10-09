@@ -87,3 +87,8 @@ export const makeRasterCacheLayer = (options: RasterCacheOptions = {}): Layer.La
  * shape — no changes at the call site.
  */
 export const RasterCacheLive = makeRasterCacheLayer({ store: sharedStore });
+
+/** Test hook: drop every entry of the shared in-process cache behind `RasterCacheLive`. */
+export const _clearSharedRasterCacheForTests = (): void => {
+	sharedStore.clear();
+};
