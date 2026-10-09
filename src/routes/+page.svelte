@@ -107,6 +107,7 @@
 	import MapToolbar from '$lib/components/MapToolbar.svelte';
 	import PointReadout, { type ReadoutData } from '$lib/components/PointReadout.svelte';
 	import InstrumentColumn from '$lib/components/InstrumentColumn.svelte';
+	import DetachableInstrumentPanel from '$lib/components/DetachableInstrumentPanel.svelte';
 	import ToolsCluster from '$lib/components/ToolsCluster.svelte';
 	import ResponsiveDock, { type DockView } from '$lib/components/ResponsiveDock.svelte';
 	import SkyCompass from '$lib/components/SkyCompass.svelte';
@@ -2818,7 +2819,29 @@
 		<!-- The desktop Air and local-dome instruments belong to the right-hand
 		     inspector bay, above the point readout. Compact has a separate Air-only
 		     renderer inside its mutually exclusive ResponsiveDock branch. -->
-		<InstrumentColumn lens={lensStore.lens} stations={instrumentStations} location={viewCenter} time={ephemerisTime} />
+		{#if !viewportTall}
+			<!-- Short/landscape keeps the existing floating readout and standalone
+			     dome. Give Air a native disclosure, not a hidden desktop panel. -->
+			<details class="short-air" data-short-air>
+				<summary>Air · viewport</summary>
+				<InstrumentColumn
+					compact
+					lens={lensStore.lens}
+					stations={instrumentStations}
+					location={viewCenter}
+					time={ephemerisTime}
+				/>
+			</details>
+		{:else if !dockActive}
+			<DetachableInstrumentPanel>
+				<InstrumentColumn
+					lens={lensStore.lens}
+					stations={instrumentStations}
+					location={viewCenter}
+					time={ephemerisTime}
+				/>
+			</DetachableInstrumentPanel>
+		{/if}
 		<!-- W4c — at COMPACT-tall these flow into the ResponsiveDock's sheet (rendered
 		     below); the inspector body keeps them for MEDIUM/WIDE (grid) + COMPACT-short
 		     (the byte-identical float fallback). One render site each — never duplicated. -->
@@ -3229,6 +3252,29 @@
 	.inspector-body {
 		display: contents;
 	}
+	.short-air {
+		position: fixed;
+		top: calc(4.75rem + env(safe-area-inset-top, 0px));
+		right: calc(0.75rem + env(safe-area-inset-right, 0px));
+		z-index: 20;
+		width: min(16rem, 45vw);
+		max-height: calc(100dvh - 6rem);
+		overflow: auto;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 8px;
+		background: rgba(8, 10, 16, 0.94);
+		color: #e9ecf3;
+		font: 600 0.7rem var(--font-mono, ui-monospace, monospace);
+	}
+	.short-air summary {
+		padding: 0.5rem;
+		min-height: 2rem;
+		cursor: pointer;
+	}
+	.short-air summary:focus-visible {
+		outline: 2px solid var(--accent-amber);
+		outline-offset: -2px;
+	}
 	/* ===== MEDIUM + WIDE shared structure (≥640px): ONE real grid. =====
 	   Two grid areas can never occupy the same pixels, so the map + twilight strip
 	   can only be SHRUNK, never occluded — overlap is impossible by construction.
@@ -3304,14 +3350,14 @@
 			container-type: inline-size;
 			container-name: inspector;
 		}
-		.deck-inspector :global(.instrument-column) {
+		.deck-inspector :global(.instrument-panel) {
 			flex: 0 0 auto;
 			max-height: min(38vh, 15rem);
 			overflow-y: auto;
 		}
 		/* A collapsed medium inspector remains a reachable tab, not a clipped
 		   partial Air tile. Opening it reveals the complete right-hand bay. */
-		.command-deck:not([data-inspector-open='true']) .deck-inspector :global(.instrument-column) {
+		.command-deck:not([data-inspector-open='true']) .deck-inspector :global(.instrument-panel) {
 			display: none;
 		}
 		/* W4b — the MEDIUM inspector tab: a thin, full-opacity vertical handle. Collapsed
@@ -3538,8 +3584,8 @@
 			display: none;
 		}
 		/* Wide has a permanent right-hand bay regardless of medium disclosure state. */
-		.command-deck:not([data-inspector-open='true']) .deck-inspector :global(.instrument-column) {
-			display: flex;
+		.command-deck:not([data-inspector-open='true']) .deck-inspector :global(.instrument-panel) {
+			display: block;
 		}
 		/* WIDE — the inspector is the permanent 26rem column: no tab handle, the body
 		   flows from the top of the cell (drop the MEDIUM tab gap). */

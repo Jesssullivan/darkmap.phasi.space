@@ -66,6 +66,7 @@ filegroup(
         "//:lib_atmospheric_capabilities",
         "//:lib_layers",
         "//src/lib/server/raster:tile_math",
+        "//src/lib/sw:sw_app_srcs",
         "//src/lib/spectral:aerosol_types",
         "//src/lib/spectral:analytical",
         "//src/lib/spectral:hitran_bands",

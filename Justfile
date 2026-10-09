@@ -28,6 +28,22 @@ lockfile-prepare:
     cd {{ root }} && test "$(corepack pnpm --version)" = "10.13.1"
     cd {{ root }} && corepack pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
 
+# Cheap manifest/lock consistency diagnostic; no lifecycle scripts.
+lockfile-check:
+    cd {{ root }} && test "$(corepack pnpm --version)" = "10.13.1"
+    cd {{ root }} && corepack pnpm install --lockfile-only --ignore-scripts --frozen-lockfile
+
+# Format only the selected Skeleton 5 instrument surface.
+format-instrument-panel:
+    cd {{ root }} && pnpm exec prettier --write e2e/instrument-panel.spec.ts src/lib/components/DetachableInstrumentPanel.svelte src/routes/+page.svelte
+
+# Bounded local release qualification; use nix develop .#browser --command just test-instrument-panel.
+# Reuses the root producer's existing build; never silently rebuild or download browsers.
+test-instrument-panel:
+    cd {{ root }} && test -f build/index.js
+    cd {{ root }} && test -x "${CHROME_BIN:?use the pinned browser devShell}"
+    cd {{ root }} && LOCAL=1 pnpm exec playwright test e2e/instrument-panel.spec.ts --project=chromium --workers=1
+
 # Start the Vite dev server
 dev:
     cd {{ root }} && pnpm run dev
@@ -332,6 +348,24 @@ kustomize-apply:
 deploy: kustomize-apply
     kubectl -n darkmap rollout restart deployment/darkmap
     kubectl -n darkmap rollout status deployment/darkmap --timeout=180s
+
+# Exact-source release path. Verifies GHCR revision metadata before pinning an immutable digest.
+# Does not apply unrelated manifests, touch DNS, restart a mutable tag, or read Secret payloads.
+deploy-exact source_sha image_digest expected_uid expected_prior_image expected_resource_version:
+    cd {{ root }} && bash scripts/deploy-exact.sh '{{ source_sha }}' '{{ image_digest }}' '{{ expected_uid }}' '{{ expected_prior_image }}' '{{ expected_resource_version }}'
+
+# Fake CLIs only: verifies the guarded delivery adapter without cluster access.
+test-deploy-exact:
+    cd {{ root }} && node --test scripts/deploy-exact.test.mjs
+
+# Only an already-running local published image; no app build/server/provider calls.
+# Playwright is resolved from qualified app_root, Chromium from the locked browser shell.
+smoke-published-image app_root image_base_url artifact_dir source_sha image_digest:
+    test -x "${CHROME_BIN:?locked browser shell required}"
+    node '{{ root }}/scripts/smoke-published-image.mjs' '{{ app_root }}' '{{ image_base_url }}' '{{ artifact_dir }}' '{{ source_sha }}' '{{ image_digest }}'
+
+test-image-smoke-adapter:
+    cd {{ root }} && node --test scripts/image-smoke-contrast.test.mjs
 
 # ─────────────────────────────────────────────
 # Smoke — offline pre-launch verification (docs/SMOKE.md)

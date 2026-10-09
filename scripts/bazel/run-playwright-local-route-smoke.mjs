@@ -171,6 +171,12 @@ try {
 		const viewportLabel = `${viewport.width}x${viewport.height}`;
 		const context = await browser.newContext({
 			geolocation: { latitude: 42.443, longitude: -76.501 },
+			// page.route() never sees requests a service worker answers. Once the
+			// worker precache installs (807520b), it claims the page and fetches
+			// /api/* itself, bypassing every fixture in installNetworkGuards and
+			// hitting the real local server. These route smokes prove the page
+			// against fixtures; the real worker is qualified by its own runner.
+			serviceWorkers: 'block',
 			viewport,
 		});
 		await context.grantPermissions(['geolocation'], { origin: baseURL });

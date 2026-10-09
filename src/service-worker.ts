@@ -41,7 +41,7 @@ const runtimeDeps = { caches, fetch: (input: RequestInfo | URL, init?: RequestIn
 
 /** Runtime API buckets cache under a normalized key; app-shell stays exact. */
 const cacheFirst = (request: Request, cacheName: string, normalize = false): Promise<Response> =>
-	cacheFirstStrategy(runtimeDeps, request, cacheName, { normalize });
+	cacheFirstStrategy(runtimeDeps, request, cacheName, { normalize, freshness: normalize });
 
 const networkFirst = (request: Request, cacheName: string): Promise<Response> =>
 	networkFirstStrategy(runtimeDeps, request, cacheName);

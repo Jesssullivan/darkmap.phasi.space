@@ -58,7 +58,7 @@ just dev
 
 ## Stack
 
-SvelteKit (adapter-node) · Svelte 5 + TypeScript · MapLibre GL · Skeleton 4.15.2
+SvelteKit (adapter-node) · Svelte 5 + TypeScript · MapLibre GL · Skeleton 5.0.1
 (pinned) + Tailwind v4 · Effect.ts service layers · astronomy-engine + satellite.js.
 Just + Nix for local dev; Bazel/Bzlmod for the module graph and unit-test proofs.
 

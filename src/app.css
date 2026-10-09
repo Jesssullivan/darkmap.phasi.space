@@ -4,7 +4,10 @@
 @import '@skeletonlabs/skeleton-svelte';
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
-/* omux Warm/Pragmatic house theme (Skeleton 4 house format, OKLCH). */
+/* Skeleton 5 component internals use utilities outside the app source tree. */
+@source '../node_modules/@skeletonlabs/skeleton-svelte/dist';
+
+/* omux Warm/Pragmatic house theme (Skeleton 5 house format, OKLCH). */
 @import './lib/styles/themes/omux.css';
 
 /* Self-hosted fonts. Inter for body + heading per omux theme.
@@ -62,7 +65,7 @@
 }
 
 /* ===== Body + global typography baseline =====
-   Skeleton 4 themes declare --typo-base/heading--font-family, but app code
+   Skeleton themes declare --typo-base/heading--font-family, but app code
    has to anchor body to that variable so prose actually picks up Inter. */
 html {
 	overflow-x: clip;
