@@ -122,28 +122,65 @@ the new files without a restart (a newly added manifest is picked up within
 
 ## Durable copy on DreamObjects (RV13b)
 
-The durable object copy belongs in a private bucket `darkmap-tiles` on
-DreamObjects (DreamHost S3). Lab custody holds DreamObjects keys only for the
-offsite-backup legs (`nix/secrets/operators/dreamobjects-*-leg.yaml` in the
-lab repo). Each leg is its own DreamObjects user, and per-user tenancy is the
-confinement boundary of those backups, so those keys are not reused for this
-bucket. Operator steps:
+The durable object copy is on DreamObjects (DreamHost S3, Backblaze B2 underneath).
+It has its own tenancy, separate from the lab offsite-backup legs:
 
-1. In the DreamHost panel, create a DreamObjects user for this purpose (for
-   example `tinyland-darkmap-tiles`) and a private bucket `darkmap-tiles`
-   under it.
-2. Put its key into lab sops as `nix/secrets/operators/dreamobjects-darkmap-tiles.yaml`
-   with the same shape as the backup legs
-   (`dreamobjects.darkmap_tiles.{endpoint,region,user,bucket,access_key,secret_key}`),
-   with sting among the recipients.
-3. A lane then loads the key into `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   with `sops exec-env` (never echoed) and runs
-   `aws s3 sync /srv/fast-local/jess/data/darkmap-tiles/<p> s3://darkmap-tiles/<p> --endpoint-url <endpoint from the file> --only-show-errors`
-   for each store path `<p>`: `vnp46a4-002` (served) and `gibs-viirs-black-marble` (rollback).
+| | |
+| --- | --- |
+| Endpoint / region | `https://s3.us-east-005.dream.io` / `us-east-005` |
+| DreamObjects user | `tinyland-darkmap-tiles` (created 2026-10-10; owns only this bucket) |
+| Bucket | `tinyland-darkmap-tiles` (private; ACL owner `FULL_CONTROL` only, no public grants) |
+| Key custody | lab `nix/secrets/operators/dreamobjects-darkmap-tiles.yaml`, `dreamobjects.darkmap_tiles.{endpoint,region,user,bucket,purpose,created_at,access_key_id,secret_access_key}`, recipients honey, neo-unique and sting; registry row `dreamobjects.darkmap_tiles` |
 
-The bucket stays private; the PVC is what production reads. Serving straight
-from it would need a public read path behind Cloudflare and an `https://` base
-URL, which is a separate decision.
+The object prefixes mirror the store layout under
+`/srv/fast-local/jess/data/darkmap-tiles/` (and the PVC root):
+
+| Prefix | Contents |
+| --- | --- |
+| `vnp46a4-002/2019/` | VNP46A4.002 2019 pyramid (served): `{z}/{x}/{y}.png` z0-8, `manifest.json`, `SHA256SUMS` |
+| `gibs-viirs-black-marble/2016/` | GIBS 2016 pyramid (rollback): `{z}/{x}/{y}.png` z0-8, `manifest.json`, `SHA256SUMS` |
+
+The backup-leg keys (`nix/secrets/operators/dreamobjects-*-leg.yaml` and the
+blahaj legs) are never used for this bucket, and this key never touches theirs.
+Per-user tenancy is the confinement boundary on both sides.
+
+### Re-sync procedure
+
+Run this from sting after a pyramid is added or rebuilt, once the PVC has been
+loaded and verified as above. The key goes into the environment only and is
+never echoed:
+
+```sh
+# from a lab checkout on sting (the file decrypts with sting's age key)
+F=nix/secrets/operators/dreamobjects-darkmap-tiles.yaml
+k() { sops decrypt --extract "[\"dreamobjects\"][\"darkmap_tiles\"][\"$1\"]" "$F"; }
+AWS_ACCESS_KEY_ID="$(k access_key_id)" AWS_SECRET_ACCESS_KEY="$(k secret_access_key)"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION=us-east-005 \
+  AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+for p in vnp46a4-002/2019 gibs-viirs-black-marble/2016; do
+  /srv/fast-local/jess/bin/tld-heavy -- aws --endpoint-url https://s3.us-east-005.dream.io \
+    s3 sync /srv/fast-local/jess/data/darkmap-tiles/$p s3://tinyland-darkmap-tiles/$p \
+    --no-progress --only-show-errors
+done
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+```
+
+`sops exec-env` cannot be used here: it refuses nested documents. Command
+substitution keeps the values off the terminal; do not `set -x` around it.
+Never pass `--acl`: objects stay private. A new pyramid goes under its own
+`<product>/<year>/` prefix, matching the store path.
+
+Verify after every sync:
+
+1. Object count per prefix (`aws s3api list-objects-v2 --bucket tinyland-darkmap-tiles --prefix <p>/ --query KeyCount`, paginated)
+   must equal `find /srv/fast-local/jess/data/darkmap-tiles/<p> -type f | wc -l`.
+2. Download a random sample of at least 10 objects per prefix to a transient
+   directory (for example `/dev/shm`) and check them with `sha256sum -c` against
+   that prefix's `SHA256SUMS`. Then remove the directory.
+
+The bucket stays private, and the PVC is what production reads. Serving straight
+from the bucket would need a public read path behind Cloudflare and an `https://` base
+URL. That is a separate decision.
 
 ## VNP46A4 2019 (RV12 second half)
 
