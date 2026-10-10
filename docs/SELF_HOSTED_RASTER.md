@@ -10,30 +10,39 @@ smoke workflow failed. Operator rulings (TIN-3692):
 - **RV12**: serve tiles now from NASA GIBS's public Black Marble WMTS (no
   login), labelled with GIBS's real product, year and composite, never as
   2019. Replace them with VNP46A4 2019 tiles once the operator places an
-  Earthdata token on sting.
+  Earthdata token on sting. Both halves are done: the GIBS 2016 interim
+  served from 2026-10-09 22:42Z, and the slot now serves VNP46A4 2019.
 - **RV13**: the store is a read-only PVC in ns `darkmap` (`file://` base
   URL), with DreamObjects (DreamHost S3) as the durable object copy.
 
-## What is served today (RV12 interim)
+## What is served today
 
 | | |
 |---|---|
 | Layer id (kept for permalinks, cache keys and smoke) | `viirs_2019` (the newest VIIRS slot) |
-| UI label | `Black Marble 2016 (NASA GIBS)`, chip `2016 BM` |
-| Source | NASA EOSDIS GIBS WMTS, EPSG:3857 `best`, layer `VIIRS_Black_Marble` ("Black Marble (VIIRS, Suomi NPP)") |
-| Time / year | `2016-01-01`, the Black Marble 2016 annual composite (the other GIBS time is 2012) |
-| Matrix set | `GoogleMapsCompatible_Level8` (z0..z8, 256 px PNG, RGB) |
-| Store path | `gibs-viirs-black-marble/2016/{z}/{x}/{y}.png` plus `manifest.json` and `SHA256SUMS` |
-| API headers | `x-darkmap-raster-source: self-hosted`, `x-darkmap-raster-product: NASA GIBS VIIRS_Black_Marble 2016-01-01 (...)` |
-| Attribution | `Imagery courtesy NASA EOSDIS GIBS (VIIRS_Black_Marble 2016)` |
+| UI label | `VIIRS 2019 (VNP46A4)` (year chip `2019`) |
+| Source | NASA Black Marble VNP46A4 collection 002 from LAADS DAAC, 2019 annual composite, `AllAngle_Composite_Snow_Free` (VIIRS DNB, Suomi NPP); 540 granules |
+| Rendering | our own: quality flag 0 only, EPSG:3857 z0..z8, 256 px PNG, pilot palette `pilot-radiance-classes-v1` (physical units), sparse (empty tiles are not written) |
+| Tiles | 56,358 (z0 1, z1 4, z2 16, z3 56, z4 190, z5 694, z6 2,699, z7 10,674, z8 42,024); about 291MB; rendered 2026-10-10T02:18:32Z with GDAL 3.12.3 |
+| Store path | `vnp46a4-002/2019/{z}/{x}/{y}.png` plus `manifest.json` (with the per-granule receipts) and `SHA256SUMS` |
+| API headers | `x-darkmap-raster-source: self-hosted`, `x-darkmap-raster-product: NASA Black Marble VNP46A4.002 2019 annual composite (AllAngle_Composite_Snow_Free)` |
+| Attribution | `NASA Black Marble VNP46A4 collection 002 (VIIRS Land SIPS, LAADS DAAC), doi:10.5067/VIIRS/VNP46A4.002` |
 
-GIBS imagery is public and may be redistributed with the acknowledgment
-"Imagery courtesy NASA EOSDIS GIBS"
-(<https://nasa-gibs.github.io/gibs-api-docs/>). The tiles are GIBS's bytes,
-unmodified (`bytes_modified: false` in the manifest). Black Marble is a true
-colour night composite, not a radiance product, so the VIIRS radiance legend is
-hidden while this slot is active. The 2012-2018 VIIRS years and World Atlas
-2015 keep the upstream WMS and degrade as before.
+The tiles use the pilot palette, not the upstream GeoServer SLD, so the rail
+shows the layer description instead of the upstream VIIRS colour-scale legend
+while this slot is active. The 2012-2018 VIIRS years and World Atlas 2015 keep
+the upstream WMS and degrade as before.
+
+### Interim (RV12 first half, kept for rollback)
+
+From 2026-10-09 22:42Z until the VNP46A4 swap the slot served our mirror of
+NASA GIBS `VIIRS_Black_Marble`, time `2016-01-01` (the Black Marble 2016
+annual composite), `GoogleMapsCompatible_Level8`, labelled
+`Black Marble 2016 (NASA GIBS)`, never as 2019. That pyramid stays in the store
+at `gibs-viirs-black-marble/2016` (87,380 tiles, `manifest.json`,
+`SHA256SUMS`; GIBS bytes unmodified, "Imagery courtesy NASA EOSDIS GIBS",
+<https://nasa-gibs.github.io/gibs-api-docs/>). Reverting the VNP46A4 rebind
+commit points the slot back at it.
 
 ## What the code does
 
@@ -129,7 +138,8 @@ bucket. Operator steps:
    with sting among the recipients.
 3. A lane then loads the key into `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
    with `sops exec-env` (never echoed) and runs
-   `aws s3 sync /srv/fast-local/jess/data/darkmap-tiles/gibs-viirs-black-marble s3://darkmap-tiles/gibs-viirs-black-marble --endpoint-url <endpoint from the file> --only-show-errors`.
+   `aws s3 sync /srv/fast-local/jess/data/darkmap-tiles/<p> s3://darkmap-tiles/<p> --endpoint-url <endpoint from the file> --only-show-errors`
+   for each store path `<p>`: `vnp46a4-002` (served) and `gibs-viirs-black-marble` (rollback).
 
 The bucket stays private; the PVC is what production reads. Serving straight
 from it would need a public read path behind Cloudflare and an `https://` base
@@ -169,16 +179,19 @@ just raster-render $W/prepared/mosaic.vrt \
   /srv/fast-local/jess/data/darkmap-tiles/vnp46a4-002/2019 $W/work vnp46a4-002/2019 $W/archives/receipts.json 8
 ```
 
-Then load `vnp46a4-002/2019` into the PVC (and DreamObjects) as above, and in
-`src/lib/layers.ts` change the `viirs_2019` slot's `selfHosted` binding to
+Then write `SHA256SUMS` in the render directory, load `vnp46a4-002/2019`
+into the PVC (and DreamObjects) as above, and only then deploy the code that
+binds the slot to it. `src/lib/layers.ts` binds `viirs_2019` to
 `{ path: 'vnp46a4-002/2019', maxZoom: 8, product: 'NASA Black Marble VNP46A4.002 2019 annual composite (AllAngle_Composite_Snow_Free)', dataYear: 2019 }`
-with the label `VIIRS 2019 (VNP46A4)`, the VNP46A4 attribution, and the radiance
-legend. That code change ships through the normal PR path.
+with the label `VIIRS 2019 (VNP46A4)` and the VNP46A4 attribution. The upstream
+radiance legend stays hidden, because the tiles use the pilot palette.
 
 ## Rollback
 
-Remove the `selfHosted` binding from the slot (it then returns to the upstream
-WMS and its old label). Removing only the environment variable is not a
+To go back to the GIBS 2016 interim, revert the VNP46A4 rebind commit (the
+pyramid is still in the store). To leave self-hosting entirely, remove the
+`selfHosted` binding from the slot (it then returns to the upstream WMS and its
+old label). Removing only the environment variable is not a
 rollback: a bound layer then answers 503.
 
 ## Verify
@@ -188,5 +201,5 @@ curl -sI 'https://darkmap.phasi.space/api/raster?layer=viirs_2019&z=8&x=74&y=96'
 ```
 
 Expect `200`, `content-type: image/png`, `x-darkmap-raster-source: self-hosted`
-and an `x-darkmap-raster-product` naming `VIIRS_Black_Marble 2016-01-01`. Then
+and an `x-darkmap-raster-product` naming `VNP46A4.002 2019`. Then
 dispatch `public-smoke.yml` for both hosts.

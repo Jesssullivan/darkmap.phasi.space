@@ -89,37 +89,40 @@ const viirs = (year: number, defaultEnabled = false, opacity = 0.85): RasterLaye
 	opacity,
 });
 
+const VNP46A4_ATTRIBUTION =
+	'NASA Black Marble VNP46A4 collection 002 (VIIRS Land SIPS, LAADS DAAC), doi:10.5067/VIIRS/VNP46A4.002';
+
 /**
- * RV12 interim: the newest VIIRS slot (`viirs_2019`, kept as the id so
- * permalinks, the service-worker cache and the Public smoke keep working) is
- * served from our self-hosted mirror of NASA GIBS `VIIRS_Black_Marble`,
- * time 2016-01-01: the Black Marble 2016 annual composite (VIIRS Day/Night
- * Band, Suomi NPP), GoogleMapsCompatible_Level8. It is labelled as that
- * product and year, never as 2019. When the VNP46A4 2019 render lands
- * (docs/SELF_HOSTED_RASTER.md), this binding becomes `vnp46a4-002/2019` and
- * the label returns to 2019.
+ * RV12: the newest VIIRS slot (`viirs_2019`, kept as the id so permalinks, the
+ * service-worker cache and the Public smoke keep working) is served from our
+ * self-hosted render of NASA Black Marble VNP46A4 collection 002, the 2019
+ * annual composite (AllAngle_Composite_Snow_Free, quality flag 0 only),
+ * EPSG:3857 z0..z8 (docs/SELF_HOSTED_RASTER.md). It replaces the interim
+ * mirror of NASA GIBS VIIRS_Black_Marble 2016 (`gibs-viirs-black-marble/2016`,
+ * kept in the store for rollback). The tiles use the pilot radiance palette,
+ * not the upstream VIIRS color scale, so the rail shows the description
+ * instead of that legend.
  */
-export const VIIRS_2019_SLOT_GIBS: RasterLayerDef = {
+export const VIIRS_2019_SLOT: RasterLayerDef = {
 	...viirs(2019, true, 0.25),
-	label: 'Black Marble 2016 (NASA GIBS)',
-	chipLabel: '2016 BM',
+	label: 'VIIRS 2019 (VNP46A4)',
 	description:
-		'NASA Black Marble 2016 annual composite (VIIRS Day/Night Band, Suomi NPP), via NASA GIBS (VIIRS_Black_Marble, 2016-01-01). Interim stand-in for the 2019 composite; not 2019 data.',
+		'NASA Black Marble VNP46A4 collection 002 annual composite, 2019 (VIIRS Day/Night Band, Suomi NPP; AllAngle_Composite_Snow_Free, quality-filtered), rendered and served by darkmap.',
 	selfHosted: {
-		path: 'gibs-viirs-black-marble/2016',
+		path: 'vnp46a4-002/2019',
 		maxZoom: 8,
-		product: 'NASA GIBS VIIRS_Black_Marble 2016-01-01 (Black Marble 2016 annual composite, VIIRS DNB, Suomi NPP)',
-		dataYear: 2016,
+		product: 'NASA Black Marble VNP46A4.002 2019 annual composite (AllAngle_Composite_Snow_Free)',
+		dataYear: 2019,
 	},
 	maxNativeZoom: 8,
-	attribution: `${GIBS_ATTRIBUTION} (VIIRS_Black_Marble 2016)`,
+	attribution: VNP46A4_ATTRIBUTION,
 };
 
 export const LAYERS: ReadonlyArray<RasterLayerDef> = [
-	// Default display: the newest VIIRS slot (RV12 interim: Black Marble 2016 via
-	// GIBS) at a faint 25% so it reads as a subtle wash over the OSM basemap
+	// Default display: the newest VIIRS slot (RV12: NASA Black Marble VNP46A4
+	// 2019, self-hosted) at a faint 25% so it reads as a subtle wash over the OSM basemap
 	// (paired with World Atlas 25% below). Other years toggle at 85%.
-	VIIRS_2019_SLOT_GIBS,
+	VIIRS_2019_SLOT,
 	viirs(2018),
 	viirs(2017),
 	viirs(2016),

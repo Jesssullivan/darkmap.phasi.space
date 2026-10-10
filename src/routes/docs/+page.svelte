@@ -148,8 +148,8 @@
 		<h2 class="mb-3 font-mono text-lg font-bold">Feature surface</h2>
 		<ul class="list-disc space-y-2 pl-6">
 			<li>
-				<strong>VIIRS DNB radiance</strong> — NOAA annual composites 2012-2019, selected with a single-select year picker
-				in the layer rail
+				<strong>VIIRS DNB radiance</strong> — NOAA annual composites 2012-2018 plus the NASA Black Marble VNP46A4 2019 composite
+				(self-hosted), selected with a single-select year picker in the layer rail
 			</li>
 			<li>
 				<strong>Atmospheric overlays</strong> — NASA GIBS clouds (MODIS Terra, VIIRS NOAA-20), MODIS aerosol optical depth,

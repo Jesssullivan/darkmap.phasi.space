@@ -32,7 +32,7 @@ export const MODEL_CARDS: Readonly<Record<string, ModelCard>> = {
 		what: 'Annual composite of upward radiance at night from the Suomi-NPP Day/Night Band — a proxy for artificial sky glow.',
 		units: 'nW·cm⁻²·sr⁻¹',
 		kind: 'measured',
-		source: 'NOAA / Earth Observation Group',
+		source: 'NOAA / Earth Observation Group (2012-2018); NASA Black Marble VNP46A4.002 (2019)',
 		href: 'https://eogdata.mines.edu/products/vnl/',
 	},
 	world_atlas_2015: {

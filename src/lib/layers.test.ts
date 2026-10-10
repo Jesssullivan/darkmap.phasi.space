@@ -132,16 +132,18 @@ describe('layer manifest — atmospheric group (PR-A)', () => {
 	});
 });
 
-describe('RV12 interim VIIRS slot labelling', () => {
-	it('labels the viirs_2019 slot as the GIBS Black Marble 2016 product, never as 2019 data', () => {
+describe('RV12 VIIRS 2019 slot labelling', () => {
+	it('labels the viirs_2019 slot as the self-hosted VNP46A4 2019 product it serves', () => {
 		const slot = VIIRS_YEARS.find((l) => l.id === 'viirs_2019')!;
-		expect(slot.selfHosted?.path).toBe('gibs-viirs-black-marble/2016');
-		expect(slot.selfHosted?.dataYear).toBe(2016);
-		expect(slot.label).toBe('Black Marble 2016 (NASA GIBS)');
-		expect(slot.label).not.toContain('2019');
-		expect(slot.chipLabel).not.toContain('2019');
-		expect(slot.attribution).toContain('NASA EOSDIS GIBS');
-		expect(slot.description).toContain('not 2019 data');
+		expect(slot.selfHosted?.path).toBe('vnp46a4-002/2019');
+		expect(slot.selfHosted?.dataYear).toBe(2019);
+		expect(slot.selfHosted?.product).toContain('VNP46A4.002 2019');
+		expect(slot.label).toBe('VIIRS 2019 (VNP46A4)');
+		expect(slot.chipLabel).toBeUndefined();
+		expect(slot.attribution).toContain('doi:10.5067/VIIRS/VNP46A4.002');
+		expect(slot.attribution).not.toContain('GIBS');
+		expect(slot.description).toContain('VNP46A4');
+		expect(slot.description).not.toContain('2016');
 		expect(slot.maxNativeZoom).toBe(8);
 	});
 

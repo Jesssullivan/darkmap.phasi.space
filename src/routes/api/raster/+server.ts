@@ -37,7 +37,7 @@ interface RasterFetchResult {
 const inFlightTiles = new Map<string, Promise<Exit.Exit<RasterFetchResult, RasterError>>>();
 
 // RV1/RV12/RV13: layers with a `selfHosted` binding (today the newest VIIRS
-// slot, Black Marble 2016 mirrored from NASA GIBS) are read only from our own
+// slot, NASA Black Marble VNP46A4 2019 rendered by us) are read only from our own
 // tile store at DARKMAP_RASTER_TILE_BASE_URL; every other layer keeps the
 // upstream WMS client. Resolved lazily so the adapter-node runtime env is used.
 let rasterRuntime: Layer.Layer<RasterClient | RasterCache> | undefined;
