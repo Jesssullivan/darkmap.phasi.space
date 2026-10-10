@@ -70,7 +70,7 @@ describe('/api/raster self-hosted VIIRS slot (RV1/RV12/RV13)', () => {
 	const ENV = 'DARKMAP_RASTER_TILE_BASE_URL';
 	const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 	const STORE = 'https://tiles.darkmap.test/raster';
-	const SLOT = `${STORE}/gibs-viirs-black-marble/2016`;
+	const SLOT = `${STORE}/vnp46a4-002/2019`;
 
 	const useStore = (tiles: Record<string, () => Response>, requested: string[]) => {
 		process.env[ENV] = STORE;
@@ -88,7 +88,7 @@ describe('/api/raster self-hosted VIIRS slot (RV1/RV12/RV13)', () => {
 		_resetRasterRuntimeForTests();
 	});
 
-	it('serves the stored Black Marble 2016 tile as image/png, labelled with its real product', async () => {
+	it('serves the stored VNP46A4 2019 tile as image/png, labelled with its real product', async () => {
 		const requested: string[] = [];
 		useStore(
 			{
@@ -105,8 +105,8 @@ describe('/api/raster self-hosted VIIRS slot (RV1/RV12/RV13)', () => {
 		expect(res.headers.get('content-type')).toBe('image/png');
 		expect(res.headers.get('cache-control')).toContain('max-age=');
 		expect(res.headers.get('x-darkmap-raster-source')).toBe('self-hosted');
-		expect(res.headers.get('x-darkmap-raster-product')).toContain('VIIRS_Black_Marble 2016');
-		expect(res.headers.get('x-darkmap-raster-product')).not.toContain('2019');
+		expect(res.headers.get('x-darkmap-raster-product')).toContain('VNP46A4.002 2019');
+		expect(res.headers.get('x-darkmap-raster-product')).not.toContain('GIBS');
 		expect(res.headers.get('set-cookie')).toBeNull();
 		expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual(Array.from(PNG));
 	});
