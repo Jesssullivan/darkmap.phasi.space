@@ -122,28 +122,87 @@ the new files without a restart (a newly added manifest is picked up within
 
 ## Durable copy on DreamObjects (RV13b)
 
-The durable object copy belongs in a private bucket `darkmap-tiles` on
-DreamObjects (DreamHost S3). Lab custody holds DreamObjects keys only for the
-offsite-backup legs (`nix/secrets/operators/dreamobjects-*-leg.yaml` in the
-lab repo). Each leg is its own DreamObjects user, and per-user tenancy is the
-confinement boundary of those backups, so those keys are not reused for this
-bucket. Operator steps:
+The durable object copy is on DreamObjects (DreamHost S3, Backblaze B2 underneath).
+It has its own tenancy, separate from the lab offsite-backup legs:
 
-1. In the DreamHost panel, create a DreamObjects user for this purpose (for
-   example `tinyland-darkmap-tiles`) and a private bucket `darkmap-tiles`
-   under it.
-2. Put its key into lab sops as `nix/secrets/operators/dreamobjects-darkmap-tiles.yaml`
-   with the same shape as the backup legs
-   (`dreamobjects.darkmap_tiles.{endpoint,region,user,bucket,access_key,secret_key}`),
-   with sting among the recipients.
-3. A lane then loads the key into `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   with `sops exec-env` (never echoed) and runs
-   `aws s3 sync /srv/fast-local/jess/data/darkmap-tiles/<p> s3://darkmap-tiles/<p> --endpoint-url <endpoint from the file> --only-show-errors`
-   for each store path `<p>`: `vnp46a4-002` (served) and `gibs-viirs-black-marble` (rollback).
+| | |
+| --- | --- |
+| Endpoint / region | `https://s3.us-east-005.dream.io` / `us-east-005` |
+| DreamObjects user | `tinyland-darkmap-tiles` (created 2026-10-10; owns only this bucket) |
+| Bucket | `tinyland-darkmap-tiles` (private; ACL owner `FULL_CONTROL` only, no public grants) |
+| Key custody | lab `nix/secrets/operators/dreamobjects-darkmap-tiles.yaml`, `dreamobjects.darkmap_tiles.{endpoint,region,user,bucket,purpose,created_at,access_key_id,secret_access_key}`, recipients honey, neo-unique and sting; registry row `dreamobjects.darkmap_tiles` |
 
-The bucket stays private; the PVC is what production reads. Serving straight
-from it would need a public read path behind Cloudflare and an `https://` base
-URL, which is a separate decision.
+The object prefixes mirror the store layout under
+`/srv/fast-local/jess/data/darkmap-tiles/` (and the PVC root):
+
+| Prefix | Contents |
+| --- | --- |
+| `vnp46a4-002/2019/` | VNP46A4.002 2019 pyramid (served): `{z}/{x}/{y}.png` z0-8, `manifest.json`, `SHA256SUMS` |
+| `gibs-viirs-black-marble/2016/` | GIBS 2016 pyramid (rollback): `{z}/{x}/{y}.png` z0-8, `manifest.json`, `SHA256SUMS` |
+
+The backup-leg keys (`nix/secrets/operators/dreamobjects-*-leg.yaml` and the
+blahaj legs) are never used for this bucket, and this key never touches theirs.
+Per-user tenancy is the confinement boundary on both sides.
+
+### Re-sync procedure
+
+Run this from sting after a pyramid is added or rebuilt, once the PVC has been
+loaded and verified as above. The key goes into the environment only and is
+never echoed:
+
+```sh
+# from a lab checkout on sting (the file decrypts with sting's age key)
+F=nix/secrets/operators/dreamobjects-darkmap-tiles.yaml
+k() { sops decrypt --extract "[\"dreamobjects\"][\"darkmap_tiles\"][\"$1\"]" "$F"; }
+AWS_ACCESS_KEY_ID="$(k access_key_id)" AWS_SECRET_ACCESS_KEY="$(k secret_access_key)"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION=us-east-005 \
+  AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+for p in vnp46a4-002/2019 gibs-viirs-black-marble/2016; do
+  /srv/fast-local/jess/bin/tld-heavy -- aws --endpoint-url https://s3.us-east-005.dream.io \
+    s3 sync /srv/fast-local/jess/data/darkmap-tiles/$p s3://tinyland-darkmap-tiles/$p \
+    --no-progress --only-show-errors
+done
+```
+
+`sops exec-env` cannot be used here: it refuses nested documents. Command
+substitution keeps the values off the terminal; do not `set -x` around it.
+Never pass `--acl`: objects stay private. A new pyramid goes under its own
+`<product>/<year>/` prefix, matching the store path.
+
+Verify after every sync, in the same shell (the key is still exported):
+
+```sh
+E=https://s3.us-east-005.dream.io B=tinyland-darkmap-tiles S=/srv/fast-local/jess/data/darkmap-tiles
+for p in vnp46a4-002/2019 gibs-viirs-black-marble/2016; do
+  # 1. object count must equal the store's file count
+  remote=$(aws --endpoint-url "$E" s3api list-objects-v2 --bucket "$B" --prefix "$p/" \
+    --query 'length(Contents || `[]`)' --output json)
+  echo "$p remote=$remote local=$(find "$S/$p" -type f | wc -l)"
+  # 2. sha256 of a random sample of 12 objects, fetched to a transient directory
+  d=$(mktemp -d /dev/shm/darkmap-verify.XXXXXX)
+  shuf -n 12 "$S/$p/SHA256SUMS" > "$d/sample"
+  while read -r _ f; do
+    aws --endpoint-url "$E" s3 cp --only-show-errors "s3://$B/$p/$f" "$d/$f" </dev/null
+  done < "$d/sample"
+  (cd "$d" && sha256sum -c --quiet sample && echo "$p sample OK")
+  rm -rf "$d"
+  # 3. a dry-run sync must list nothing left to upload
+  aws --endpoint-url "$E" s3 sync "$S/$p" "s3://$B/$p" --dryrun --no-progress --only-show-errors
+done
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+```
+
+Keep `--output json` on the count. The CLI paginates `list-objects-v2` on its
+own (1000 keys per page): with `--output text` it applies the query to each
+page and prints one count per page, and `--query KeyCount` prints `null`
+because the merged result has no `KeyCount`. `Contents || []` makes an empty
+prefix count as `0` instead of failing. Expected on 2026-10-14:
+`vnp46a4-002/2019` 56360 and `gibs-viirs-black-marble/2016` 87382, with both
+samples OK and no dry-run output.
+
+The bucket stays private, and the PVC is what production reads. Serving straight
+from the bucket would need a public read path behind Cloudflare and an `https://` base
+URL. That is a separate decision.
 
 ## VNP46A4 2019 (RV12 second half)
 
