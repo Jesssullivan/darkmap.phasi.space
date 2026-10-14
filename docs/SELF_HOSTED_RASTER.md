@@ -162,7 +162,6 @@ for p in vnp46a4-002/2019 gibs-viirs-black-marble/2016; do
     s3 sync /srv/fast-local/jess/data/darkmap-tiles/$p s3://tinyland-darkmap-tiles/$p \
     --no-progress --only-show-errors
 done
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 ```
 
 `sops exec-env` cannot be used here: it refuses nested documents. Command
@@ -170,13 +169,36 @@ substitution keeps the values off the terminal; do not `set -x` around it.
 Never pass `--acl`: objects stay private. A new pyramid goes under its own
 `<product>/<year>/` prefix, matching the store path.
 
-Verify after every sync:
+Verify after every sync, in the same shell (the key is still exported):
 
-1. Object count per prefix (`aws s3api list-objects-v2 --bucket tinyland-darkmap-tiles --prefix <p>/ --query KeyCount`, paginated)
-   must equal `find /srv/fast-local/jess/data/darkmap-tiles/<p> -type f | wc -l`.
-2. Download a random sample of at least 10 objects per prefix to a transient
-   directory (for example `/dev/shm`) and check them with `sha256sum -c` against
-   that prefix's `SHA256SUMS`. Then remove the directory.
+```sh
+E=https://s3.us-east-005.dream.io B=tinyland-darkmap-tiles S=/srv/fast-local/jess/data/darkmap-tiles
+for p in vnp46a4-002/2019 gibs-viirs-black-marble/2016; do
+  # 1. object count must equal the store's file count
+  remote=$(aws --endpoint-url "$E" s3api list-objects-v2 --bucket "$B" --prefix "$p/" \
+    --query 'length(Contents || `[]`)' --output json)
+  echo "$p remote=$remote local=$(find "$S/$p" -type f | wc -l)"
+  # 2. sha256 of a random sample of 12 objects, fetched to a transient directory
+  d=$(mktemp -d /dev/shm/darkmap-verify.XXXXXX)
+  shuf -n 12 "$S/$p/SHA256SUMS" > "$d/sample"
+  while read -r _ f; do
+    aws --endpoint-url "$E" s3 cp --only-show-errors "s3://$B/$p/$f" "$d/$f" </dev/null
+  done < "$d/sample"
+  (cd "$d" && sha256sum -c --quiet sample && echo "$p sample OK")
+  rm -rf "$d"
+  # 3. a dry-run sync must list nothing left to upload
+  aws --endpoint-url "$E" s3 sync "$S/$p" "s3://$B/$p" --dryrun --no-progress --only-show-errors
+done
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+```
+
+Keep `--output json` on the count. The CLI paginates `list-objects-v2` on its
+own (1000 keys per page): with `--output text` it applies the query to each
+page and prints one count per page, and `--query KeyCount` prints `null`
+because the merged result has no `KeyCount`. `Contents || []` makes an empty
+prefix count as `0` instead of failing. Expected on 2026-10-14:
+`vnp46a4-002/2019` 56360 and `gibs-viirs-black-marble/2016` 87382, with both
+samples OK and no dry-run output.
 
 The bucket stays private, and the PVC is what production reads. Serving straight
 from the bucket would need a public read path behind Cloudflare and an `https://` base
