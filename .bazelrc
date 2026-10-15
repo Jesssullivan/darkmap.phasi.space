@@ -1,11 +1,19 @@
 # darkmap.phasi.space Bazel Configuration
 #
 # Bazel 8 + Bzlmod. Mirrors elders.tinyland.dev's two-registry chain:
-# tinyland-inc/bazel-registry first, then BCR. Site build remains
-# `pnpm run build`; Bazel exists for module-graph integrity proofs.
+# xoxd-ai/bazel-registry (formerly tinyland-inc/bazel-registry) first,
+# then BCR. Site build remains `pnpm run build`; Bazel exists for
+# module-graph integrity proofs.
+#
+# The registry is pinned to an immutable commit SHA, not the mutable
+# `main` ref, so module metadata cannot change underneath the
+# MODULE.bazel.lock registryFileHashes (registry README convention).
+# A SHA bump must land with a MODULE.bazel.lock refresh in the same
+# commit (`bazel mod deps --lockfile_mode=update`). Re-pin one-liner:
+#   sed -i "s|bazel-registry/[0-9a-f]\{40\}|bazel-registry/$(gh api repos/xoxd-ai/bazel-registry/commits/main --jq .sha)|" .bazelrc
 
 common --enable_bzlmod
-common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main/
+common --registry=https://raw.githubusercontent.com/xoxd-ai/bazel-registry/5e083e0de406d30d5cff3d6ae39090abcdd4bc71
 common --registry=https://bcr.bazel.build
 
 # Build performance

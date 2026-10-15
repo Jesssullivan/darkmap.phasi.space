@@ -48,7 +48,8 @@ reviewed static snapshots from `tinyland.dev`.
 
 - Bazel exists for **module-graph integrity proofs** and cache-backed test
   acceleration. The canonical app build remains `pnpm run build`.
-- Registry order: `tinyland-inc/bazel-registry` first, then BCR.
+- Registry order: `xoxd-ai/bazel-registry` (SHA-pinned in `.bazelrc`;
+  re-pin together with a `MODULE.bazel.lock` refresh) first, then BCR.
 - Flywheel profile: `--config=flywheel` (only from runners with cluster
   reachability). In this repo it is a shared remote-cache profile, not a
   Bazel `--remote_executor` proof by itself.
