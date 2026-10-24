@@ -28,7 +28,7 @@ jobs:
       label_list: ${{ steps.preflight.outputs.label_list }}
       reason: ${{ steps.preflight.outputs.reason }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - id: preflight
         name: Check cluster runner route
@@ -80,7 +80,7 @@ jobs:
       - name: Reclaim stale runner workspace
         run: find "$GITHUB_WORKSPACE" -maxdepth 1 -mindepth 1 -type d -name 'repo-*' ! -name "$CHECKOUT_PATH" -exec rm -rf {} +
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: ${{ env.CHECKOUT_PATH }}
 
