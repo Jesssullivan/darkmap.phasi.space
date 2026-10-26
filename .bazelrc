@@ -8,6 +8,10 @@ common --enable_bzlmod
 common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main/
 common --registry=https://bcr.bazel.build
 
+# Bound the client server so an idle shell or recipe does not hold a JVM for
+# hours (TIN-5770 R470). A ~/.bazelrc is read after this file and can raise it.
+startup --max_idle_secs=120
+
 # Build performance
 build --jobs=auto
 build --worker_sandboxing
@@ -22,7 +26,11 @@ build --show_timestamps
 #   --config=flywheel-executor  cache + REAPI executor, proved target classes only
 # See docs/CI-SCHEMA.md §5 for the binding contract and proved-class allowlist.
 # Refresh via `just sync-flywheel-bazelrc <tag>` once ci-templates v1.0.0 ships.
+# Re-vendored from xoxd-ai/ci-templates v5.2.0 (3ff7d00): the endpoint-free
+# fragment, with no baked cache endpoint and no cache upload (TIN-5770 R471).
 try-import %workspace%/.bazelrc.flywheel
+# Local deviation from the fragment (TIN-5770 R471): no silent local fallback.
+common:flywheel --remote_local_fallback=false
 
 # Cache-attachment-contract profiles (mirrors MassageIthaca pattern).
 #
@@ -37,14 +45,14 @@ try-import %workspace%/.bazelrc.flywheel
 # endpoint is provided dynamically by the runner pool (e.g. a flywheel
 # scale-set that hands out a different cache URL per environment).
 common:ci-cached --remote_cache_async
-common:ci-cached --remote_upload_local_results=true
-common:ci-cached --remote_local_fallback
+common:ci-cached --remote_upload_local_results=false
+common:ci-cached --remote_local_fallback=false
 common:ci-cached --remote_timeout=120
 common:ci-cached --remote_retries=3
 
 common:executor-backed --remote_cache_async
-common:executor-backed --remote_upload_local_results=true
-common:executor-backed --remote_local_fallback
+common:executor-backed --remote_upload_local_results=false
+common:executor-backed --remote_local_fallback=false
 common:executor-backed --remote_timeout=300
 common:executor-backed --remote_retries=3
 

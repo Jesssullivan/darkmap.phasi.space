@@ -120,9 +120,11 @@ format:
 format-check:
     cd {{ root }} && pnpm run format:check
 
-# Run unit tests through Bazel. Set GF_BAZEL_CONFIG=flywheel on
-# GloriousFlywheel runners to attach to the shared in-cluster Bazel cache.
+# Run unit tests through Bazel. No GloriousFlywheel lane is enrolled, so this
+# is bounded local work (TIN-5770 R471). GF_BAZEL_CONFIG=flywheel adds the
+# endpoint-free --config=flywheel and stays local.
 test-unit:
+    @echo "[test-unit] local, non-qualifying: no enrolled GloriousFlywheel lane (TIN-5770 R471)"
     cd {{ root }} && if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then bazelisk test --config=flywheel //...; else bazelisk test //...; fi
 
 # Strict MapLibre v6 browser proof on the configured ordinary CI runner.
@@ -169,7 +171,7 @@ test: test-unit test-e2e
 
 # Run lint + typecheck + unit (pre-commit gate)
 check: lint typecheck test-unit ha-state-live-candidate-status-check
-    @echo "All checks passed."
+    @echo "All checks passed (local, non-qualifying)."
 
 # Run full CI pipeline locally
 ci: check build test-e2e
@@ -218,7 +220,7 @@ analyze:
 
 # Bazel mod graph smoke (registry-resolution proof)
 bazel-graph:
-    cd {{ root }} && bazelisk mod graph
+    cd {{ root }} && bazelisk --batch mod graph
 
 # Bazel-driven test through the cache-attachment wrapper. Validates
 # BAZEL_REMOTE_CACHE / BAZEL_REMOTE_EXECUTOR env first (rejects shell-
@@ -480,8 +482,8 @@ substrate-boundary-check:
 #   local     → no remote_* flags at all
 #   cache     → --config=flywheel (cache-only)
 #   executor  → --config=flywheel-executor (proved-class executor + cache)
-#   auto      → probe bazel-cache.nix-cache.svc.cluster.local:9092 reachability;
-#               fall through to cache if reachable, local otherwise.
+#   auto      → local, non-qualifying: no GloriousFlywheel lane is enrolled
+#               and the retired cache endpoint is not probed (TIN-5770 R471).
 # Coexists with darkmap's existing bazel-test-cached / bazel-cache-contract
 # recipes (which use the cache-attachment-contract.sh wrapper for dynamic
 # endpoint resolution). Use these recipes when the cluster cache DNS is
@@ -495,25 +497,21 @@ _flywheel-flag:
       local)    echo "" ;; \
       cache)    echo "--config=flywheel" ;; \
       executor) echo "--config=flywheel-executor" ;; \
-      auto)     if nc -z -w1 bazel-cache.nix-cache.svc.cluster.local 9092 2>/dev/null; then \
-                  echo "--config=flywheel"; \
-                else \
-                  echo "" >&2; echo "[flywheel] cluster cache unreachable; running pure local" >&2; \
-                  echo ""; \
-                fi ;; \
+      auto)     echo "[flywheel] no enrolled lane; local, non-qualifying" >&2; \
+                echo "" ;; \
       *) echo "[flywheel] unknown FLYWHEEL=$mode (expected local|cache|executor|auto)" >&2; exit 64 ;; \
     esac
 
 # Bazel build via flywheel (defaults to //:node_modules smoke target)
 flywheel-build target="//:node_modules":
     @cfg=$(just _flywheel-flag); \
-    echo "[flywheel-build] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk build $cfg {{ target }}"; \
+    echo "[flywheel-build] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk build $cfg {{ target }} (local, non-qualifying)"; \
     cd {{ root }} && bazelisk build $cfg {{ target }}
 
 # Bazel test via flywheel
 flywheel-test target="//...":
     @cfg=$(just _flywheel-flag); \
-    echo "[flywheel-test] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk test $cfg {{ target }}"; \
+    echo "[flywheel-test] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk test $cfg {{ target }} (local, non-qualifying)"; \
     cd {{ root }} && bazelisk test $cfg {{ target }}
 
 # Remote dev server — v1.1+ stub (see ci-templates/docs/spec/dev-remote.md)

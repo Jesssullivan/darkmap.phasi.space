@@ -187,9 +187,9 @@ Read it before touching any Flywheel/RBE surface.
   Playwright, GitHub runner placement, or remote-cache-only hits as browser RBE.
 - Local DX: `nix develop` for the toolchain, `FLYWHEEL=local|cache|executor|auto`
   env knob picks the bazelrc config for the `just flywheel-build` /
-  `just flywheel-test` recipes. `auto` probes cluster cache
-  reachability and falls through to pure-local if not on a cluster
-  runner.
+  `just flywheel-test` recipes. `auto` runs local, non-qualifying: no
+  lane is enrolled and the retired cache endpoint is not probed
+  (TIN-5770 R471).
 
 ## Per-PR Ephemeral Envs
 

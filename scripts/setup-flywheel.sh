@@ -41,11 +41,7 @@ valid_bazel_endpoint() {
 
 if [ "$attic_enabled" != "true" ]; then
 	echo "::notice::Attic cache hints disabled for this job"
-	if [ "$runner_environment" != "github-hosted" ]; then
-		bazel_endpoint="${bazel_input:-${BAZEL_REMOTE_CACHE:-grpc://bazel-cache.nix-cache.svc.cluster.local:9092}}"
-	else
-		bazel_endpoint="${bazel_input:-${BAZEL_REMOTE_CACHE:-}}"
-	fi
+	bazel_endpoint="${bazel_input:-${BAZEL_REMOTE_CACHE:-}}"
 elif [ "$runner_environment" != "github-hosted" ]; then
 	attic_url="${attic_input:-${ATTIC_SERVER:-http://attic.nix-cache.svc.cluster.local}}"
 	attic_host="${attic_url#http://}"
@@ -62,7 +58,7 @@ elif [ "$runner_environment" != "github-hosted" ]; then
 		echo "::warning::Attic cache DNS unreachable ($attic_host); running without Attic cache"
 	fi
 
-	bazel_endpoint="${bazel_input:-${BAZEL_REMOTE_CACHE:-grpc://bazel-cache.nix-cache.svc.cluster.local:9092}}"
+	bazel_endpoint="${bazel_input:-${BAZEL_REMOTE_CACHE:-}}"
 else
 	if [ -n "$attic_input" ]; then
 		write_env "ATTIC_SERVER=$attic_input"
