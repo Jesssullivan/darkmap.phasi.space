@@ -49,15 +49,15 @@ reviewed static snapshots from `tinyland.dev`.
 - Bazel exists for **module-graph integrity proofs** and cache-backed test
   acceleration. The canonical app build remains `pnpm run build`.
 - Registry order: `tinyland-inc/bazel-registry` first, then BCR.
-- Flywheel profile: `--config=flywheel` (only from runners with cluster
-  reachability). In this repo it is a shared remote-cache profile, not a
-  Bazel `--remote_executor` proof by itself.
+- Flywheel profile: `--config=flywheel` is cache behavior only and carries
+  no endpoint. It needs a wrapper-supplied `--remote_cache`. Without one the
+  build runs local. It is not a Bazel `--remote_executor` proof by itself.
 - CI Bazel runner routing uses `BAZEL_LINUX_RUNNER_LABELS_JSON` when set,
   falling back to `PRIMARY_LINUX_RUNNER_LABELS_JSON` and then
-  `ubuntu-latest`. When the selected labels include a cache-reachable ARC label
+  `ubuntu-latest`. When the selected labels include an ARC label
   (`glorious-flywheel`, `jesssullivan-nix`, or `tinyland-nix`), CI sets
-  `GF_BAZEL_CONFIG=flywheel`; otherwise hosted fallback runs the same Bazel
-  test target without the in-cluster cache profile.
+  `GF_BAZEL_CONFIG=flywheel`. No wrapper supplies an endpoint there yet, so
+  those builds run local (local, non-qualifying), the same as hosted runners.
 - Tofu plan/apply routing uses `TOFU_LINUX_RUNNER_LABELS_JSON` so RustFS-backed
   state operations can stay on a cluster-DNS-capable runner even when generic
   jobs use hosted runners.

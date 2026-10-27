@@ -79,6 +79,7 @@ jobs:
 
       - name: Build npm link tree
         run: |
+          echo "[bazel] npm link tree: no wrapper endpoint; local, non-qualifying"
           if [ "${GF_BAZEL_CONFIG:-}" = "flywheel" ]; then
             nix develop --command bazelisk build --config=flywheel //:node_modules
           else
