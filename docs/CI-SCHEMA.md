@@ -593,10 +593,11 @@ flowchart TD
   C -->|executor| G{Executor supplied by the wrapper<br/>in CI on tinyland-nix*?}
   G -->|no| K[ERROR: fails closed,<br/>exit non-zero]
   G -->|yes| J{target class<br/>in proved allowlist?}
-  J -->|no| K
+  J -->|no| F[Filtered out by<br/>--build_tag_filters, not run]
   J -->|yes| L[Dispatch to gf-reapi-cell executor<br/>+ remote cache]
   L --> M[Remote action results]
   I --> N
+  F --> N
   D --> N[Done]
   M --> N
 

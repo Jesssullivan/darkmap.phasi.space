@@ -158,8 +158,8 @@ After creating a new sister site from this scaffold:
 ## Flywheel Binding
 
 The normative Flywheel contract — the two config axes
-(`--config=flywheel` cache-only vs `--config=flywheel-executor`
-executor+cache), the proved-for-spoke target-class allowlist, and the
+(`--config=flywheel` cache behavior only, endpoint from the wrapper,
+vs `--config=flywheel-executor` executor+cache), the proved-for-spoke target-class allowlist, and the
 hard invariants (no RustFS RBE authority, no OpenTofu RBE, no
 devserver RBE, cache hits ≠ RBE) — lives in `docs/CI-SCHEMA.md` §5.
 Read it before touching any Flywheel/RBE surface.
@@ -170,8 +170,10 @@ Read it before touching any Flywheel/RBE surface.
   `--config=ci-cached` and `--config=executor-backed` profiles that use
   `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution (no
   hardcoded URL). Both flows are valid:
-  - `--config=flywheel[-executor]` when the cluster cache DNS is stable
-    (e.g. running on `tinyland-nix` ARC runners).
+  - `--config=flywheel[-executor]` only when a wrapper supplies the
+    endpoint: `--remote_cache` for `flywheel`, `--remote_executor` for
+    `flywheel-executor`. Without one, `flywheel` runs local and
+    `flywheel-executor` fails closed.
   - `--config=ci-cached` / `--config=executor-backed` when the runner
     pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
 - Browserful Playwright is modeled as Bazel RBE smoke targets, not a
