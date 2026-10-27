@@ -49,15 +49,15 @@ reviewed static snapshots from `tinyland.dev`.
 - Bazel exists for **module-graph integrity proofs** and cache-backed test
   acceleration. The canonical app build remains `pnpm run build`.
 - Registry order: `tinyland-inc/bazel-registry` first, then BCR.
-- Flywheel profile: `--config=flywheel` (only from runners with cluster
-  reachability). In this repo it is a shared remote-cache profile, not a
-  Bazel `--remote_executor` proof by itself.
+- Flywheel profile: `--config=flywheel` is cache behavior only and carries
+  no endpoint. It needs a wrapper-supplied `--remote_cache`. Without one the
+  build runs local. It is not a Bazel `--remote_executor` proof by itself.
 - CI Bazel runner routing uses `BAZEL_LINUX_RUNNER_LABELS_JSON` when set,
   falling back to `PRIMARY_LINUX_RUNNER_LABELS_JSON` and then
-  `ubuntu-latest`. When the selected labels include a cache-reachable ARC label
+  `ubuntu-latest`. When the selected labels include an ARC label
   (`glorious-flywheel`, `jesssullivan-nix`, or `tinyland-nix`), CI sets
-  `GF_BAZEL_CONFIG=flywheel`; otherwise hosted fallback runs the same Bazel
-  test target without the in-cluster cache profile.
+  `GF_BAZEL_CONFIG=flywheel`. No wrapper supplies an endpoint there yet, so
+  those builds run local (local, non-qualifying), the same as hosted runners.
 - Tofu plan/apply routing uses `TOFU_LINUX_RUNNER_LABELS_JSON` so RustFS-backed
   state operations can stay on a cluster-DNS-capable runner even when generic
   jobs use hosted runners.
@@ -158,8 +158,8 @@ After creating a new sister site from this scaffold:
 ## Flywheel Binding
 
 The normative Flywheel contract — the two config axes
-(`--config=flywheel` cache-only vs `--config=flywheel-executor`
-executor+cache), the proved-for-spoke target-class allowlist, and the
+(`--config=flywheel` cache behavior only, endpoint from the wrapper,
+vs `--config=flywheel-executor` executor+cache), the proved-for-spoke target-class allowlist, and the
 hard invariants (no RustFS RBE authority, no OpenTofu RBE, no
 devserver RBE, cache hits ≠ RBE) — lives in `docs/CI-SCHEMA.md` §5.
 Read it before touching any Flywheel/RBE surface.
@@ -170,8 +170,10 @@ Read it before touching any Flywheel/RBE surface.
   `--config=ci-cached` and `--config=executor-backed` profiles that use
   `scripts/bazel-cache-backed.sh` for dynamic endpoint resolution (no
   hardcoded URL). Both flows are valid:
-  - `--config=flywheel[-executor]` when the cluster cache DNS is stable
-    (e.g. running on `tinyland-nix` ARC runners).
+  - `--config=flywheel[-executor]` only when a wrapper supplies the
+    endpoint: `--remote_cache` for `flywheel`, `--remote_executor` for
+    `flywheel-executor`. Without one, `flywheel` runs local and
+    `flywheel-executor` fails closed.
   - `--config=ci-cached` / `--config=executor-backed` when the runner
     pool hands out a per-env cache URL via `BAZEL_REMOTE_CACHE`.
 - Browserful Playwright is modeled as Bazel RBE smoke targets, not a
@@ -187,9 +189,9 @@ Read it before touching any Flywheel/RBE surface.
   Playwright, GitHub runner placement, or remote-cache-only hits as browser RBE.
 - Local DX: `nix develop` for the toolchain, `FLYWHEEL=local|cache|executor|auto`
   env knob picks the bazelrc config for the `just flywheel-build` /
-  `just flywheel-test` recipes. `auto` probes cluster cache
-  reachability and falls through to pure-local if not on a cluster
-  runner.
+  `just flywheel-test` recipes. `auto` runs local, non-qualifying: no
+  lane is enrolled and the retired cache endpoint is not probed
+  (TIN-5770 R471).
 
 ## Per-PR Ephemeral Envs
 
