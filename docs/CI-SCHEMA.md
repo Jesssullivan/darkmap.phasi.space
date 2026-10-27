@@ -292,7 +292,7 @@ Spokes opt into Flywheel along **two independent axes**:
 | Config | Effect | Safe on |
 |---|---|---|
 | `--config=flywheel` | Remote *cache* behavior only. The fragment carries no endpoint; a wrapper supplies it at runtime. | Any cluster-reachable runner. |
-| `--config=flywheel-executor` | Adds `--remote_executor=...`, the proved-class tag filter, and the worker platform pin. | **Cluster runners only.** Composite action `flywheel-bazel` MUST refuse this config on `ubuntu-latest`. |
+| `--config=flywheel-executor` | Adds `--spawn_strategy=remote`, `--remote_download_minimal`, no local fallback and the proved-class tag filter. The wrapper supplies `--remote_executor` and the worker platform pin; without them the build fails closed. | **Cluster runners only.** Composite action `flywheel-bazel` MUST refuse this config on `ubuntu-latest`. |
 
 ### Proved-class allowlist for static spokes
 
@@ -587,19 +587,17 @@ flowchart TD
   B --> C{FLYWHEEL env?}
   C -->|local| D[Pure laptop execution<br/>local, non-qualifying]
   C -->|auto / unset| D
-  C -->|cache / executor| E{Endpoint supplied<br/>by the wrapper?}
-  E -->|no| F[Fallback: cache-only<br/>--config=flywheel<br/>WARN print]
-  E -->|yes| G{In CI on tinyland-nix*?}
-  G -->|no| F
-  G -->|yes| H{config?}
-  H -->|flywheel| I[Remote cache only]
-  H -->|flywheel-executor| J{target class<br/>in proved allowlist?}
-  J -->|no| K[ERROR: refuse,<br/>exit non-zero]
+  C -->|cache| E{Cache endpoint supplied<br/>by the wrapper?}
+  E -->|no| D
+  E -->|yes| I[Remote cache reads<br/>no local upload]
+  C -->|executor| G{Executor supplied by the wrapper<br/>in CI on tinyland-nix*?}
+  G -->|no| K[ERROR: fails closed,<br/>exit non-zero]
+  G -->|yes| J{target class<br/>in proved allowlist?}
+  J -->|no| K
   J -->|yes| L[Dispatch to gf-reapi-cell executor<br/>+ remote cache]
-  L --> M[Action results + cache populated]
-  I --> M
+  L --> M[Remote action results]
+  I --> N
   D --> N[Done]
-  F --> N
   M --> N
 
   classDef invariant fill:#fde,stroke:#c33,color:#000

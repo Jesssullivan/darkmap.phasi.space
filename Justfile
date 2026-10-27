@@ -149,6 +149,7 @@ format-atmospheric-providers:
 
 # Local Bazel target validation without the in-cluster flywheel cache
 test-bazel-local:
+    @echo "[test-bazel-local] local, non-qualifying (TIN-5770 R471)"
     cd {{ root }} && bazelisk test //src/lib/server/raster:raster_test
 
 # Run Playwright E2E tests. Remote-first: browserful e2e (full adapter-node
@@ -480,14 +481,15 @@ substrate-boundary-check:
 # Flywheel (cache-first; executor opt-in; see docs/CI-SCHEMA.md §5)
 # Env knob: FLYWHEEL=local|cache|executor|auto (default auto)
 #   local     → no remote_* flags at all
-#   cache     → --config=flywheel (cache-only)
-#   executor  → --config=flywheel-executor (proved-class executor + cache)
+#   cache     → --config=flywheel (cache behavior only; the fragment has no
+#               endpoint, so these recipes still run local, non-qualifying)
+#   executor  → --config=flywheel-executor (needs a wrapper-supplied
+#               --remote_executor; fails closed without one, never local)
 #   auto      → local, non-qualifying: no GloriousFlywheel lane is enrolled
 #               and the retired cache endpoint is not probed (TIN-5770 R471).
 # Coexists with darkmap's existing bazel-test-cached / bazel-cache-contract
 # recipes (which use the cache-attachment-contract.sh wrapper for dynamic
-# endpoint resolution). Use these recipes when the cluster cache DNS is
-# stable; use bazel-test-cached when the endpoint is delivered dynamically.
+# endpoint resolution). Use bazel-test-cached when an endpoint is delivered.
 # ─────────────────────────────────────────────
 
 # Resolved flywheel config flag for the current host (auto-detect by default)
@@ -502,16 +504,23 @@ _flywheel-flag:
       *) echo "[flywheel] unknown FLYWHEEL=$mode (expected local|cache|executor|auto)" >&2; exit 64 ;; \
     esac
 
+# Execution label for the current FLYWHEEL mode (TIN-5770 R471)
+_flywheel-label:
+    @case "${FLYWHEEL:-auto}" in \
+      executor) echo "executor: needs a wrapper-supplied --remote_executor, fails closed without one" ;; \
+      *)        echo "local, non-qualifying" ;; \
+    esac
+
 # Bazel build via flywheel (defaults to //:node_modules smoke target)
 flywheel-build target="//:node_modules":
-    @cfg=$(just _flywheel-flag); \
-    echo "[flywheel-build] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk build $cfg {{ target }} (local, non-qualifying)"; \
+    @cfg=$(just _flywheel-flag); label=$(just _flywheel-label); \
+    echo "[flywheel-build] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk build $cfg {{ target }} ($label)"; \
     cd {{ root }} && bazelisk build $cfg {{ target }}
 
 # Bazel test via flywheel
 flywheel-test target="//...":
-    @cfg=$(just _flywheel-flag); \
-    echo "[flywheel-test] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk test $cfg {{ target }} (local, non-qualifying)"; \
+    @cfg=$(just _flywheel-flag); label=$(just _flywheel-label); \
+    echo "[flywheel-test] FLYWHEEL=${FLYWHEEL:-auto} → bazelisk test $cfg {{ target }} ($label)"; \
     cd {{ root }} && bazelisk test $cfg {{ target }}
 
 # Remote dev server — v1.1+ stub (see ci-templates/docs/spec/dev-remote.md)

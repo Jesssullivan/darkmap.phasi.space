@@ -86,7 +86,7 @@ cd "${repo_root}"
 
 case "${command}" in
 info)
-  exec "${bazel_bin}" "${bazel_prefix_args[@]}" info "${external_fetch_args[@]}" "$@"
+  exec "${bazel_bin}" "${bazel_prefix_args[@]}" --batch info "${external_fetch_args[@]}" "$@"
   ;;
 *)
   bazel_config="ci-cached"
