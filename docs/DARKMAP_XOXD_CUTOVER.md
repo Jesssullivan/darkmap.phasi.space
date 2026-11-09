@@ -2,8 +2,10 @@
 
 `darkmap.xoxd.ai` is Darkmap's new canonical web identity. This document is a
 reviewable deployment plan, not evidence that the hostname is live. Keep
-`darkmap.phasi.space` public and `darkmap.tinyland.dev` tailnet-reachable during
-the migration; neither is redirected or removed by this change. The GitHub
+`darkmap.phasi.space` public during the migration. This change does not
+redirect or remove it. Jess retired the tailnet `darkmap.tinyland.dev` route on
+2026-11-08 and ruled that `darkmap.xoxd.ai` sits behind Cloudflare Access for
+now (TIN-8064). The Access gate lands in tinyland-infra, not here. The GitHub
 repository, GHCR image, Kubernetes namespace/Service/Deployment selectors, and
 OpenTofu state key retain their current identities.
 
@@ -34,7 +36,7 @@ cutover; do not treat this document as a current cluster-state assertion.
 | Surface | Current owner / dependency |
 | --- | --- |
 | App/image | This repo's adapter-node `Containerfile`, `container.yml`, `staging-deploy.yml`, and `infra/kustomize/honey/darkmap/`. The current image name is deliberately unchanged. `OPENAQ_API_KEY` remains the existing optional server-side `darkmap-secrets` key; `ghcr-registry` remains the image-pull Secret. |
-| Existing host DNS | This repo's `infra/tofu/main.tf` manages the legacy `darkmap.tinyland.dev` A record. Its `darkmap.phasi.space` CNAME is **default-off** (`public_dns_enabled`), because that live record has not been adopted into this state. Do not import, replace, or repoint those resources as part of the new-host launch. |
+| Existing host DNS | This repo's `infra/tofu/main.tf` no longer declares the legacy `darkmap.tinyland.dev` A record (retired 2026-11-08, TIN-8064). Its `darkmap.phasi.space` CNAME is **default-off** (`public_dns_enabled`), because that live record has not been adopted into this state. Do not import, replace, or repoint those resources as part of the new-host launch. |
 | New-host DNS | The `xoxd.ai` zone is delegated to Cloudflare, but the specific DNS record's infrastructure owner and zone-scoped edit credential have **not** been confirmed. The existing Darkmap `TF_VAR_cloudflare_api_token` contract names the `tinyland.dev` and `phasi.space` zones, not `xoxd.ai`; do not assume it has authority. Resolve ownership and verify the record is absent before creating one proxied `darkmap` CNAME to the existing `honey-ingress` tunnel target. |
 | Public tunnel | `honey-ingress` is token-managed. Its remote `config.ingress[]` array is the live public-hostname map, not this repo's nginx Ingress. The house reviewed-intent and operator pattern is `tinyland-inc/blahaj` `tofu/intent/` plus `tofu/scripts/merge-public-edge-ingress.jq` and `docs/runbooks/forms-route-apply.md`. The existing tunnel target is named in this repo's `infra/tofu/variables.tf`; read back the live route/target before use. The protected Cloudflare tunnel credential stays with the operator, outside this repo. |
 | TLS | First confirm the new `xoxd.ai` hostname has a valid Cloudflare edge certificate and the tunnel can route **directly** to `http://darkmap.darkmap.svc.cluster.local:80`. That path uses Cloudflare edge TLS and in-cluster HTTP; it does **not** require putting `xoxd.ai` on `Ingress/darkmap` or `darkmap-tls`. If the actual route must pass through nginx HTTPS instead, stop: add a proven `xoxd.ai` DNS-01 solver/credential and a separate TLS plan before editing the existing certificate. Do not append an unissuable SAN to `darkmap-tls`. |
@@ -67,17 +69,17 @@ cutover; do not treat this document as a current cluster-state assertion.
    `Staging deploy` workflow chain. Check the rollout and served source/image
    identity. Dispatch `Public smoke` with `host=darkmap.xoxd.ai`; confirm the
    homepage, raster proxy, service worker, sitemap, robots, canonical/OG URLs,
-   and a real browser map load at the new host. Check both old routes still
-   answer. The scheduled smoke remains on `darkmap.phasi.space` until the
+   and a real browser map load at the new host. Check the old public route still
+   answers. The scheduled smoke remains on `darkmap.phasi.space` until the
    new route has passed its own served-site proof.
 6. Only after new-host proof, switch ongoing monitoring and repository homepage
    metadata to `darkmap.xoxd.ai`. Decide separately whether the old public
    host should later redirect; **do not redirect or remove it during this
-   launch**. Retain the tailnet route unless a separate operator decision
-   retires it.
+   launch**. The tailnet route was retired by a separate operator decision
+   on 2026-11-08 (TIN-8064).
 
 Rollback is to restore the saved tunnel array and new-host DNS state through
-their respective owners, while leaving the existing public and tailnet routes
+their respective owners, while leaving the existing public route
 untouched. If the application image itself regresses, deploy the previous
 known-good image via the existing Staging deploy input; do not rewrite the
 GHCR package or Kubernetes selector identity.

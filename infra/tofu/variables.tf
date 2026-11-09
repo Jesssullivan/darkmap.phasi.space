@@ -24,18 +24,14 @@ variable "kube_context" {
 
 variable "cloudflare_api_token" {
   description = <<EOT
-Cloudflare API token with Zone:DNS:Edit on the tinyland.dev and phasi.space zones.
+Cloudflare API token with Zone:DNS:Edit on the phasi.space zone. Until the
+apply that retires darkmap.tinyland.dev (TIN-8064) has run, it also needs
+Zone:DNS:Edit on the tinyland.dev zone to destroy that record.
 Source via TF_VAR_cloudflare_api_token in apply environments.
 EOT
   type        = string
   sensitive   = true
   default     = ""
-}
-
-variable "cloudflare_zone_id" {
-  description = "Cloudflare zone id for tinyland.dev, used only for the legacy tailnet DNS record."
-  type        = string
-  default     = "3571abd7e73b551e97a3d95cacdb3e39"
 }
 
 variable "public_dns_enabled" {
@@ -59,16 +55,6 @@ variable "cloudflare_tunnel_cname_target" {
     condition     = can(regex("^[0-9a-f-]+[.]cfargotunnel[.]com$", var.cloudflare_tunnel_cname_target))
     error_message = "cloudflare_tunnel_cname_target must be a cfargotunnel.com hostname."
   }
-}
-
-variable "darkmap_tailnet_ip" {
-  description = <<EOT
-Tailnet IP the public DNS A record points at. Shared with `tinyland.dev`
-itself via the `tinyland-ingress` Tailscale-operator proxy. Off-tailnet
-clients can resolve the name but cannot route to the address.
-EOT
-  type        = string
-  default     = "100.125.97.64"
 }
 
 # ─────────────────────────────────────────────────────────────────────
