@@ -3,9 +3,11 @@
 ## Canonical-host migration (2026-09-22)
 
 `darkmap.xoxd.ai` is the chosen canonical web hostname. The existing public
-`darkmap.phasi.space` and tailnet `darkmap.tinyland.dev` routes must remain
-available during migration; do not redirect or remove either until the new
-route is live and an operator explicitly chooses retirement. The repository,
+`darkmap.phasi.space` route must remain available during migration; do not
+redirect or remove it until the new route is live and an operator explicitly
+chooses retirement. Jess retired the tailnet `darkmap.tinyland.dev` route on
+2026-11-08 (TIN-8064). The same ruling puts `darkmap.xoxd.ai` behind
+Cloudflare Access through a separate tinyland-infra change. The repository,
 GHCR image, Kubernetes selector, and OpenTofu state identities do not rename
 with the web hostname. See `docs/DARKMAP_XOXD_CUTOVER.md` for owner and proof
 gates. In particular, the current cert-manager issuer does not cover `xoxd.ai`;
@@ -23,8 +25,8 @@ local clone name on every host. Local clones and worktree directories named
 `darkmap.tinyland.dev.worktrees` are legacy names for the same repository. Do
 not create new clones or worktrees under the legacy name. Existing directories
 are not renamed in place; consolidate them deliberately, one clone per host.
-The tailnet web route `darkmap.tinyland.dev` above is a hostname, not a clone
-name, and is unaffected.
+The retired web route `darkmap.tinyland.dev` above was a hostname, not a clone
+name.
 
 ## Repo Role
 

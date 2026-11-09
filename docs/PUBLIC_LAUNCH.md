@@ -2,8 +2,9 @@
 
 > This records the 2026-05-27 `darkmap.phasi.space` launch. For the new
 > `darkmap.xoxd.ai` canonical-host migration, see
-> [DARKMAP_XOXD_CUTOVER.md](DARKMAP_XOXD_CUTOVER.md). The old public host and
-> `darkmap.tinyland.dev` tailnet host remain during that cutover.
+> [DARKMAP_XOXD_CUTOVER.md](DARKMAP_XOXD_CUTOVER.md). The old public host
+> remains during that cutover. The `darkmap.tinyland.dev` tailnet host was
+> retired on 2026-11-08 (TIN-8064).
 
 This document tracks the public-repo and public-service launch state for
 `darkmap.phasi.space`.
@@ -24,7 +25,8 @@ Last refreshed: 2026-05-27.
   managing that existing record once the `phasi.space` zone id is supplied
 - Blahaj source-truth follow-up for the live tunnel route is tracked in
   [tinyland-inc/blahaj#714](https://github.com/tinyland-inc/blahaj/issues/714)
-- Legacy `darkmap.tinyland.dev` remains a tailnet ingress path
+- Legacy `darkmap.tinyland.dev` was a tailnet ingress path until its
+  retirement on 2026-11-08 (TIN-8064)
 - Public recursive DNS resolves `darkmap.phasi.space` to Cloudflare edge A/AAAA
   records
 - `phasi.space` registrar authority delegates to Cloudflare
@@ -71,8 +73,8 @@ oaklyn.ns.cloudflare.com.
 ## TLS Gate
 
 Cloudflare serves the public edge certificate for `darkmap.phasi.space` once
-recursive DNS reaches the proxied record. The legacy ingress also includes both
-`darkmap.phasi.space` and `darkmap.tinyland.dev`; cert-manager issues that
+recursive DNS reaches the proxied record. The cluster ingress also includes
+`darkmap.phasi.space`; cert-manager issues that
 certificate through DNS-01. The live cluster issuer was patched during launch to
 allow `phasi.space`; the source follow-up is tracked in
 [tinyland-inc/blahaj#713](https://github.com/tinyland-inc/blahaj/issues/713).
@@ -143,8 +145,8 @@ The repo intentionally retains a small amount of deployment topology:
   actionable
 - S3-compatible state backend hostnames, because the endpoint is not a
   credential and the actual access keys live only in secret stores
-- the legacy `darkmap.tinyland.dev` path, because Tofu and Kustomize still
-  preserve it separately from the public `darkmap.phasi.space` edge
+- the legacy `darkmap-tinyland-dev` Tofu state key and Kustomize selector
+  labels, which are identities that do not rename with the retired host
 
 Do not add local filesystem paths, plaintext token values, kubeconfig contents,
 or operator-only credential runbooks to public docs.

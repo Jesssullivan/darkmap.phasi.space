@@ -10,7 +10,8 @@ labels:
   # Kubernetes treats Deployment selectors as immutable, so keep this
   # selector identity stable even while public-facing metadata moves to
   # darkmap.phasi.space in docs, repo metadata, image names, and ingress
-  # hosts.
+  # hosts. The darkmap.tinyland.dev values below are selector identity only;
+  # that hostname was retired on 2026-11-08 (TIN-8064).
   - includeSelectors: true
     pairs:
       app.kubernetes.io/name: darkmap

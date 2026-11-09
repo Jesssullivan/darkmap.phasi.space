@@ -1,8 +1,8 @@
 # Security policy
 
 This repository is the source for the public darkmap site at
-<https://darkmap.phasi.space>. The public edge is Cloudflare Tunnel backed; the
-legacy `darkmap.tinyland.dev` path remains a tailnet ingress. The site has no
+<https://darkmap.phasi.space>. The public edge is Cloudflare Tunnel backed. The
+legacy `darkmap.tinyland.dev` path was retired on 2026-11-08. The site has no
 user accounts, payments, runtime database, or repo-owned analytics/ad-tech
 scripts.
 

@@ -1,16 +1,18 @@
 # infra/tofu
 
 OpenTofu stack for the darkmap deployment. The public service hostname is
-`darkmap.phasi.space`; legacy `darkmap.tinyland.dev` resources may remain until
-the infrastructure cutover is completed. The stack manages:
+`darkmap.phasi.space`. Jess retired the legacy `darkmap.tinyland.dev` host on
+2026-11-08 (TIN-8064). The stack manages:
 
 - Kubernetes `Namespace/darkmap`
 - optionally, the public Cloudflare DNS record for `darkmap.phasi.space`
-- the legacy Cloudflare DNS record for `darkmap.tinyland.dev`
 
 Everything else (`Deployment`, `Service`, `tailscale-svc`, `Ingress`)
 lives in `infra/kustomize/honey/darkmap/` and is applied with
 `kubectl apply -k`.
+
+The state key below keeps its legacy `darkmap-tinyland-dev` name. It is a
+state identity, not a hostname, and moves only through the HA state migration.
 
 ## State backend
 
@@ -60,7 +62,7 @@ just tofu-apply         # type yes
 Operationally, Kustomize-driven Deployment/Ingress lifecycle is
 faster to iterate (no providers, no state lock contention) for
 container-image rollouts. Tofu owns the slowly-changing primitives
-(namespace, public/legacy DNS, spoke modules); Kustomize owns the workload.
+(namespace, public DNS, spoke modules); Kustomize owns the workload.
 
 ## Public DNS adoption
 

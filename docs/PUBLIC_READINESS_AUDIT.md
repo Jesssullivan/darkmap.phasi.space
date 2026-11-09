@@ -10,7 +10,7 @@ intentionally visible, and which gates still require operator action.
 
 - Repository: `Jesssullivan/darkmap.phasi.space`
 - Public hostname: `darkmap.phasi.space`
-- Legacy hostname: `darkmap.tinyland.dev`
+- Legacy hostname: `darkmap.tinyland.dev`, retired on 2026-11-08 (TIN-8064)
 - Operator secret authority: external SOPS store under `../lab` and GitHub
   Actions secrets, not this repository
 
@@ -68,12 +68,13 @@ CI/CD, deployment shape, and public-service routing:
 - GitHub workflow names and runner-routing gates
 - Kubernetes namespace/resource names
 - public hostnames
-- legacy `darkmap.tinyland.dev` ingress/DNS/state references
+- legacy `darkmap-tinyland-dev` state key and selector label references
 - S3-compatible state backend hostname, without credentials
 - Cloudflare Tunnel CNAME target for the retained `honey-ingress` route
 
-The `darkmap.tinyland.dev` references that remain after cleanup are legacy
-runtime or historical notes. Repo identity and public-facing package/build
+The `darkmap.tinyland.dev` references that remain after cleanup are selector
+identity, the state key or historical notes. The host itself was retired on
+2026-11-08 (TIN-8064). Repo identity and public-facing package/build
 metadata now use `darkmap.phasi.space`.
 
 ## Operator-Gated Items

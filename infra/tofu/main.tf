@@ -1,4 +1,4 @@
-# darkmap.phasi.space — namespace, public DNS, and legacy DNS.
+# darkmap.phasi.space: namespace and public DNS.
 #
 # The Deployment / Service / Ingress / tailscale-svc are managed via
 # Kustomize (infra/kustomize/honey/darkmap/) so kubectl-apply lifecycle
@@ -28,18 +28,9 @@ resource "cloudflare_dns_record" "darkmap_public_cname" {
   comment = "darkmap.phasi.space public edge via honey-ingress Cloudflare Tunnel"
 }
 
-# Legacy CF DNS record pointing at the tailnet `tinyland-ingress` IP. CF answers
-# everyone, but only on-tailnet clients can actually route to the 100.x.x.x
-# address. Preserve until the legacy darkmap.tinyland.dev path is retired.
-resource "cloudflare_dns_record" "darkmap_a" {
-  zone_id = var.cloudflare_zone_id
-  name    = "darkmap"
-  type    = "A"
-  content = var.darkmap_tailnet_ip
-  ttl     = 300
-  proxied = false
-  comment = "darkmap.tinyland.dev tailnet-only (shares tinyland-ingress)"
-}
+# The legacy darkmap.tinyland.dev A record (cloudflare_dns_record.darkmap_a)
+# was retired by Jess's ruling of 2026-11-08 (TIN-8064). The next apply
+# destroys it from the tinyland.dev zone.
 
 # ─────────────────────────────────────────────────────────────────────
 # Spoke-* modules from tinyland-inc/GloriousFlywheel@spoke-tofu-modules-v1.0.0
